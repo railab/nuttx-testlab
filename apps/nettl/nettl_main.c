@@ -1,0 +1,599 @@
+/****************************************************************************
+ * apps/nettl/nettl_main.c
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License.  You
+ * may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include <nuttx/config.h>
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include <unistd.h>
+#include <errno.h>
+
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define NETTL_PORT_DEFAULT     5001
+#define NETTL_TCP_BYTES        65536
+#define NETTL_UDP_COUNT        100
+#define NETTL_UDP_LEN          512
+#define NETTL_TIMEOUT          10
+#define NETTL_UDP_RETRIES      3
+#define NETTL_UDP_STALE_MAX    16
+#define NETTL_UDP_END          0xffffffffu
+#define NETTL_UDP_COUNT_MAX    0xfffffffeu
+#define NETTL_UDP_HDR          4
+#define NETTL_BUFSIZE          CONFIG_TESTLAB_NETTL_BUFSIZE
+#define NETTL_UDP_LEN_DEFAULT  (NETTL_UDP_LEN < NETTL_BUFSIZE ? \
+                                 NETTL_UDP_LEN : NETTL_BUFSIZE)
+
+/****************************************************************************
+ * Private Types
+ ****************************************************************************/
+
+struct nettl_args_s
+{
+  bool        server;
+  bool        udp;
+  FAR char   *addr;
+  uint16_t    port;
+  size_t      count;
+  size_t      len;
+  int         timeout;
+};
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+static uint8_t g_txbuf[NETTL_BUFSIZE + NETTL_UDP_HDR];
+static uint8_t g_rxbuf[NETTL_BUFSIZE + NETTL_UDP_HDR];
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+static uint8_t nettl_pattern(size_t offset)
+{
+  return (uint8_t)(offset * 31 + 7);
+}
+
+static void nettl_fill(FAR uint8_t *buf, size_t offset, size_t len)
+{
+  size_t i;
+
+  for (i = 0; i < len; i++)
+    {
+      buf[i] = nettl_pattern(offset + i);
+    }
+}
+
+static size_t nettl_check(FAR const uint8_t *buf, size_t offset,
+                          size_t len)
+{
+  size_t err = 0;
+  size_t i;
+
+  for (i = 0; i < len; i++)
+    {
+      if (buf[i] != nettl_pattern(offset + i))
+        {
+          err++;
+        }
+    }
+
+  return err;
+}
+
+static int nettl_sendall(int sd, FAR const uint8_t *buf, size_t len)
+{
+  size_t sent = 0;
+  ssize_t ret;
+
+  while (sent < len)
+    {
+      ret = send(sd, buf + sent, len - sent, 0);
+      if (ret < 0)
+        {
+          if (errno == EINTR)
+            {
+              continue;
+            }
+
+          return -1;
+        }
+
+      sent += (size_t)ret;
+    }
+
+  return 0;
+}
+
+static bool nettl_parse_uint(FAR const char *arg, unsigned long minval,
+                             unsigned long maxval, FAR unsigned long *val)
+{
+  FAR char *end;
+  unsigned long parsed;
+
+  if (arg == NULL || arg[0] == '\0' || arg[0] == '-')
+    {
+      return false;
+    }
+
+  errno = 0;
+  parsed = strtoul(arg, &end, 10);
+  if (errno != 0 || *end != '\0' || parsed < minval || parsed > maxval)
+    {
+      return false;
+    }
+
+  *val = parsed;
+  return true;
+}
+
+static void nettl_settimeout(int sd, int timeout)
+{
+  struct timeval tv;
+
+  tv.tv_sec  = timeout;
+  tv.tv_usec = 0;
+  setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+}
+
+static int nettl_socket(FAR const struct nettl_args_s *args,
+                        FAR struct sockaddr_in *sa)
+{
+  int sd;
+
+  sd = socket(AF_INET, args->udp ? SOCK_DGRAM : SOCK_STREAM, 0);
+  if (sd < 0)
+    {
+      printf("nettl: socket failed %d\n", errno);
+      return -1;
+    }
+
+  memset(sa, 0, sizeof(*sa));
+  sa->sin_family = AF_INET;
+  sa->sin_port   = htons(args->port);
+
+  if (args->server)
+    {
+      int on = 1;
+
+      setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+      sa->sin_addr.s_addr = htonl(INADDR_ANY);
+      if (bind(sd, (FAR struct sockaddr *)sa, sizeof(*sa)) < 0)
+        {
+          printf("nettl: bind failed %d\n", errno);
+          close(sd);
+          return -1;
+        }
+    }
+  else if (inet_pton(AF_INET, args->addr, &sa->sin_addr) != 1)
+    {
+      printf("nettl: bad address %s\n", args->addr);
+      close(sd);
+      return -1;
+    }
+
+  nettl_settimeout(sd, args->timeout);
+  return sd;
+}
+
+static int nettl_tcp_server(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_in sa;
+  size_t rx  = 0;
+  size_t err = 0;
+  ssize_t ret;
+  int sd;
+  int cd;
+
+  sd = nettl_socket(args, &sa);
+  if (sd < 0 || listen(sd, 1) < 0)
+    {
+      printf("nettl: FAIL rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  printf("nettl: listening tcp %u\n", args->port);
+  cd = accept(sd, NULL, NULL);
+  close(sd);
+  if (cd < 0)
+    {
+      printf("nettl: accept failed %d\n", errno);
+      printf("nettl: FAIL rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  nettl_settimeout(cd, args->timeout);
+
+  while ((ret = recv(cd, g_rxbuf, NETTL_BUFSIZE, 0)) > 0)
+    {
+      err += nettl_check(g_rxbuf, rx, ret);
+      rx  += ret;
+      if (nettl_sendall(cd, g_rxbuf, (size_t)ret) < 0)
+        {
+          err++;
+          break;
+        }
+    }
+
+  if (ret < 0)
+    {
+      printf("nettl: recv failed %d\n", errno);
+      err++;
+    }
+
+  close(cd);
+  printf("nettl: %s rx=%zu err=%zu\n", err == 0 ? "PASS" : "FAIL", rx, err);
+  return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+static int nettl_tcp_client(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_in sa;
+  size_t tx  = 0;
+  size_t rx  = 0;
+  size_t err = 0;
+  ssize_t ret;
+  size_t chunk;
+  size_t got;
+  int sd;
+
+  sd = nettl_socket(args, &sa);
+  if (sd < 0 ||
+      connect(sd, (FAR struct sockaddr *)&sa, sizeof(sa)) < 0)
+    {
+      printf("nettl: connect failed %d\n", errno);
+      printf("nettl: FAIL tx=0 rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  while (tx < args->count && err == 0)
+    {
+      chunk = args->count - tx;
+      if (chunk > NETTL_BUFSIZE)
+        {
+          chunk = NETTL_BUFSIZE;
+        }
+
+      nettl_fill(g_txbuf, tx, chunk);
+      if (nettl_sendall(sd, g_txbuf, chunk) < 0)
+        {
+          printf("nettl: send failed %d\n", errno);
+          err++;
+          break;
+        }
+
+      tx += chunk;
+
+      /* Lock-step echo: read back exactly what was sent */
+
+      for (got = 0; got < chunk; got += ret)
+        {
+          ret = recv(sd, g_rxbuf + got, chunk - got, 0);
+          if (ret <= 0)
+            {
+              printf("nettl: recv failed %d\n", ret < 0 ? errno : 0);
+              err++;
+              break;
+            }
+        }
+
+      err += nettl_check(g_rxbuf, rx, got);
+      rx  += got;
+    }
+
+  close(sd);
+  printf("nettl: %s tx=%zu rx=%zu err=%zu\n",
+         (err == 0 && rx == args->count) ? "PASS" : "FAIL", tx, rx, err);
+  return (err == 0 && rx == args->count) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+static void nettl_put32(FAR uint8_t *buf, uint32_t val)
+{
+  buf[0] = (uint8_t)(val >> 24);
+  buf[1] = (uint8_t)(val >> 16);
+  buf[2] = (uint8_t)(val >> 8);
+  buf[3] = (uint8_t)val;
+}
+
+static uint32_t nettl_get32(FAR const uint8_t *buf)
+{
+  return ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) |
+         ((uint32_t)buf[2] << 8) | (uint32_t)buf[3];
+}
+
+static int nettl_udp_server(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_in sa;
+  struct sockaddr_in from;
+  socklen_t fromlen;
+  size_t rx  = 0;
+  size_t err = 0;
+  ssize_t ret;
+  uint32_t seq;
+  int sd;
+
+  sd = nettl_socket(args, &sa);
+  if (sd < 0)
+    {
+      printf("nettl: FAIL rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  printf("nettl: listening udp %u\n", args->port);
+
+  for (; ; )
+    {
+      /* recvfrom() never stores more than sizeof(g_rxbuf) bytes, i.e.
+       * NETTL_BUFSIZE + NETTL_UDP_HDR, so a datagram longer than that
+       * cannot be observed here; no MSG_TRUNC-style check is needed.
+       */
+
+      fromlen = sizeof(from);
+      ret = recvfrom(sd, g_rxbuf, sizeof(g_rxbuf), 0,
+                     (FAR struct sockaddr *)&from, &fromlen);
+      if (ret < NETTL_UDP_HDR)
+        {
+          printf("nettl: recvfrom failed %d\n", ret < 0 ? errno : 0);
+          err++;
+          break;
+        }
+
+      seq = nettl_get32(g_rxbuf);
+      if (seq == NETTL_UDP_END)
+        {
+          break;
+        }
+
+      err += nettl_check(g_rxbuf + NETTL_UDP_HDR,
+                         (size_t)seq * (ret - NETTL_UDP_HDR),
+                         ret - NETTL_UDP_HDR);
+      rx++;
+      sendto(sd, g_rxbuf, ret, 0, (FAR struct sockaddr *)&from, fromlen);
+    }
+
+  close(sd);
+  printf("nettl: %s rx=%zu err=%zu\n", err == 0 ? "PASS" : "FAIL", rx, err);
+  return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+static int nettl_udp_client(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_in sa;
+  size_t rx   = 0;
+  size_t lost = 0;
+  size_t err  = 0;
+  ssize_t ret;
+  size_t seq;
+  int retry;
+  int stale;
+  bool matched;
+  bool badlen;
+  int sd;
+
+  sd = nettl_socket(args, &sa);
+  if (sd < 0)
+    {
+      printf("nettl: FAIL tx=0 rx=0 lost=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  for (seq = 0; seq < args->count; seq++)
+    {
+      nettl_put32(g_txbuf, seq);
+      nettl_fill(g_txbuf + NETTL_UDP_HDR, seq * args->len, args->len);
+
+      matched = false;
+      badlen  = false;
+
+      for (retry = 0; retry < NETTL_UDP_RETRIES && !matched; retry++)
+        {
+          if (sendto(sd, g_txbuf, args->len + NETTL_UDP_HDR, 0,
+                     (FAR struct sockaddr *)&sa, sizeof(sa)) < 0)
+            {
+              continue;  /* send failure consumes this retry */
+            }
+
+          /* Drain late duplicates of earlier sequence numbers without
+           * consuming a retry; only a timeout/recv error or exhausting
+           * the stale-datagram bound below ends this attempt.
+           */
+
+          for (stale = 0; stale < NETTL_UDP_STALE_MAX; stale++)
+            {
+              ret = recv(sd, g_rxbuf, sizeof(g_rxbuf), 0);
+              if (ret < 0)
+                {
+                  break;  /* timeout/error consumes this retry */
+                }
+
+              if ((size_t)ret >= NETTL_UDP_HDR &&
+                  nettl_get32(g_rxbuf) == seq)
+                {
+                  matched = true;
+                  badlen  = (ret != (ssize_t)(args->len + NETTL_UDP_HDR));
+                  break;
+                }
+
+              /* Stale datagram for a different seq: discard and retry
+               * the recv() without resending or using up a retry.
+               */
+            }
+        }
+
+      if (!matched)
+        {
+          lost++;
+          continue;
+        }
+
+      if (badlen)
+        {
+          err++;
+        }
+      else
+        {
+          err += nettl_check(g_rxbuf + NETTL_UDP_HDR, seq * args->len,
+                             args->len);
+        }
+
+      rx++;
+    }
+
+  nettl_put32(g_txbuf, NETTL_UDP_END);
+  for (retry = 0; retry < NETTL_UDP_RETRIES; retry++)
+    {
+      sendto(sd, g_txbuf, NETTL_UDP_HDR, 0,
+             (FAR struct sockaddr *)&sa, sizeof(sa));
+    }
+
+  close(sd);
+  printf("nettl: %s tx=%zu rx=%zu lost=%zu err=%zu\n",
+         (lost == 0 && err == 0) ? "PASS" : "FAIL",
+         args->count, rx, lost, err);
+  return (lost == 0 && err == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+static void nettl_usage(FAR const char *progname)
+{
+  printf("Usage: %s -s [-u] [-p port] [-t sec]\n", progname);
+  printf("       %s -c addr [-u] [-p port] [-n count] [-l len] "
+         "[-t sec]\n", progname);
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+int main(int argc, FAR char *argv[])
+{
+  struct nettl_args_s args;
+  int opt;
+
+  memset(&args, 0, sizeof(args));
+  args.port    = NETTL_PORT_DEFAULT;
+  args.len     = NETTL_UDP_LEN_DEFAULT;
+  args.timeout = NETTL_TIMEOUT;
+
+  while ((opt = getopt(argc, argv, "sc:up:n:l:t:")) != ERROR)
+    {
+      unsigned long val;
+
+      switch (opt)
+        {
+          case 's':
+            args.server = true;
+            break;
+          case 'c':
+            args.addr = optarg;
+            break;
+          case 'u':
+            args.udp = true;
+            break;
+          case 'p':
+            if (!nettl_parse_uint(optarg, 1, 65535, &val))
+              {
+                nettl_usage(argv[0]);
+                return EXIT_FAILURE;
+              }
+
+            args.port = (uint16_t)val;
+            break;
+          case 'n':
+            if (!nettl_parse_uint(optarg, 1, ULONG_MAX, &val))
+              {
+                nettl_usage(argv[0]);
+                return EXIT_FAILURE;
+              }
+
+            args.count = (size_t)val;
+            break;
+          case 'l':
+            if (!nettl_parse_uint(optarg, 1, NETTL_BUFSIZE, &val))
+              {
+                nettl_usage(argv[0]);
+                return EXIT_FAILURE;
+              }
+
+            args.len = (size_t)val;
+            break;
+          case 't':
+            if (!nettl_parse_uint(optarg, 1, INT_MAX, &val))
+              {
+                nettl_usage(argv[0]);
+                return EXIT_FAILURE;
+              }
+
+            args.timeout = (int)val;
+            break;
+          default:
+            nettl_usage(argv[0]);
+            return EXIT_FAILURE;
+        }
+    }
+
+  if (args.server == (args.addr != NULL))
+    {
+      nettl_usage(argv[0]);
+      return EXIT_FAILURE;
+    }
+
+  if (args.udp && (args.len == 0 || args.len > NETTL_BUFSIZE))
+    {
+      nettl_usage(argv[0]);
+      return EXIT_FAILURE;
+    }
+
+  /* UDP sequence numbers are uint32_t and 0xffffffff is reserved as the
+   * end-of-stream marker, so the datagram count must leave room for it.
+   */
+
+  if (args.udp && args.count > NETTL_UDP_COUNT_MAX)
+    {
+      nettl_usage(argv[0]);
+      return EXIT_FAILURE;
+    }
+
+  if (args.count == 0)
+    {
+      args.count = args.udp ? NETTL_UDP_COUNT : NETTL_TCP_BYTES;
+    }
+
+  if (args.server)
+    {
+      return args.udp ? nettl_udp_server(&args) : nettl_tcp_server(&args);
+    }
+
+  return args.udp ? nettl_udp_client(&args) : nettl_tcp_client(&args);
+}

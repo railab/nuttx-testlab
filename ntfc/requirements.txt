@@ -1,0 +1,3 @@
+ntfc @ git+https://github.com/apache/nuttx-ntfc@main
+kconfiglib
+pyyaml

@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Per-PR checks: coding-standard lint plus the full NTFC test suite against
+# current NuttX master. Also runs on push to master so the branch stays
+# green.
+
+name: PR checks
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone NuttX (checkpatch/nxstyle)
+        run: git clone --depth 1 https://github.com/apache/nuttx external/nuttx
+
+      - name: Install Python lint tools
+        run: pip install tox cmake-format
+
+      - name: checkpatch (NuttX C style)
+        shell: bash
+        run: |
+          files=$(git ls-files 'apps/*.c' 'apps/*.h' 'apps/*CMakeLists.txt')
+          if [ -z "$files" ]; then
+            echo "no matching files, skipping checkpatch"
+          else
+            # shellcheck disable=SC2086
+            external/nuttx/tools/checkpatch.sh -f $files
+          fi
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: shellcheck
+        shell: bash
+        run: |
+          files=$(git ls-files '*.sh')
+          if [ -z "$files" ]; then
+            echo "no shell scripts found, skipping shellcheck"
+          else
+            # shellcheck disable=SC2086
+            shellcheck $files
+          fi
+
+      - name: Python lint (tox)
+        run: tox -c ntfc/tox.ini
+
+      - name: Install docs tools
+        run: pip install -r Documentation/requirements.txt
+
+      - name: Build docs
+        run: sphinx-build -W -b html Documentation "$RUNNER_TEMP/docs"
+
+      - name: Check docs are current
+        run: python tools/ci/check-docs.py
+
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect tools/docker changes
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              range="$BASE_SHA...$HEAD_SHA"
+              ;;
+            push)
+              # First push of a branch: before is all-zero and there is no
+              # usable range, so treat it as a docker change (safer than
+              # silently keeping a stale :latest).
+              if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+                echo "docker=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              range="$BEFORE_SHA..$HEAD_SHA"
+              ;;
+            *)
+              echo "docker=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          if git diff --name-only "$range" | grep -q '^tools/docker/'; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  tests:
+    needs: [lint, changes]
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/tests.yml
+    with:
+      build_image: ${{ needs.changes.outputs.docker == 'true' }}

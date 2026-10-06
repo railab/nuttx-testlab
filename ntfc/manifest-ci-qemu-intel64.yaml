@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+options:
+  fail_fast: false
+  parallel: false
+
+sessions:
+  - name: "qemu-intel64-smoke"
+    confpath: ntfc/configs/qemu-intel64/smoke/config.yaml
+    testpath: ntfc/tests/smoke

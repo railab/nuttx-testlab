@@ -1,0 +1,267 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable NTFC test runner. Pulls the published nuttx-testlab image from
+# GHCR (unless build_image is set, or the pull fails, in which case it
+# builds tools/docker locally) and runs it against one or all targets,
+# optionally narrowed to a single manifest session / test path.
+
+name: Tests
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: "Targets to run: all, sim, qemu-armv8a, rv-virt, qemu-intel64"
+        type: string
+        default: all
+      session:
+        description: "Manifest session to run (e.g. sim-smoke); empty runs the whole manifest"
+        type: string
+        default: ""
+      testpath:
+        description: "Test path/file to run within the session (requires session)"
+        type: string
+        default: ""
+      image:
+        description: "Image to use; empty means ghcr.io/<repo>/testlab:latest"
+        type: string
+        default: ""
+      build_image:
+        description: "Build tools/docker locally instead of pulling the published image"
+        type: boolean
+        default: false
+      nuttx_repo:
+        type: string
+        default: https://github.com/apache/nuttx
+      nuttx_ref:
+        type: string
+        default: master
+      apps_repo:
+        type: string
+        default: https://github.com/apache/nuttx-apps
+      apps_ref:
+        type: string
+        default: master
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Targets to run"
+        type: choice
+        default: all
+        options:
+          - all
+          - sim
+          - qemu-armv8a
+          - rv-virt
+          - qemu-intel64
+      session:
+        description: "Manifest session to run (e.g. sim-smoke); empty runs the whole manifest"
+        type: string
+        default: ""
+      testpath:
+        description: "Test path/file to run within the session (requires session)"
+        type: string
+        default: ""
+      image:
+        description: "Image to use; empty means ghcr.io/<repo>/testlab:latest"
+        type: string
+        default: ""
+      build_image:
+        description: "Build tools/docker locally instead of pulling the published image"
+        type: boolean
+        default: false
+      nuttx_repo:
+        type: string
+        default: https://github.com/apache/nuttx
+      nuttx_ref:
+        type: string
+        default: master
+      apps_repo:
+        type: string
+        default: https://github.com/apache/nuttx-apps
+      apps_ref:
+        type: string
+        default: master
+
+run-name: >-
+  tests: ${{ inputs.targets }}${{ inputs.session != '' && format(' / {0}', inputs.session) || '' }} @
+  ${{ inputs.nuttx_ref }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  matrix-setup:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.set.outputs.targets }}
+    steps:
+      - name: Compute target matrix
+        id: set
+        shell: bash
+        env:
+          TARGETS: ${{ inputs.targets }}
+          SESSION: ${{ inputs.session }}
+          TESTPATH: ${{ inputs.testpath }}
+        run: |
+          targets_value="${TARGETS:-all}"
+
+          case "$targets_value" in
+            all|sim|qemu-armv8a|rv-virt|qemu-intel64) ;;
+            *)
+              echo "::error::unknown target: $targets_value"
+              exit 1
+              ;;
+          esac
+
+          if [ -n "$SESSION" ] || [ -n "$TESTPATH" ]; then
+            if [ -z "$SESSION" ]; then
+              echo "::error::testpath requires session"
+              exit 1
+            fi
+
+            # Session names are <target>-<scenario>; try the longest
+            # known target prefix first (qemu-armv8a and qemu-intel64
+            # both start with "qemu-").
+            case "$SESSION" in
+              qemu-intel64-*) session_target=qemu-intel64 ;;
+              qemu-armv8a-*)  session_target=qemu-armv8a ;;
+              rv-virt-*)      session_target=rv-virt ;;
+              sim-*)          session_target=sim ;;
+              *)
+                echo "::error::session '$SESSION' does not start with a known target prefix"
+                exit 1
+                ;;
+            esac
+
+            if [ "$targets_value" = "all" ]; then
+              targets_value="$session_target"
+            elif [ "$targets_value" != "$session_target" ]; then
+              echo "::error::session '$SESSION' does not match target '$targets_value'"
+              exit 1
+            fi
+          fi
+
+          if [ "$targets_value" = "all" ]; then
+            echo 'targets=["sim","qemu-armv8a","rv-virt","qemu-intel64"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "targets=[\"$targets_value\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: matrix-setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.matrix-setup.outputs.targets) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compute default image name
+        id: image_name
+        shell: bash
+        run: echo "default=ghcr.io/${GITHUB_REPOSITORY,,}/testlab:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx (requested local build)
+        if: ${{ inputs.build_image }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image locally (requested)
+        if: ${{ inputs.build_image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/docker
+          push: false
+          load: true
+          tags: nuttx-testlab
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Log in to GHCR
+        if: ${{ !inputs.build_image }}
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull published image
+        if: ${{ !inputs.build_image }}
+        id: pull
+        shell: bash
+        env:
+          INPUT_IMAGE: ${{ inputs.image }}
+          DEFAULT_IMAGE: ${{ steps.image_name.outputs.default }}
+        run: |
+          image="$INPUT_IMAGE"
+          if [ -z "$image" ]; then
+            image="$DEFAULT_IMAGE"
+          fi
+          if docker pull "$image"; then
+            echo "image=$image" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not pull $image; building tools/docker locally instead"
+          fi
+
+      - name: Set up Docker Buildx (pull fallback)
+        if: ${{ !inputs.build_image && steps.pull.outputs.image == '' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image locally (pull fallback)
+        if: ${{ !inputs.build_image && steps.pull.outputs.image == '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/docker
+          push: false
+          load: true
+          tags: nuttx-testlab
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Select image to run
+        id: resolve
+        shell: bash
+        env:
+          BUILD_IMAGE: ${{ inputs.build_image }}
+          PULLED_IMAGE: ${{ steps.pull.outputs.image }}
+        run: |
+          if [ "$BUILD_IMAGE" = "true" ]; then
+            echo "image=nuttx-testlab" >> "$GITHUB_OUTPUT"
+          elif [ -n "$PULLED_IMAGE" ]; then
+            echo "image=$PULLED_IMAGE" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=nuttx-testlab" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        shell: bash
+        env:
+          NUTTX_REPO: ${{ inputs.nuttx_repo }}
+          NUTTX_REF: ${{ inputs.nuttx_ref }}
+          APPS_REPO: ${{ inputs.apps_repo }}
+          APPS_REF: ${{ inputs.apps_ref }}
+          TESTLAB_SESSION: ${{ inputs.session }}
+          TESTLAB_TESTPATH: ${{ inputs.testpath }}
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          TARGET: ${{ matrix.target }}
+        run: tools/docker/run.sh --image "$IMAGE" "ci-$TARGET"
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: tools/ci/summary.sh result "$TARGET" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.target }}
+          path: result/
+          retention-days: 30

@@ -1,0 +1,8 @@
+/external/
+/build/
+/result/
+/.venv/
+/apps/Kconfig
+__pycache__/
+*.pyc
+.tox/

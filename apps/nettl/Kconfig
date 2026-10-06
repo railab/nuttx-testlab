@@ -1,0 +1,32 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_NETTL
+	tristate "nettl: TCP/UDP data integrity test tool"
+	default n
+	depends on NET_TCP || NET_UDP
+	---help---
+		Client/server tool that echoes a deterministic data pattern
+		over TCP or UDP and prints a PASS/FAIL verdict line.
+
+if TESTLAB_NETTL
+
+config TESTLAB_NETTL_PROGNAME
+	string "Program name"
+	default "nettl"
+
+config TESTLAB_NETTL_PRIORITY
+	int "nettl task priority"
+	default 100
+
+config TESTLAB_NETTL_STACKSIZE
+	int "nettl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+config TESTLAB_NETTL_BUFSIZE
+	int "nettl I/O buffer size"
+	default 512
+
+endif

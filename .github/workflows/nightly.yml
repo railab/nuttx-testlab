@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Nightly check that current NuttX master passes the full NTFC suite.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  tests:
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/tests.yml

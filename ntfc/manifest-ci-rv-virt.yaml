@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+options:
+  fail_fast: false
+  parallel: false
+
+sessions:
+  - name: "rv-virt-smoke"
+    confpath: ntfc/configs/rv-virt/smoke/config.yaml
+    testpath: ntfc/tests/smoke

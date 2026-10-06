@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/sim/smoke'
+  kv:
+    CONFIG_DEBUG_SYMBOLS: "y"
+    CONFIG_TESTLAB_NETTL: "y"
+    CONFIG_NET: "y"
+    CONFIG_NET_TCP: "y"
+    CONFIG_NET_UDP: "y"
+    CONFIG_NET_LOOPBACK: "y"
+    CONFIG_NET_SOCKOPTS: "y"
+
+product:
+  name: "sim-smoke"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: 'boards/sim/sim/sim/configs/nsh'
