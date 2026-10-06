@@ -8,6 +8,14 @@ Target-side test apps (C, NuttX style) live in `apps/`, NTFC tests
 
 Architecture and the exact list of test cases: [`Documentation/`](Documentation/).
 
+## Why
+
+Upstream NuttX CI boots only a few single-node images and leaves most
+runtime features untested. This repo runs nightly against NuttX master
+the scenarios that are too heavy or host-dependent for upstream CI: many
+emulated nodes per test, NuttX talking to Linux, real devices (NICs, block
+devices, virtio), root-only host setup.
+
 ## Quick start
 
 ```sh
