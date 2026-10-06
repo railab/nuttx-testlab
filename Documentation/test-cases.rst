@@ -75,14 +75,6 @@ Test functions
   ``nettl -c 127.0.0.1 -u -p 5101 -n 50``. PASS: the captured verdict
   line is exactly ``nettl: PASS tx=50 rx=50 lost=0 err=0``.
 
-Known skips/xfails
-~~~~~~~~~~~~~~~~~~~
-
-None. No test in this module carries a ``skip``, ``skipif`` or
-``xfail`` marker; the only conditional marker in use is
-``cmd_check("nettl_main")``, which is a build-capability check, not a
-known-failure marker.
-
 ``ip`` module
 -------------
 
@@ -110,3 +102,37 @@ bridge ``tl-br0`` (see :doc:`architecture`). Sessions:
    * - ``test_host_udp_to_node``
      - Host client to ``nettl -s -u`` on each node: 100 datagrams echoed
        intact.
+
+``ip`` regression tests
+------------------------
+
+Source: ``ntfc/tests/ip/test_ip_regress.py``. Same topology and
+sessions as the ``ip`` module above (``sim-ip-pair``,
+``qemu-armv8a-ip-pair``, ``rv-virt-ip-pair``, ``qemu-intel64-ip-pair``).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_tcp_rst_after_handshake``
+     - A peer RST right after the TCP handshake does not hang the
+       server's blocking send(): a verdict line (PASS or FAIL) is
+       printed within 15 s.
+   * - ``test_udp_reuseaddr_broadcast``
+     - Two ``SO_REUSEADDR`` UDP listeners on one port both receive all
+       20 broadcast datagrams intact: ``nettl: PASS rx=40 err=0``.
+   * - ``test_arp_expiry_traffic``
+     - 300 paced UDP echoes (~30 s, over 2x the default
+       ``CONFIG_NET_ARP_MAXAGE``) across an ARP entry's expiry: zero
+       datagrams lost after up to 3 retries each, all intact.
+   * - ``test_tcp_long_transfer``
+     - 4 MiB host-to-node TCP echo, 10 s per-operation stall
+       watchdog: all bytes echoed intact.
+   * - ``test_tcp_kill_listener_leak``
+     - After killing (``kill -9``) ``CONFIG_NET_TCP_PREALLOC_CONNS +
+       1`` TCP listeners each blocked in accept(), a probe client
+       still allocates a socket and is refused by the host
+       (``connect failed 111``). Runs last in the session
+       (``@pytest.mark.run(order=-1)``): it poisons the node.

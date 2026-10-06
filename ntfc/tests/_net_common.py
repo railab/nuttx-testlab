@@ -21,6 +21,7 @@
 import re
 import socket
 import struct
+import time
 from typing import Any, List, Optional, Tuple
 
 import pytest
@@ -144,7 +145,13 @@ def host_tcp_echo_check(
 
 
 def host_udp_echo_check(
-    addr: str, port: int, count: int, length: int = 512, timeout: float = 2.0
+    addr: str,
+    port: int,
+    count: int,
+    length: int = 512,
+    timeout: float = 2.0,
+    interval: float = 0.0,
+    retries: int = 0,
 ) -> bool:
     """Act as nettl UDP client from the host.
 
@@ -153,6 +160,11 @@ def host_udp_echo_check(
     :param count: number of datagrams
     :param length: payload length
     :param timeout: per-datagram timeout in seconds
+    :param interval: delay in seconds after each matched echo, before
+     sending the next datagram (0 paces nothing, the default)
+    :param retries: extra send attempts for a datagram that times out,
+     on top of the first attempt (0 keeps the original behaviour: stop
+     on the first lost datagram)
     :return: True when all datagrams are echoed intact
     """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -160,13 +172,20 @@ def host_udp_echo_check(
         ok = True
         for seq in range(count):
             dgram = struct.pack(">I", seq) + pattern(seq * length, length)
-            sock.sendto(dgram, (addr, port))
-            try:
-                echo = sock.recv(len(dgram) + 16)
-            except socket.timeout:
+            echo: Optional[bytes] = None
+            for _attempt in range(retries + 1):
+                sock.sendto(dgram, (addr, port))
+                try:
+                    echo = sock.recv(len(dgram) + 16)
+                    break
+                except socket.timeout:
+                    echo = None
+            if echo is None:
                 ok = False
                 break
             ok = ok and echo == dgram
+            if interval:
+                time.sleep(interval)
         for _ in range(3):
             sock.sendto(struct.pack(">I", UDP_END), (addr, port))
     return ok

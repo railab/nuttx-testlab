@@ -101,6 +101,23 @@ CLI::
   ``min(512, CONFIG_TESTLAB_NETTL_BUFSIZE)``.
 - ``-t sec`` socket receive timeout, default ``10``.
 
+TCP/UDP server-only options (added for ``ip`` regression tests, see
+:doc:`test-cases`), full CLI::
+
+   nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec] [-L n]
+   nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec]
+
+- ``-w`` TCP server only: after accept(), send ``-n`` bytes of
+  pattern data to the client (no echo) then close; does not combine
+  with ``-u``.
+- ``-D sec`` TCP server only: sleep ``sec`` seconds after printing the
+  ``listening`` line and before calling accept().
+- ``-L n`` UDP server only, ``1`` to ``4``: open ``n`` sockets with
+  ``SO_REUSEADDR`` bound to the same port and poll all of them until
+  each has received ``-n`` datagrams of ``-l`` bytes each (or the
+  ``-t`` timeout elapses); no echo. With ``-w`` or ``-L``, ``-n``/
+  ``-l`` are server-side options instead of client-only.
+
 Protocol: both sides fill/verify a deterministic byte pattern,
 ``byte(offset) = (offset * 31 + 7) mod 256``, keyed by the byte's
 position in the logical stream (TCP) or datagram (UDP).
@@ -140,6 +157,14 @@ Verdict line (always exactly one, to stdout) and process exit code:
    * - UDP client
      - ``nettl: PASS|FAIL tx=<n> rx=<n> lost=<n> err=<n>``
      - ``lost == 0 && err == 0``
+   * - TCP server (``-w``)
+     - ``nettl: PASS|FAIL rx=0 err=<n>``
+     - no socket/accept error and ``err == 0`` (``err`` counts a
+       failed send)
+   * - UDP server (``-L n``)
+     - ``nettl: PASS|FAIL rx=<n> err=<n>``
+     - no socket error and ``err == 0`` (``err`` also counts, per
+       listener, any datagram not received by the ``-t`` timeout)
 
 Any FAIL condition, or a socket/connect/bind/accept error, makes the
 process exit ``EXIT_FAILURE`` (``1``); a usage error (bad option, bad
