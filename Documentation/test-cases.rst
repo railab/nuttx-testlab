@@ -82,3 +82,36 @@ None. No test in this module carries a ``skip``, ``skipif`` or
 ``xfail`` marker; the only conditional marker in use is
 ``cmd_check("nettl_main")``, which is a build-capability check, not a
 known-failure marker.
+
+``ip`` module
+-------------
+
+Source: ``ntfc/tests/ip/test_ip_pair.py``. Two nodes and the host on
+bridge ``tl-br0`` (see :doc:`architecture`). Sessions:
+``sim-ip-pair``, ``qemu-armv8a-ip-pair``, ``rv-virt-ip-pair``,
+``qemu-intel64-ip-pair``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_ping_host``
+     - Each node: ``ping -c 3 10.42.0.1``, 0% loss.
+   * - ``test_ping_node_to_node``
+     - node0: ``ping -c 3 10.42.0.11``, 0% loss.
+   * - ``test_nettl_node_to_node``
+     - node0 client to node1 server: ``nettl: PASS`` (TCP 262144 bytes,
+       UDP 200 datagrams).
+   * - ``test_host_tcp_to_node``
+     - Host client to ``nettl -s`` on each node: 131072 bytes echoed
+       intact.
+   * - ``test_host_udp_to_node``
+     - Host client to ``nettl -s -u`` on each node: 100 datagrams echoed
+       intact.
+
+Known xfails: ``test_ping_node_to_node`` and ``test_nettl_node_to_node``
+are strict ``xfail`` when ``CONFIG_NET_E1000`` is set (qemu-intel64):
+``drivers/net/e1000.c`` never sets ``E1000_RCTL_BAM``, so broadcast ARP
+requests are dropped. Fix: apache/nuttx#20470.

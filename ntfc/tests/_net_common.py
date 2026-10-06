@@ -16,14 +16,34 @@
 #
 ############################################################################
 
-"""Shared nettl helpers for smoke tests."""
+"""Shared nettl helpers for smoke and multi-node IP tests."""
 
 import re
-from typing import Any
+import socket
+import struct
+from typing import Any, List, Optional, Tuple
 
 import pytest
 
+# Host-reachable nettl servers started by the current test: (addr, port, udp)
+
+_SERVERS: List[Tuple[str, int, bool]] = []
+
 VERDICT_RE = r"nettl: (PASS|FAIL) tx=[^\r\n]*[\r\n]"
+
+HOST_IP = "10.42.0.1"
+NODE_IPS = ("10.42.0.10", "10.42.0.11")
+UDP_END = 0xFFFFFFFF
+
+
+def pattern(offset: int, length: int) -> bytes:
+    """Return the nettl data pattern.
+
+    :param offset: absolute stream offset of the first byte
+    :param length: number of bytes
+    :return: pattern bytes, byte ``i`` is ``(i * 31 + 7) & 0xff``
+    """
+    return bytes(((offset + i) * 31 + 7) & 0xFF for i in range(length))
 
 
 def _core(node: int) -> Any:
@@ -35,18 +55,42 @@ def _core(node: int) -> Any:
     return pytest.products[node].core(0)
 
 
-def nettl_server(node: int, udp: bool, port: int) -> None:
+def nettl_server(
+    node: int, udp: bool, port: int, addr: Optional[str] = None
+) -> None:
     """Start a background nettl server on a node.
 
     :param node: product index
     :param udp: use UDP instead of TCP
     :param port: listen port
+    :param addr: node address reachable from the host; when given,
+     :func:`nettl_cleanup` unblocks a server the test left running
     """
     proto = "-u " if udp else ""
     ret = _core(node).sendCommand(
         f"nettl -s {proto}-p {port} -t 30 &", "listening", timeout=10
     )
     assert ret == 0
+    if addr:
+        _SERVERS.append((addr, port, udp))
+
+
+def nettl_cleanup() -> None:
+    """Make servers left running by a failed test exit normally.
+
+    A TCP server gets a connect + close (EOF), a UDP server gets the end
+    marker. Killing the task instead leaks its TCP connection in NuttX.
+    """
+    while _SERVERS:
+        addr, port, udp = _SERVERS.pop()
+        try:
+            if udp:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.sendto(struct.pack(">I", UDP_END), (addr, port))
+            else:
+                socket.create_connection((addr, port), timeout=2).close()
+        except OSError:
+            pass  # server already exited
 
 
 def nettl_client(
@@ -69,3 +113,60 @@ def nettl_client(
     )
     found = re.search(VERDICT_RE, ret.output)
     return found.group(0).rstrip("\r\n") if found else ""
+
+
+def host_tcp_echo_check(
+    addr: str, port: int, nbytes: int, timeout: float = 10.0
+) -> bool:
+    """Act as nettl TCP client from the host.
+
+    :param addr: node address running ``nettl -s``
+    :param port: node port
+    :param nbytes: total bytes to send
+    :param timeout: socket timeout in seconds
+    :return: True when every echoed byte matches the pattern
+    """
+    with socket.create_connection((addr, port), timeout=timeout) as sock:
+        sent = 0
+        while sent < nbytes:
+            chunk = pattern(sent, min(512, nbytes - sent))
+            sock.sendall(chunk)
+            echo = b""
+            while len(echo) < len(chunk):
+                data = sock.recv(len(chunk) - len(echo))
+                if not data:
+                    return False
+                echo += data
+            if echo != chunk:
+                return False
+            sent += len(chunk)
+    return True
+
+
+def host_udp_echo_check(
+    addr: str, port: int, count: int, length: int = 512, timeout: float = 2.0
+) -> bool:
+    """Act as nettl UDP client from the host.
+
+    :param addr: node address running ``nettl -s -u``
+    :param port: node port
+    :param count: number of datagrams
+    :param length: payload length
+    :param timeout: per-datagram timeout in seconds
+    :return: True when all datagrams are echoed intact
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(timeout)
+        ok = True
+        for seq in range(count):
+            dgram = struct.pack(">I", seq) + pattern(seq * length, length)
+            sock.sendto(dgram, (addr, port))
+            try:
+                echo = sock.recv(len(dgram) + 16)
+            except socket.timeout:
+                ok = False
+                break
+            ok = ok and echo == dgram
+        for _ in range(3):
+            sock.sendto(struct.pack(">I", UDP_END), (addr, port))
+    return ok

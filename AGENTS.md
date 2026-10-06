@@ -9,6 +9,7 @@ Rules for working in this repo. Humans: start with
 |-----------------|-------------------------------------------------------------------|
 | `apps/`         | In-repo C test apps (NuttX coding standard, CMake + Kconfig)      |
 | `ntfc/`         | NTFC Python test suites, configs and manifests                    |
+| `testenv/`      | Host-side network setup scripts for multi-node scenarios          |
 | `Documentation/`| Architecture and test-case documentation (Sphinx, RST)            |
 | `tools/docker/` | Docker image and runner used for local/CI reproduction            |
 | `.github/`      | PR checks (lint + tests), nightly, manual tests, Docker image publish |

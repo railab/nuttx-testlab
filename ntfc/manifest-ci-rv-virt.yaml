@@ -8,3 +8,7 @@ sessions:
   - name: "rv-virt-smoke"
     confpath: ntfc/configs/rv-virt/smoke/config.yaml
     testpath: ntfc/tests/smoke
+  - name: "rv-virt-ip-pair"
+    confpath: ntfc/configs/rv-virt/ip-pair/config.yaml
+    testpath: ntfc/tests/ip
+    resources: [tl-br0]

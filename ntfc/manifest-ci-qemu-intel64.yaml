@@ -8,3 +8,7 @@ sessions:
   - name: "qemu-intel64-smoke"
     confpath: ntfc/configs/qemu-intel64/smoke/config.yaml
     testpath: ntfc/tests/smoke
+  - name: "qemu-intel64-ip-pair"
+    confpath: ntfc/configs/qemu-intel64/ip-pair/config.yaml
+    testpath: ntfc/tests/ip
+    resources: [tl-br0]

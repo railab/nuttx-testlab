@@ -20,5 +20,17 @@
 
 import os
 import sys
+from typing import Iterator
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _net_common import nettl_cleanup  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def nettl_servers() -> Iterator[None]:
+    """Stop background nettl servers after each test."""
+    yield
+    nettl_cleanup()

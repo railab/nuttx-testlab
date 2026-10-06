@@ -41,6 +41,12 @@ pip install -q -r ntfc/requirements.txt
 
 # shellcheck disable=SC2317,SC2329 # invoked via trap
 cleanup() {
+  for envscript in testenv/*.sh; do
+    if [ -f "$envscript" ]; then
+      sh "$envscript" stop 2>/dev/null || true
+    fi
+  done
+
   mkdir -p /out
   cp -r result external/sources.txt /out/ 2>/dev/null || true
 
@@ -52,6 +58,12 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+for envscript in testenv/*.sh; do
+  if [ -f "$envscript" ]; then
+    sh "$envscript" start
+  fi
+done
 
 status=0
 

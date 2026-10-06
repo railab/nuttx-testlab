@@ -8,3 +8,7 @@ sessions:
   - name: "sim-smoke"
     confpath: ntfc/configs/sim/smoke/config.yaml
     testpath: ntfc/tests/smoke
+  - name: "sim-ip-pair"
+    confpath: ntfc/configs/sim/ip-pair/config.yaml
+    testpath: ntfc/tests/ip
+    resources: [tl-br0]

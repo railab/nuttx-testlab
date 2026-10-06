@@ -150,8 +150,9 @@ verdict line.
 NTFC configs
 ------------
 
-Each target has one NTFC config at
-``ntfc/configs/<target>/smoke/config.yaml``, keyed under ``config:``
+Each target has one NTFC config per scenario at
+``ntfc/configs/<target>/<scenario>/config.yaml`` (``smoke`` below,
+``ip-pair`` in `Host network (ip-pair)`_), keyed under ``config:``
 (``cwd: './external'``, ``build_dir: './build/<target>/smoke'``, ``kv:``
 overrides on top of an upstream ``defconfig``) and ``product:`` (one
 ``core0`` running the built image). ``ntfc/tests/ntfc.yaml`` declares
@@ -200,9 +201,51 @@ Manifests
 ``qemu-armv8a``, ``rv-virt``, ``qemu-intel64``) lists ``options:``
 (``fail_fast: false``, ``parallel: false``) and ``sessions:``, each a
 ``name``, a ``confpath`` (the target's ``config.yaml``) and a
-``testpath`` (a test module or directory). Today every manifest has
-exactly one session, pointing at ``ntfc/tests/smoke`` with
-``confpath: ntfc/configs/<target>/smoke/config.yaml``.
+``testpath`` (a test module or directory). Every manifest has two
+sessions: ``<target>-smoke`` (``ntfc/tests/smoke``) and
+``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``).
+
+Host network (ip-pair)
+----------------------
+
+``testenv/ip-pair.sh {start|stop|status}`` creates bridge ``tl-br0``
+(``10.42.0.1/24``, the host side) and TAPs ``tl-tap0``/``tl-tap1``.
+Node IPs come from ``CONFIG_NETINIT_IPADDR`` (gateway ``10.42.0.1``).
+
+.. list-table::
+   :header-rows: 1
+
+   * - Node
+     - IP
+     - MAC
+     - Attached via
+   * - node0
+     - ``10.42.0.10``
+     - ``52:54:00:2a:00:10``
+     - ``tl-tap0``
+   * - node1
+     - ``10.42.0.11``
+     - ``52:54:00:2a:00:11``
+     - ``tl-tap1``
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - defconfig
+     - NIC
+   * - ``sim``
+     - ``boards/sim/sim/sim/configs/tcpblaster``
+     - own TAP joined to ``tl-br0`` (``CONFIG_SIM_NET_BRIDGE``)
+   * - ``qemu-armv8a``
+     - ``boards/arm64/qemu/qemu-armv8a/configs/netnsh``
+     - ``virtio-net-device``
+   * - ``rv-virt``
+     - ``boards/risc-v/qemu-rv/rv-virt/configs/netnsh``
+     - ``virtio-net-device``
+   * - ``qemu-intel64``
+     - ``boards/x86_64/qemu/qemu-intel64/configs/jumbo``
+     - ``e1000``
 
 Docker image and runner
 ------------------------
@@ -239,7 +282,7 @@ container can hand ownership of ``/out`` back at the end.
 2. Runs ``repo_init.sh``, creates a venv and ``pip install``s
    ``ntfc/requirements.txt``; if ``NTFC_PIP_SPEC`` is set, force-
    reinstalls it (``--no-deps``) afterward to override the ``ntfc``
-   package spec.
+   package spec. Runs ``start`` on every ``testenv/*.sh``.
 3. If ``TESTLAB_SESSION`` is unset, runs
    ``python -m ntfc test --manifest <manifest>`` (the whole manifest);
    otherwise looks up that session's ``confpath``/``testpath`` in the
@@ -248,7 +291,8 @@ container can hand ownership of ``/out`` back at the end.
    where ``testpath`` is overridden by ``TESTLAB_TESTPATH`` if that is
    also set (``TESTLAB_TESTPATH`` without ``TESTLAB_SESSION`` is a
    usage error, exit ``2``).
-4. On exit (success or failure), copies ``result/`` and
+4. On exit (success or failure), runs ``stop`` on every
+   ``testenv/*.sh``, copies ``result/`` and
    ``external/sources.txt`` into ``/out``, then ``chown``s ``/out`` to
    ``TESTLAB_OWNER`` if that is set.
 

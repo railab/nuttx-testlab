@@ -57,27 +57,16 @@ SESSION_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 
 def _is_session_like(literal: str, targets: Set[str]) -> bool:
-    """Decide whether a literal could be a manifest session name.
+    """Decide whether a literal is a manifest session name.
 
-    A session name is made only of lowercase letters, digits and
-    hyphens, and contains at least one hyphen (every real session name
-    is ``<target>-<scenario>``). Target names themselves (e.g.
-    ``qemu-armv8a``, ``rv-virt``) have the same shape but are not
-    session names, so they are excluded explicitly. This keeps
-    unrelated literals (file paths, commands, verdict lines, bare
-    target names) out of the comparison.
+    Session names are ``<target>-<scenario>`` with a known target.
 
-    :param literal: the literal's text, without the surrounding
-        double backticks
-    :param targets: known target directory names to exclude
+    :param literal: the literal's text, without the double backticks
+    :param targets: known target names (``ntfc/configs/*``)
     :return: ``True`` if the literal is shaped like a session name
     """
-    return (
-        "-" in literal
-        and literal[0] != "-"
-        and literal[-1] != "-"
-        and set(literal) <= SESSION_CHARS
-        and literal not in targets
+    return set(literal) <= SESSION_CHARS and any(
+        literal.startswith(f"{target}-") for target in targets
     )
 
 
