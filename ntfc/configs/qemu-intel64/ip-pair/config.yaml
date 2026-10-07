@@ -3,22 +3,6 @@
 config:
   cwd: './external'
   build_dir: './build/qemu-intel64/ip-pair'
-  kv:
-    CONFIG_DEBUG_SYMBOLS: "y"
-    CONFIG_TESTLAB_NETTL: "y"
-    CONFIG_TESTLAB_NETTL_BUFSIZE: 1024
-    CONFIG_SYSTEM_PING: "y"
-    CONFIG_NET_SOCKOPTS: "y"
-    CONFIG_SCHED_WORKQUEUE: "y"
-    CONFIG_SCHED_HPWORK: "y"
-    CONFIG_NETDEV_LATEINIT: "y"
-    CONFIG_NET_TCP_WRITE_BUFFERS: "y"
-    CONFIG_NET_UDP_WRITE_BUFFERS: "y"
-    CONFIG_NET_TCP_PREALLOC_CONNS: 16
-    CONFIG_NET_UDP_PREALLOC_CONNS: 16
-    CONFIG_NETINIT_DRIPADDR: "0x0a2a0001"
-    CONFIG_NETINIT_NOMAC: "n"
-    CONFIG_EXAMPLES_TCPBLASTER: "n"
 
 product0:
   name: "intel64-node0"
@@ -32,7 +16,7 @@ product0:
                   -serial mon:stdio
                   -netdev tap,id=n0,ifname=tl-tap0,script=no,downscript=no
                   -device e1000,netdev=n0,mac=52:54:00:2a:00:10'
-      defconfig: 'boards/x86_64/qemu/qemu-intel64/configs/jumbo'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/ip-pair'
       kv:
         CONFIG_NETINIT_IPADDR: "0x0a2a000a"
 
@@ -48,6 +32,6 @@ product1:
                   -serial mon:stdio
                   -netdev tap,id=n1,ifname=tl-tap1,script=no,downscript=no
                   -device e1000,netdev=n1,mac=52:54:00:2a:00:11'
-      defconfig: 'boards/x86_64/qemu/qemu-intel64/configs/jumbo'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/ip-pair'
       kv:
         CONFIG_NETINIT_IPADDR: "0x0a2a000b"

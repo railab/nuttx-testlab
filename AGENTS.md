@@ -8,6 +8,7 @@ Rules for working in this repo. Humans: start with
 | Path            | Contents                                                          |
 |-----------------|-------------------------------------------------------------------|
 | `apps/`         | In-repo C test apps (NuttX coding standard, CMake + Kconfig)      |
+| `boards/`       | Out-of-tree NuttX defconfigs, mirroring upstream board paths      |
 | `ntfc/`         | NTFC Python test suites, configs and manifests                    |
 | `testenv/`      | Host-side network setup scripts for multi-node scenarios          |
 | `Documentation/`| Architecture and test-case documentation (Sphinx, RST)            |
@@ -35,10 +36,18 @@ Rules for working in this repo. Humans: start with
   `https://github.com/apache/nuttx-apps` @ `master`; every value overridable
   by environment variable (`NUTTX_REPO`, `NUTTX_REF`, `APPS_REPO`,
   `APPS_REF`) and by the matching `workflow_dispatch` input.
-- NTFC configs use upstream defconfigs plus `kv` overrides; do not copy
-  board code into this repo unless a scenario cannot work otherwise.
+- Defconfigs live in this repo under
+  `boards/<arch>/<chip>/<board>/configs/<scenario>/defconfig`, mirroring
+  the upstream NuttX board path (out-of-tree configuration:
+  `CONFIG_ARCH_BOARD_CUSTOM=y`, `CONFIG_ARCH_BOARD_CUSTOM_DIR` set to
+  the upstream board directory, e.g. `"./boards/sim/sim/sim"`). Do not
+  copy board source code into this repo. NTFC `kv` overrides are only
+  for values that must differ between products of the same scenario
+  (e.g. `CONFIG_NETINIT_IPADDR`); everything else belongs in the
+  defconfig.
 - NTFC config paths: `cwd: './external'`, `build_dir: './build/...'`
-  (relative to the repo root); `defconfig` is relative to `external/nuttx`.
+  (relative to the repo root); `defconfig` is relative to
+  `external/nuttx`, e.g. `'../../boards/sim/sim/sim/configs/smoke'`.
 - Do not commit unless explicitly asked.
 
 ## Commit messages
@@ -72,12 +81,18 @@ Signed-off-by: AuthorName <Valid@EmailAddress>
 
 1. C test app under `apps/<name>/` if the scenario needs new target-side
    behavior.
-2. NTFC config for each target:
-   `ntfc/configs/<target>/<scenario>/config.yaml`.
-3. Test module `ntfc/tests/<area>/test_*.py`, using shared helpers
+2. Defconfig for each target:
+   `boards/<arch>/<chip>/<board>/configs/<scenario>/defconfig`
+   (`CONFIG_ARCH_BOARD_CUSTOM=y` pointing at the upstream board; see
+   `Defconfigs` in `Documentation/architecture.rst`).
+3. NTFC config for each target:
+   `ntfc/configs/<target>/<scenario>/config.yaml`, `defconfig` pointing
+   at the new defconfig, `kv` only for values that must differ between
+   products.
+4. Test module `ntfc/tests/<area>/test_*.py`, using shared helpers
    (`ntfc/tests/_*.py`) and the `cmd_check` marker where appropriate.
-4. Sessions named `<target>-<scenario>` in `ntfc/manifest-ci-<target>.yaml`.
-5. Document it: every new `test_*` function and every new manifest
+5. Sessions named `<target>-<scenario>` in `ntfc/manifest-ci-<target>.yaml`.
+6. Document it: every new `test_*` function and every new manifest
    session name must be added to `Documentation/test-cases.rst` (as a
    RST ``literal``, exact name). `tools/ci/check-docs.py` fails the
    build if a test or session is undocumented, or if the docs name one

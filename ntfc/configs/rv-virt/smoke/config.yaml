@@ -3,17 +3,6 @@
 config:
   cwd: './external'
   build_dir: './build/rv-virt/smoke'
-  kv:
-    CONFIG_DEBUG_SYMBOLS: "y"
-    CONFIG_TESTLAB_NETTL: "y"
-    CONFIG_NET: "y"
-    CONFIG_NET_TCP: "y"
-    CONFIG_NET_UDP: "y"
-    CONFIG_NET_LOOPBACK: "y"
-    CONFIG_NET_SOCKOPTS: "y"
-    CONFIG_SCHED_WORKQUEUE: "y"
-    CONFIG_SCHED_HPWORK: "y"
-    CONFIG_NETDEV_LATEINIT: "y"
 
 product:
   name: "rv-virt-smoke"
@@ -25,4 +14,4 @@ product:
       exec_path: 'qemu-system-riscv32'
       exec_args: '-semihosting -M virt,aclint=on -cpu rv32 -smp 1
                  -bios none -nographic'
-      defconfig: 'boards/risc-v/qemu-rv/rv-virt/configs/nsh'
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/smoke'

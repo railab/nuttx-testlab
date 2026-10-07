@@ -20,7 +20,8 @@ Flow overview
              |
              v
    NTFC build  (ntfc/configs/<target>/<scenario>/config.yaml:
-                defconfig + kv overrides, "python -m ntfc test ...")
+                defconfig (boards/ in this repo) + per-node kv,
+                "python -m ntfc test ...")
              |
              v
    target  (sim process, or qemu-system-* under QEMU)
@@ -202,18 +203,32 @@ NTFC configs
 Each target has one NTFC config per scenario at
 ``ntfc/configs/<target>/<scenario>/config.yaml`` (``smoke`` below,
 ``ip-pair`` in `Host network (ip-pair)`_), keyed under ``config:``
-(``cwd: './external'``, ``build_dir: './build/<target>/smoke'``, ``kv:``
-overrides on top of an upstream ``defconfig``) and ``product:`` (one
-``core0`` running the built image). ``ntfc/tests/ntfc.yaml`` declares
-the NTFC module name ``"Testlab"`` with one requirement,
-``CONFIG_SYSTEM_NSH: True``.
+(``cwd: './external'``, ``build_dir: './build/<target>/smoke'``) and
+``product:`` (one ``core0`` running the built image). Each core's
+``defconfig`` points at a defconfig in this repo's ``boards/`` tree
+(path relative to ``external/nuttx``, e.g.
+``../../boards/sim/sim/sim/configs/smoke``), not at an upstream NuttX
+defconfig. ``ntfc/tests/ntfc.yaml`` declares the NTFC module name
+``"Testlab"`` with one requirement, ``CONFIG_SYSTEM_NSH: True``.
 
-All four targets share the same ``kv`` base
-(``CONFIG_DEBUG_SYMBOLS``, ``CONFIG_TESTLAB_NETTL``, ``CONFIG_NET``,
-``CONFIG_NET_TCP``, ``CONFIG_NET_UDP``, ``CONFIG_NET_LOOPBACK``,
-``CONFIG_NET_SOCKOPTS``, all ``"y"``); the three QEMU targets add
-``CONFIG_SCHED_WORKQUEUE``, ``CONFIG_SCHED_HPWORK`` and
-``CONFIG_NETDEV_LATEINIT`` (all ``"y"``).
+Defconfigs
+----------
+
+``boards/<arch>/<chip>/<board>/configs/<scenario>/defconfig`` mirrors
+the upstream NuttX board path and holds the full configuration for that
+scenario (an out-of-tree configuration, see NuttX's
+``CMakeLists.txt``): ``CONFIG_ARCH_BOARD_CUSTOM=y``,
+``CONFIG_ARCH_BOARD_CUSTOM_DIR`` set to the upstream board directory
+(e.g. ``"./boards/sim/sim/sim"``, the leading ``./`` keeps the board's
+own ``Kconfig`` sourced instead of the empty out-of-tree stub),
+``CONFIG_ARCH_BOARD_CUSTOM_DIR_RELPATH=y`` and
+``CONFIG_ARCH_BOARD_CUSTOM_NAME``. No board source is copied into this
+repo; the upstream board directory under ``external/nuttx`` is used
+as-is. ``config.yaml`` only keeps ``kv:`` overrides that must differ
+between products of the same scenario (currently
+``CONFIG_NETINIT_IPADDR``, and on ``sim`` also
+``CONFIG_NETINIT_MACADDR_1``, for the two `Host network (ip-pair)`_
+nodes); everything else lives in the defconfig.
 
 .. list-table::
    :header-rows: 1
@@ -223,23 +238,23 @@ All four targets share the same ``kv`` base
      - device / exec_path
      - exec_args
    * - ``sim``
-     - ``boards/sim/sim/sim/configs/nsh``
+     - ``boards/sim/sim/sim/configs/smoke``
      - ``sim``
      - (none; runs as a host process)
    * - ``qemu-armv8a``
-     - ``boards/arm64/qemu/qemu-armv8a/configs/nsh``
+     - ``boards/arm64/qemu/qemu-armv8a/configs/smoke``
      - ``qemu`` / ``qemu-system-aarch64``
      - ``-cpu cortex-a53 -nographic -machine
        virt,virtualization=on,gic-version=3 -net none -chardev
        stdio,id=con,mux=on -serial chardev:con -mon
        chardev=con,mode=readline``
    * - ``rv-virt``
-     - ``boards/risc-v/qemu-rv/rv-virt/configs/nsh``
+     - ``boards/risc-v/qemu-rv/rv-virt/configs/smoke``
      - ``qemu`` / ``qemu-system-riscv32``
      - ``-semihosting -M virt,aclint=on -cpu rv32 -smp 1 -bios none
        -nographic``
    * - ``qemu-intel64``
-     - ``boards/x86_64/qemu/qemu-intel64/configs/nsh``
+     - ``boards/x86_64/qemu/qemu-intel64/configs/smoke``
      - ``qemu`` / ``qemu-system-x86_64``
      - ``-m 1G -cpu host -enable-kvm -nographic -serial mon:stdio``
 
@@ -287,16 +302,16 @@ Node IPs come from ``CONFIG_NETINIT_IPADDR`` (gateway ``10.42.0.1``).
      - defconfig
      - NIC
    * - ``sim``
-     - ``boards/sim/sim/sim/configs/tcpblaster``
+     - ``boards/sim/sim/sim/configs/ip-pair``
      - own TAP joined to ``tl-br0`` (``CONFIG_SIM_NET_BRIDGE``)
    * - ``qemu-armv8a``
-     - ``boards/arm64/qemu/qemu-armv8a/configs/netnsh``
+     - ``boards/arm64/qemu/qemu-armv8a/configs/ip-pair``
      - ``virtio-net-device``
    * - ``rv-virt``
-     - ``boards/risc-v/qemu-rv/rv-virt/configs/netnsh``
+     - ``boards/risc-v/qemu-rv/rv-virt/configs/ip-pair``
      - ``virtio-net-device``
    * - ``qemu-intel64``
-     - ``boards/x86_64/qemu/qemu-intel64/configs/jumbo``
+     - ``boards/x86_64/qemu/qemu-intel64/configs/ip-pair``
      - ``e1000``
 
 Host SocketCAN bus (can-bus)
@@ -312,10 +327,12 @@ all nodes and the host share it as one bus. Nodes run ``ifup can0``.
      - defconfig
      - Joins ``can0`` via
    * - ``sim``
-     - ``boards/sim/sim/sim/configs/can``
+     - ``boards/sim/sim/sim/configs/can-bus``
      - ``CONFIG_SIM_CANDEV_SOCK`` (host ``can0``)
    * - ``qemu-intel64``
-     - ``boards/x86_64/qemu/qemu-intel64/configs/jumbo``
+     - ``boards/x86_64/qemu/qemu-intel64/configs/can-bus-kvaser`` (node0),
+       ``boards/x86_64/qemu/qemu-intel64/configs/can-bus-ctucanfd``
+       (node1)
      - QEMU ``can-host-socketcan,if=can0``; node0 ``kvaser_pci``
        (``CAN_KVASER``, classic), node1 ``ctucan_pci``
        (``CAN_CTUCANFD``, CAN FD)

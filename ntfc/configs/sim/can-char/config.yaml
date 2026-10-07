@@ -3,11 +3,6 @@
 config:
   cwd: './external'
   build_dir: './build/sim/can-char'
-  kv:
-    CONFIG_DEBUG_SYMBOLS: "y"
-    CONFIG_TESTLAB_CANTL: "y"
-    CONFIG_NET_CAN: "n"
-    CONFIG_CAN_RXFIFOSIZE: 64
 
 product0:
   name: "sim-node0"
@@ -16,7 +11,7 @@ product0:
       name: 'main'
       device: 'sim'
       line_buffered: true
-      defconfig: 'boards/sim/sim/sim/configs/can'
+      defconfig: '../../boards/sim/sim/sim/configs/can-char'
 
 product1:
   name: "sim-node1"
@@ -25,4 +20,4 @@ product1:
       name: 'main'
       device: 'sim'
       line_buffered: true
-      defconfig: 'boards/sim/sim/sim/configs/can'
+      defconfig: '../../boards/sim/sim/sim/configs/can-char'

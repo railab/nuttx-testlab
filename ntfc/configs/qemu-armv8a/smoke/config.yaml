@@ -3,17 +3,6 @@
 config:
   cwd: './external'
   build_dir: './build/qemu-armv8a/smoke'
-  kv:
-    CONFIG_DEBUG_SYMBOLS: "y"
-    CONFIG_TESTLAB_NETTL: "y"
-    CONFIG_NET: "y"
-    CONFIG_NET_TCP: "y"
-    CONFIG_NET_UDP: "y"
-    CONFIG_NET_LOOPBACK: "y"
-    CONFIG_NET_SOCKOPTS: "y"
-    CONFIG_SCHED_WORKQUEUE: "y"
-    CONFIG_SCHED_HPWORK: "y"
-    CONFIG_NETDEV_LATEINIT: "y"
 
 product:
   name: "qemu-armv8a-smoke"
@@ -27,4 +16,4 @@ product:
                  -machine virt,virtualization=on,gic-version=3
                  -net none -chardev stdio,id=con,mux=on
                  -serial chardev:con -mon chardev=con,mode=readline'
-      defconfig: 'boards/arm64/qemu/qemu-armv8a/configs/nsh'
+      defconfig: '../../boards/arm64/qemu/qemu-armv8a/configs/smoke'

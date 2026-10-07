@@ -3,12 +3,6 @@
 config:
   cwd: './external'
   build_dir: './build/qemu-intel64/can-bus'
-  kv:
-    CONFIG_DEBUG_SYMBOLS: "y"
-    CONFIG_TESTLAB_CANTL: "y"
-    CONFIG_NET_CAN: "y"
-    CONFIG_NET_CAN_SOCK_OPTS: "y"
-    CONFIG_EXAMPLES_TCPBLASTER: "n"
 
 product0:
   name: "intel64-node0"
@@ -23,10 +17,7 @@ product0:
                   -object can-bus,id=canbus0
                   -object can-host-socketcan,id=canhost0,if=can0,canbus=canbus0
                   -device kvaser_pci,canbus=canbus0'
-      defconfig: 'boards/x86_64/qemu/qemu-intel64/configs/jumbo'
-      kv:
-        CONFIG_CAN_KVASER: "y"
-        CONFIG_CAN_KVASER_SOCKET: "y"
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/can-bus-kvaser'
 
 product1:
   name: "intel64-node1"
@@ -42,7 +33,4 @@ product1:
                   -object can-host-socketcan,id=canhost0,if=can0,canbus=canbus0
                   -object can-bus,id=canbus1
                   -device ctucan_pci,canbus0=canbus0,canbus1=canbus1'
-      defconfig: 'boards/x86_64/qemu/qemu-intel64/configs/jumbo'
-      kv:
-        CONFIG_CAN_CTUCANFD: "y"
-        CONFIG_CAN_CTUCANFD_SOCKET: "y"
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/can-bus-ctucanfd'

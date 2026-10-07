@@ -3,17 +3,6 @@
 config:
   cwd: './external'
   build_dir: './build/qemu-intel64/smoke'
-  kv:
-    CONFIG_DEBUG_SYMBOLS: "y"
-    CONFIG_TESTLAB_NETTL: "y"
-    CONFIG_NET: "y"
-    CONFIG_NET_TCP: "y"
-    CONFIG_NET_UDP: "y"
-    CONFIG_NET_LOOPBACK: "y"
-    CONFIG_NET_SOCKOPTS: "y"
-    CONFIG_SCHED_WORKQUEUE: "y"
-    CONFIG_SCHED_HPWORK: "y"
-    CONFIG_NETDEV_LATEINIT: "y"
 
 product:
   name: "qemu-intel64-smoke"
@@ -23,4 +12,4 @@ product:
       device: 'qemu'
       exec_path: 'qemu-system-x86_64'
       exec_args: '-m 1G -cpu host -enable-kvm -nographic -serial mon:stdio'
-      defconfig: 'boards/x86_64/qemu/qemu-intel64/configs/nsh'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/smoke'
