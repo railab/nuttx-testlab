@@ -1,0 +1,29 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_CANTL
+	tristate "cantl: SocketCAN raw frame test tool"
+	default n
+	depends on NET_CAN
+	---help---
+		Raw SocketCAN sender/receiver that exchanges a deterministic
+		sequence-numbered data pattern and prints a PASS/FAIL verdict
+		line.
+
+if TESTLAB_CANTL
+
+config TESTLAB_CANTL_PROGNAME
+	string "Program name"
+	default "cantl"
+
+config TESTLAB_CANTL_PRIORITY
+	int "cantl task priority"
+	default 100
+
+config TESTLAB_CANTL_STACKSIZE
+	int "cantl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

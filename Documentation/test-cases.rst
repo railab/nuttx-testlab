@@ -136,3 +136,33 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
        still allocates a socket and is refused by the host
        (``connect failed 111``). Runs last in the session
        (``@pytest.mark.run(order=-1)``): it poisons the node.
+
+``can`` module
+---------------
+
+Source: ``ntfc/tests/can/test_can_bus.py``. Two nodes and the host
+share one SocketCAN bus, vcan ``can0`` (see :doc:`architecture`).
+Sessions: ``sim-can-bus``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_can_node_to_node``
+     - Classic and CAN FD variants: node 0 ``cantl -s`` to node 1's
+       filtered ``cantl -r``. PASS: node 0 reports
+       ``cantl: PASS tx=30`` and node 1 reports
+       ``cantl: PASS rx=30 lost=0 err=0``.
+   * - ``test_can_host_to_nodes``
+     - The host sends 20 frames; both nodes' receivers report
+       ``cantl: PASS rx=20 lost=0 err=0``.
+   * - ``test_can_node_to_host``
+     - Node 0 sends 20 frames to a host socket bound before the send
+       starts; the host decodes all 20 intact (0 lost, 0 corrupt).
+   * - ``test_can_filter``
+     - A node 1 receiver filtered on CAN ID ``0x123`` still reports
+       ``cantl: PASS rx=20 lost=0 err=0`` while the host sends
+       unrelated ``0x456`` frames before, during and after node 0's
+       ``0x123`` transmission.

@@ -12,3 +12,6 @@ sessions:
     confpath: ntfc/configs/qemu-intel64/ip-pair/config.yaml
     testpath: ntfc/tests/ip
     resources: [tl-br0]
+  # qemu-intel64-can-bus (ntfc/configs/qemu-intel64/can-bus) is not listed:
+  # the kvaser/ctucanfd PCI SocketCAN drivers do not compile on nuttx
+  # master, and one failing build aborts the whole manifest.

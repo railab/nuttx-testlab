@@ -172,6 +172,22 @@ numeric argument, both/neither of ``-s``/``-c``, or a UDP ``-l`` out of
 range) prints usage and exits ``EXIT_FAILURE`` before printing any
 verdict line.
 
+``apps/cantl``
+~~~~~~~~~~~~~~
+
+``cantl`` (``CONFIG_TESTLAB_CANTL``, needs ``NET_CAN``)::
+
+   cantl -s ifname [-n count] [-i id] [-f] [-g gap_ms]
+   cantl -r ifname [-n count] [-i id] [-f] [-t sec]
+
+- Defaults: 50 frames, ID ``0x123``, classic CAN (``-f``: CAN FD, 64-byte
+  payload), receiver idle timeout 10 s.
+- Payload: 4-byte big-endian sequence + bytes ``(seq * 31 + 7 + k) & 0xff``.
+- The receiver sets an exact ``CAN_RAW_FILTER`` on ``-i`` and prints
+  ``cantl: listening`` when ready.
+- Verdict: ``cantl: PASS|FAIL tx=<n>`` (sender),
+  ``cantl: PASS|FAIL rx=<n> lost=<n> err=<n>`` (receiver); exit 0 on PASS.
+
 NTFC configs
 ------------
 
@@ -229,6 +245,8 @@ Manifests
 ``testpath`` (a test module or directory). Every manifest has two
 sessions: ``<target>-smoke`` (``ntfc/tests/smoke``) and
 ``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``).
+``sim`` also has ``sim-can-bus`` (``ntfc/tests/can``,
+``resources: [can0]``, see `Host SocketCAN bus (can-bus)`_).
 
 Host network (ip-pair)
 ----------------------
@@ -271,6 +289,27 @@ Node IPs come from ``CONFIG_NETINIT_IPADDR`` (gateway ``10.42.0.1``).
    * - ``qemu-intel64``
      - ``boards/x86_64/qemu/qemu-intel64/configs/jumbo``
      - ``e1000``
+
+Host SocketCAN bus (can-bus)
+-----------------------------
+
+``testenv/can-bus.sh {start|stop|status}`` creates host vcan ``can0``;
+all nodes and the host share it as one bus. Nodes run ``ifup can0``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - defconfig
+     - Joins ``can0`` via
+   * - ``sim``
+     - ``boards/sim/sim/sim/configs/can``
+     - ``CONFIG_SIM_CANDEV_SOCK`` (host ``can0``)
+   * - ``qemu-intel64``
+     - ``boards/x86_64/qemu/qemu-intel64/configs/jumbo``
+     - QEMU ``can-host-socketcan,if=can0``; node0 ``kvaser_pci``
+       (``CAN_KVASER``, classic), node1 ``ctucan_pci``
+       (``CAN_CTUCANFD``, CAN FD)
 
 Docker image and runner
 ------------------------

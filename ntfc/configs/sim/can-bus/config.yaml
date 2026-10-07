@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/sim/can-bus'
+  kv:
+    CONFIG_DEBUG_SYMBOLS: "y"
+    CONFIG_TESTLAB_CANTL: "y"
+    CONFIG_IOB_NBUFFERS: 256
+    CONFIG_CAN_PREALLOC_CONNS: 16
+    CONFIG_IOB_NCHAINS: 64
+
+product0:
+  name: "sim-node0"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: 'boards/sim/sim/sim/configs/can'
+
+product1:
+  name: "sim-node1"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: 'boards/sim/sim/sim/configs/can'

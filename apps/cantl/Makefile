@@ -1,4 +1,5 @@
 ############################################################################
+# apps/cantl/Makefile
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -16,29 +17,13 @@
 #
 ############################################################################
 
-"""Shared pytest setup for nuttx-testlab NTFC tests."""
+include $(APPDIR)/Make.defs
 
-import os
-import sys
-from typing import Iterator
+PROGNAME  = $(CONFIG_TESTLAB_CANTL_PROGNAME)
+PRIORITY  = $(CONFIG_TESTLAB_CANTL_PRIORITY)
+STACKSIZE = $(CONFIG_TESTLAB_CANTL_STACKSIZE)
+MODULE    = $(CONFIG_TESTLAB_CANTL)
 
-import pytest
+MAINSRC = cantl_main.c
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from _can_common import cantl_cleanup  # noqa: E402
-from _net_common import nettl_cleanup  # noqa: E402
-
-
-@pytest.fixture(autouse=True)
-def nettl_servers() -> Iterator[None]:
-    """Stop background nettl servers after each test."""
-    yield
-    nettl_cleanup()
-
-
-@pytest.fixture(autouse=True)
-def cantl_receivers() -> Iterator[None]:
-    """Let background cantl receivers left by a failed test exit."""
-    yield
-    cantl_cleanup()
+include $(APPDIR)/Application.mk
