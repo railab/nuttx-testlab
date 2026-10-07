@@ -16,13 +16,21 @@
 #
 ############################################################################
 
-"""Two nodes and the host on one SocketCAN bus (vcan ``can0``)."""
+"""Two nodes and the host on one CAN bus (vcan ``can0``).
+
+Each node reaches the bus over whichever backend its build has: SocketCAN
+(``CONFIG_NET_CAN``, ifname ``can0``) or the CAN character driver
+(``CONFIG_CAN``, ``/dev/can0``); see ``_can_common.can_endpoint()``. Both
+backends are driven through the same ``cantl`` tool and share the host's
+vcan ``can0``, so this module runs unmodified against either.
+"""
 
 import pytest
 from _can_common import (
     CAN_ID_ALT,
     CAN_ID_DEFAULT,
     CAN_IFNAME,
+    can_endpoint,
     canfd_supported,
     cantl_receiver_start,
     cantl_receiver_verdict,
@@ -32,7 +40,7 @@ from _can_common import (
     host_can_verify,
 )
 
-pytestmark = [pytest.mark.dep_config("CONFIG_NET_CAN")]
+pytestmark = [pytest.mark.dep_config("CONFIG_CAN")]
 
 # Gap between host-sent frames. 1 ms is ~8x a classic 8-byte frame at
 # 1 Mbit/s, enough for a node to drain its RX FIFO between frames.
@@ -40,33 +48,50 @@ pytestmark = [pytest.mark.dep_config("CONFIG_NET_CAN")]
 HOST_GAP_S = 0.001
 
 
-# arch/sim/src/sim/sim_cansock.c:sim_can_work() reads one frame from the
-# host socket per run and requeues itself after USEC2TICK(1000), one 10 ms
-# sim tick. Frames from an earlier burst are still queued when this test's
-# receiver starts, so it consumes stale frames and misses the new ones.
+# arch/sim/src/sim/sim_cansock.c:sim_can_work() (SocketCAN) and
+# arch/sim/src/sim/sim_canchar.c:sim_can_work() (character driver) each
+# read one frame from the host socket per run and requeue themselves after
+# USEC2TICK(1000), one 10 ms sim tick. Frames from an earlier burst are
+# still queued when this test's receiver starts, so it consumes stale
+# frames and misses the new ones.
 
 SIM_CAN_RX_BUG = (
-    "sim_cansock.c drains one host frame per 10 ms tick: stale frames "
+    "sim_{}.c drains one host frame per 10 ms tick: stale frames "
     "from earlier bursts reach later sockets (nuttx 20f3b659372c)"
 )
 
 
 @pytest.fixture
 def sim_can_rx_xfail(request: pytest.FixtureRequest) -> None:
-    """Expect stale-frame delivery on the sim SocketCAN driver.
+    """Expect stale-frame delivery on the sim CAN driver.
 
     :param request: pytest request of the test using this fixture
     """
-    if pytest.products[1].core(0).conf.kv_check("CONFIG_ARCH_SIM"):
+    core = pytest.products[1].core(0)
+    if core.conf.kv_check("CONFIG_ARCH_SIM"):
+        if core.conf.kv_check("CONFIG_NET_CAN"):
+            backend = "cansock"
+        else:
+            backend = "canchar"
+
         request.applymarker(
-            pytest.mark.xfail(strict=True, reason=SIM_CAN_RX_BUG)
+            pytest.mark.xfail(
+                strict=True, reason=SIM_CAN_RX_BUG.format(backend)
+            )
         )
 
 
 @pytest.fixture(scope="module", autouse=True)
 def can_bus_up() -> None:
-    """Bring up ``can0`` on every node once per test module."""
+    """Bring up ``can0`` on every node that uses SocketCAN.
+
+    A node using the CAN character driver needs no interface to be
+    brought up: ``/dev/can0`` is ready as soon as the board boots.
+    """
     for node in range(len(pytest.products)):
+        if can_endpoint(node) != CAN_IFNAME:
+            continue
+
         ret = (
             pytest.products[node]
             .core(0)
@@ -138,7 +163,8 @@ def test_can_filter() -> None:
     Node 0 and the host both send: node 0 sends the frames the receiver
     expects (``CAN_ID_DEFAULT``), the host interleaves unrelated noise
     frames on ``CAN_ID_ALT`` before, during and after. The receiver's
-    ``CAN_RAW_FILTER`` must pass only the matching ID.
+    exact-ID filter (hardware, or software when the driver has none)
+    must pass only the matching ID.
     """
     count = 20
     cantl_receiver_start(1, count, can_id=CAN_ID_DEFAULT)

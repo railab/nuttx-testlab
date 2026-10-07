@@ -180,6 +180,10 @@ verdict line.
    cantl -s ifname [-n count] [-i id] [-f] [-g gap_ms]
    cantl -r ifname [-n count] [-i id] [-f] [-t sec]
 
+Also builds with ``CAN`` alone (no ``NET_CAN``) to drive the CAN
+character driver instead of SocketCAN; pass a device path starting
+with ``/`` in place of the ifname, e.g. ``cantl -s /dev/can0 ...``.
+
 - Defaults: 50 frames, ID ``0x123``, classic CAN (``-f``: CAN FD, 64-byte
   payload), receiver idle timeout 10 s.
 - Payload: 4-byte big-endian sequence + bytes ``(seq * 31 + 7 + k) & 0xff``.
@@ -187,6 +191,10 @@ verdict line.
   ``cantl: listening`` when ready.
 - Verdict: ``cantl: PASS|FAIL tx=<n>`` (sender),
   ``cantl: PASS|FAIL rx=<n> lost=<n> err=<n>`` (receiver); exit 0 on PASS.
+- On the character driver backend, the receiver installs the exact ID
+  as a ``CANIOC_ADD_STDFILTER`` hardware filter when the lower-half
+  driver supports it, else filters in software (e.g. the sim character
+  driver, which always returns ``-ENOTTY`` for ``CANIOC_*``).
 
 NTFC configs
 ------------
@@ -245,8 +253,9 @@ Manifests
 ``testpath`` (a test module or directory). Every manifest has two
 sessions: ``<target>-smoke`` (``ntfc/tests/smoke``) and
 ``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``).
-``sim`` also has ``sim-can-bus`` (``ntfc/tests/can``,
-``resources: [can0]``, see `Host SocketCAN bus (can-bus)`_).
+``sim`` also has ``sim-can-bus`` and ``sim-can-char``
+(``ntfc/tests/can``, ``resources: [can0]``, see
+`Host SocketCAN bus (can-bus)`_).
 
 Host network (ip-pair)
 ----------------------

@@ -4,13 +4,15 @@
 #
 
 config TESTLAB_CANTL
-	tristate "cantl: SocketCAN raw frame test tool"
+	tristate "cantl: CAN raw frame test tool"
 	default n
-	depends on NET_CAN
+	depends on NET_CAN || CAN
 	---help---
-		Raw SocketCAN sender/receiver that exchanges a deterministic
+		Raw CAN sender/receiver that exchanges a deterministic
 		sequence-numbered data pattern and prints a PASS/FAIL verdict
-		line.
+		line.  Talks SocketCAN when given an ifname (e.g. can0), or
+		the CAN character driver when given a device path (e.g.
+		/dev/can0).
 
 if TESTLAB_CANTL
 

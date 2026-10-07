@@ -142,7 +142,8 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
 
 Source: ``ntfc/tests/can/test_can_bus.py``. Two nodes and the host
 share one SocketCAN bus, vcan ``can0`` (see :doc:`architecture`).
-Sessions: ``sim-can-bus``.
+Sessions: ``sim-can-bus`` (SocketCAN, ``can0``) and ``sim-can-char``
+(CAN character driver, ``/dev/can0``).
 
 .. list-table::
    :header-rows: 1

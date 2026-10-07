@@ -16,11 +16,14 @@
 #
 ############################################################################
 
-"""Shared cantl helpers for multi-node SocketCAN tests.
+"""Shared cantl helpers for multi-node CAN tests.
 
 All nodes (sim processes, or QEMU's ``can-host-socketcan`` bridge) and the
 host share a single vcan interface, ``can0``: every frame sent by any of
-them is delivered to every other socket on the bus.
+them is delivered to every other socket on the bus.  A node reaches that
+bus either over SocketCAN (``CONFIG_NET_CAN``, ifname ``can0``) or through
+the CAN character driver (``CONFIG_CAN``, ``/dev/can0``); see
+``can_endpoint()``.
 """
 
 import re
@@ -32,6 +35,7 @@ from typing import Any, List, Optional, Tuple
 import pytest
 
 CAN_IFNAME = "can0"
+CAN_CHARDEV = "/dev/can0"
 CAN_ID_DEFAULT = 0x123
 CAN_ID_ALT = 0x456
 
@@ -78,13 +82,33 @@ def frame_pattern(seq: int, length: int) -> bytes:
     return bytes((seq * 31 + 7 + k) & 0xFF for k in range(length))
 
 
+def can_endpoint(node: int) -> str:
+    """Return the cantl endpoint a node's build reaches the CAN bus on.
+
+    :param node: product index
+    :return: ``CAN_IFNAME`` if the node has ``CONFIG_NET_CAN`` (SocketCAN),
+     else ``CAN_CHARDEV`` if it has ``CONFIG_CAN`` (character driver)
+    """
+    conf = _core(node).conf
+    if conf.kv_check("CONFIG_NET_CAN"):
+        return CAN_IFNAME
+
+    assert conf.kv_check("CONFIG_CAN"), "node has neither NET_CAN nor CAN"
+    return CAN_CHARDEV
+
+
 def canfd_supported(node: int) -> bool:
     """Check whether a node's build has a CAN FD capable driver.
 
     :param node: product index
-    :return: True if ``CONFIG_NET_CAN_HAVE_CANFD`` is set
+    :return: True if the node's active backend (SocketCAN or the CAN
+     character driver) was built with CAN FD support
     """
-    return bool(_core(node).conf.kv_check("CONFIG_NET_CAN_HAVE_CANFD"))
+    conf = _core(node).conf
+    if conf.kv_check("CONFIG_NET_CAN"):
+        return bool(conf.kv_check("CONFIG_NET_CAN_HAVE_CANFD"))
+
+    return bool(conf.kv_check("CONFIG_CAN_FD"))
 
 
 def cantl_sender(
@@ -94,6 +118,7 @@ def cantl_sender(
     fd: bool = False,
     gap_ms: int = 0,
     timeout: int = 60,
+    endpoint: Optional[str] = None,
 ) -> str:
     """Run ``cantl -s`` on a node and return its verdict line.
 
@@ -103,12 +128,13 @@ def cantl_sender(
     :param fd: use CAN FD frames (64-byte payload) instead of classic
     :param gap_ms: delay between frames in milliseconds
     :param timeout: command timeout in seconds
+    :param endpoint: cantl device argument; defaults to ``can_endpoint(node)``
     :return: verdict line or empty string
     """
     flags = "-f " if fd else ""
+    dev = endpoint if endpoint is not None else can_endpoint(node)
     ret = _core(node).sendCommandReadUntilPattern(
-        f"cantl -s {CAN_IFNAME} -n {count} -i 0x{can_id:x} "
-        f"{flags}-g {gap_ms}",
+        f"cantl -s {dev} -n {count} -i 0x{can_id:x} " f"{flags}-g {gap_ms}",
         pattern=TX_VERDICT_RE,
         timeout=timeout,
     )
@@ -122,6 +148,7 @@ def cantl_receiver_start(
     can_id: int = CAN_ID_DEFAULT,
     fd: bool = False,
     timeout: int = 20,
+    endpoint: Optional[str] = None,
 ) -> None:
     """Start a background ``cantl -r`` receiver on a node.
 
@@ -130,11 +157,12 @@ def cantl_receiver_start(
     :param can_id: exact CAN ID the receiver filters for
     :param fd: accept CAN FD frames (64-byte payload) instead of classic
     :param timeout: receiver's own idle timeout in seconds
+    :param endpoint: cantl device argument; defaults to ``can_endpoint(node)``
     """
     flags = "-f " if fd else ""
+    dev = endpoint if endpoint is not None else can_endpoint(node)
     ret = _core(node).sendCommand(
-        f"cantl -r {CAN_IFNAME} -n {count} -i 0x{can_id:x} "
-        f"{flags}-t {timeout} &",
+        f"cantl -r {dev} -n {count} -i 0x{can_id:x} " f"{flags}-t {timeout} &",
         "listening",
         timeout=10,
     )
