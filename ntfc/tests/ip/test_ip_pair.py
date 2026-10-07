@@ -30,55 +30,37 @@ from _net_common import (
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP", "CONFIG_NET_UDP")]
 
-# NuttX e1000 never sets RCTL.BAM, so broadcast frames (ARP requests) are
-# dropped and two e1000 nodes cannot resolve each other. Host<->node works
-# because Linux learns the node MAC from the node's own ARP request.
 
-E1000_BAM_BUG = (
-    "drivers/net/e1000.c does not set E1000_RCTL_BAM: broadcast ARP "
-    "requests are dropped (fix: apache/nuttx#20470)"
-)
+def _ping(node: int, addr: str) -> int:
+    """Ping ``addr`` from a node and require 0% loss.
 
+    The first ping only resolves ARP: NuttX drops the packet that
+    triggers the ARP request, so it may get no reply.
 
-@pytest.fixture
-def e1000_broadcast_xfail(request: pytest.FixtureRequest) -> None:
-    """Expect node-to-node failure on targets using the e1000 driver.
-
-    :param request: pytest request of the test using this fixture
+    :param node: product index
+    :param addr: destination IPv4 address
+    :return: ``0`` if 3 of 3 echo requests were answered
     """
-    if pytest.products[1].core(0).conf.kv_check("CONFIG_NET_E1000"):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=E1000_BAM_BUG)
-        )
+    core = pytest.products[node].core(0)
+    core.sendCommand(f"ping -c 1 {addr}", "packet loss", timeout=15)
+    return core.sendCommand(f"ping -c 3 {addr}", " 0% packet loss", timeout=30)
 
 
 @pytest.mark.cmd_check("ping_main")
 @pytest.mark.parametrize("node", [0, 1])
 def test_ping_host(node: int) -> None:
     """Each node reaches the host bridge address."""
-    ret = (
-        pytest.products[node]
-        .core(0)
-        .sendCommand(f"ping -c 3 {HOST_IP}", " 0% packet loss", timeout=30)
-    )
-    assert ret == 0
+    assert _ping(node, HOST_IP) == 0
 
 
 @pytest.mark.cmd_check("ping_main")
-@pytest.mark.usefixtures("e1000_broadcast_xfail")
 def test_ping_node_to_node() -> None:
     """Node 0 reaches node 1 directly over the bridge."""
-    ret = (
-        pytest.products[0]
-        .core(0)
-        .sendCommand(f"ping -c 3 {NODE_IPS[1]}", " 0% packet loss", timeout=30)
-    )
-    assert ret == 0
+    assert _ping(0, NODE_IPS[1]) == 0
 
 
 @pytest.mark.cmd_check("nettl_main")
 @pytest.mark.parametrize("udp", [False, True], ids=["tcp", "udp"])
-@pytest.mark.usefixtures("e1000_broadcast_xfail")
 def test_nettl_node_to_node(udp: bool) -> None:
     """Node 0 client exchanges verified data with node 1 server."""
     port = 5201 if udp else 5200

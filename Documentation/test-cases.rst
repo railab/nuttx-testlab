@@ -110,8 +110,3 @@ bridge ``tl-br0`` (see :doc:`architecture`). Sessions:
    * - ``test_host_udp_to_node``
      - Host client to ``nettl -s -u`` on each node: 100 datagrams echoed
        intact.
-
-Known xfails: ``test_ping_node_to_node`` and ``test_nettl_node_to_node``
-are strict ``xfail`` when ``CONFIG_NET_E1000`` is set (qemu-intel64):
-``drivers/net/e1000.c`` never sets ``E1000_RCTL_BAM``, so broadcast ARP
-requests are dropped. Fix: apache/nuttx#20470.

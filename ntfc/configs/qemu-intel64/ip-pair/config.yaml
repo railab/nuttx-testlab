@@ -19,7 +19,6 @@ config:
     CONFIG_NETINIT_DRIPADDR: "0x0a2a0001"
     CONFIG_NETINIT_NOMAC: "n"
     CONFIG_EXAMPLES_TCPBLASTER: "n"
-    CONFIG_EXAMPLES_UDPBLASTER: "n"
 
 product0:
   name: "intel64-node0"
