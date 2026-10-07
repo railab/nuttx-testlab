@@ -13,6 +13,7 @@ set -eu
 
 TL_BRIDGE="${TL_BRIDGE:-tl-br0}"
 TL_BRIDGE_IP="${TL_BRIDGE_IP:-10.42.0.1/24}"
+TL_BRIDGE_MAC="${TL_BRIDGE_MAC:-52:54:00:2a:00:01}"
 TL_TAPS="${TL_TAPS:-tl-tap0 tl-tap1}"
 
 SUDO=""
@@ -34,6 +35,11 @@ start() {
 
   ip link show "$TL_BRIDGE" >/dev/null 2>&1 ||
     run ip link add name "$TL_BRIDGE" type bridge
+  # Fixed MAC: otherwise the bridge takes the lowest port MAC and changes
+  # it whenever a sim node TAP joins or leaves, leaving stale ARP entries
+  # for the host on the nodes.
+
+  run ip link set "$TL_BRIDGE" address "$TL_BRIDGE_MAC"
   run ip addr replace "$TL_BRIDGE_IP" dev "$TL_BRIDGE"
   run ip link set "$TL_BRIDGE" up
 
