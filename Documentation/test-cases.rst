@@ -137,6 +137,42 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
        (``connect failed 111``). Runs last in the session
        (``@pytest.mark.run(order=-1)``): it poisons the node.
 
+``ip`` services
+---------------
+
+Source: ``ntfc/tests/ip/test_ip_services.py``. Node 0 against servers
+and clients on the host (``ntfc/tests/_host_services.py``, standard
+ports, needs root). Same sessions as the ``ip`` module. Files go to a
+tmpfs at ``/tl`` and are checked with ``md5``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_wget_from_host``
+     - ``wget`` of a 65659-byte file from a host HTTP server; node
+       ``md5`` matches.
+   * - ``test_tftp_get_put``
+     - TFTP ``get`` of a 20000-byte file from the host (node ``md5``
+       matches), then ``put`` back; the host receives identical data.
+   * - ``test_ntpc_from_host``
+     - ``ntpcstart`` against a host SNTP server reporting 2030-01-01:
+       ``date`` shows 2030 within 60 s.
+   * - ``test_ntpc_stop_no_server``
+     - With no NTP server on the host, ``ntpcstop`` returns to the prompt
+       within 3 s of a running ``ntpcstart``.
+   * - ``test_nslookup_from_host``
+     - ``nslookup peer.testlab`` through a host DNS server prints
+       ``Addr: 10.42.0.99``.
+   * - ``test_host_telnet_to_node``
+     - Host telnet session to the node's ``telnetd`` runs ``echo``; the
+       output line comes back ending with CR LF.
+   * - ``test_host_ftp_to_node``
+     - Host ``ftplib`` STOR then RETR of a 40000-byte file on the node's
+       ``ftpd_start`` server: identical data, node ``md5`` matches.
+
 ``can`` module
 ---------------
 
