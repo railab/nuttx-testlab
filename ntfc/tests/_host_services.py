@@ -37,14 +37,22 @@ NTP_EPOCH_OFFSET = 2208988800  # seconds from 1900-01-01 to 1970-01-01
 class _UdpServer:
     """Base class: UDP socket served by a thread until closed."""
 
-    def __init__(self, addr: str, port: int) -> None:
+    def __init__(
+        self, addr: str, port: int, device: Optional[str] = None
+    ) -> None:
         """Bind the socket.
 
         :param addr: host address to bind
         :param port: UDP port
+        :param device: network interface to bind to (for broadcasts)
         """
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if device:
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            self.sock.setsockopt(
+                socket.SOL_SOCKET, socket.SO_BINDTODEVICE, device.encode()
+            )
         self.sock.bind((addr, port))
         self.sock.settimeout(0.2)
         self._stop = threading.Event()
@@ -195,6 +203,100 @@ class DnsServer(_UdpServer):
         answer = struct.pack(">HHHIH", 0xC00C, 1, 1, 60, 4)
         answer += socket.inet_aton(addr)
         self.sock.sendto(header + question + answer, peer)
+
+
+class DhcpServer(_UdpServer):
+    """DHCP server leasing one fixed address to every client."""
+
+    MAGIC = b"\x63\x82\x53\x63"
+
+    def __init__(
+        self, device: str, server: str, lease: str, router: str, dns: str
+    ) -> None:
+        """Bind to the DHCP server port on ``device``.
+
+        :param device: network interface (the clients have no IP yet)
+        :param server: server identifier (host address on ``device``)
+        :param lease: address offered to clients
+        :param router: router option
+        :param dns: DNS server option
+        """
+        super().__init__("0.0.0.0", 67, device)  # noqa: S104
+        self.server = server
+        self.lease = lease
+        self.router = router
+        self.dns = dns
+        self.acked: Dict[bytes, str] = {}
+
+    def handle(self, data: bytes, peer: Tuple[str, int]) -> None:
+        """Answer DISCOVER with OFFER and REQUEST with ACK.
+
+        :param data: received datagram
+        :param peer: sender address
+        """
+        if len(data) < 240 or data[0] != 1 or data[236:240] != self.MAGIC:
+            return
+        mtype = self._option(data[240:], 53)
+        if mtype not in (b"\x01", b"\x03"):
+            return
+        reply_type = 2 if mtype == b"\x01" else 5
+        chaddr = data[28:44]
+        options = (
+            bytes([53, 1, reply_type])
+            + self._addr_option(54, self.server)
+            + bytes([51, 4])
+            + struct.pack(">I", 3600)
+            + self._addr_option(1, "255.255.255.0")
+            + self._addr_option(3, self.router)
+            + self._addr_option(6, self.dns)
+            + b"\xff"
+        )
+        reply = (
+            bytes([2, 1, 6, 0])
+            + data[4:8]
+            + b"\0\0"
+            + data[10:12]
+            + b"\0" * 4
+            + socket.inet_aton(self.lease)
+            + socket.inet_aton(self.server)
+            + b"\0" * 4
+            + chaddr
+            + b"\0" * 192
+            + self.MAGIC
+            + options
+        )
+        self.sock.sendto(reply, ("255.255.255.255", 68))
+        if reply_type == 5:
+            self.acked[chaddr[:6]] = self.lease
+
+    @staticmethod
+    def _option(opts: bytes, code: int) -> Optional[bytes]:
+        """Return the value of a DHCP option.
+
+        :param opts: options after the magic cookie
+        :param code: option code
+        :return: option value or None
+        """
+        pos = 0
+        while pos < len(opts) and opts[pos] != 255:
+            if opts[pos] == 0:
+                pos += 1
+                continue
+            size = opts[pos + 1]
+            if opts[pos] == code:
+                return opts[pos + 2 : pos + 2 + size]
+            pos += 2 + size
+        return None
+
+    @staticmethod
+    def _addr_option(code: int, addr: str) -> bytes:
+        """Encode an IPv4 address option.
+
+        :param code: option code
+        :param addr: IPv4 address
+        :return: encoded option
+        """
+        return bytes([code, 4]) + socket.inet_aton(addr)
 
 
 class TftpServer(_UdpServer):

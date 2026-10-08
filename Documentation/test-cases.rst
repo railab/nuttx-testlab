@@ -189,6 +189,26 @@ module.
        fragments, then one after 32 incomplete datagrams, then one after
        the reassembly timeout; each is echoed intact.
 
+``ip`` DHCP
+-----------
+
+Source: ``ntfc/tests/ip/test_ip_dhcp.py``. node1 runs ``renew eth0``
+against a DHCP server and gets its static address back after each
+test. Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_dhcpc_from_host``
+     - A host DHCP server leases ``10.42.0.150``: the server acknowledges
+       the request, node1 has the address and pings the host.
+   * - ``test_dhcpd_node_to_node``
+     - ``dhcpd_start eth0`` on node0 leases ``10.42.0.100``: node1 has the
+       address and pings node0.
+
 ``ip`` services
 ---------------
 
