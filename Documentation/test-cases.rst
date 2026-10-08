@@ -137,6 +137,58 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
        (``connect failed 111``). Runs last in the session
        (``@pytest.mark.run(order=-1)``): it poisons the node.
 
+``ip`` IPv6
+-----------
+
+Source: ``ntfc/tests/ip/test_ip_v6.py``. The ``ip`` module tests over
+IPv6 (host ``fc00::1``, nodes ``fc00::10``/``fc00::11``). Same sessions
+as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_ping6_host``
+     - Each node: ``ping6 -c 3 fc00::1``, 0% loss.
+   * - ``test_ping6_node_to_node``
+     - node0: ``ping6 -c 3 fc00::11``, 0% loss.
+   * - ``test_nettl6_node_to_node``
+     - node0 client to node1 server over IPv6: ``nettl: PASS`` (TCP
+       262144 bytes, UDP 200 datagrams).
+   * - ``test_host_tcp6_to_node``
+     - Host TCP client to ``nettl -s -6`` on each node: 131072 bytes
+       echoed intact.
+   * - ``test_host_udp6_to_node``
+     - Host UDP client to ``nettl -s -6 -u`` on each node: 100 datagrams
+       echoed intact.
+
+``ip`` fragmentation
+--------------------
+
+Source: ``ntfc/tests/ip/test_ip_frag.py``. Datagrams larger than the
+1500-byte MTU, IPv4 and IPv6 variants. Same sessions as the ``ip``
+module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_ping_fragmented_host``
+     - node0: ``ping``/``ping6 -s 4000 -c 3`` to the host, 0% loss.
+   * - ``test_udp_fragmented_node_to_node``
+     - node0 client to node1 server, 50 datagrams of 6000 bytes:
+       ``nettl: PASS``.
+   * - ``test_host_udp_fragmented_to_node``
+     - Host sends 50 datagrams of 6000 bytes to node0: all echoed intact.
+   * - ``test_frag_reorder_and_stale``
+     - Host injects raw IPv4 fragments to node0: a datagram with reversed
+       fragments, then one after 32 incomplete datagrams, then one after
+       the reassembly timeout; each is echoed intact.
+
 ``ip`` services
 ---------------
 

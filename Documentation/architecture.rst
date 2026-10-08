@@ -226,8 +226,8 @@ own ``Kconfig`` sourced instead of the empty out-of-tree stub),
 repo; the upstream board directory under ``external/nuttx`` is used
 as-is. ``config.yaml`` has no ``kv:`` overrides: nodes of one scenario
 that differ get one defconfig each, e.g. ``ip-pair-node0`` and
-``ip-pair-node1`` for the two `Host network (ip-pair)`_ nodes (IP and,
-on ``sim``, MAC address).
+``ip-pair-node1`` for the two `Host network (ip-pair)`_ nodes (IPv4,
+IPv6 and, on ``sim``, MAC address).
 
 .. list-table::
    :header-rows: 1
@@ -275,22 +275,26 @@ Host network (ip-pair)
 ----------------------
 
 ``testenv/ip-pair.sh {start|stop|status}`` creates bridge ``tl-br0``
-(``10.42.0.1/24``, the host side) and TAPs ``tl-tap0``/``tl-tap1``.
-Node IPs come from ``CONFIG_NETINIT_IPADDR`` (gateway ``10.42.0.1``).
+(``10.42.0.1/24`` and ``fc00::1/112``, the host side) and TAPs
+``tl-tap0``/``tl-tap1``. Node IPs come from ``CONFIG_NETINIT_IPADDR``
+and ``CONFIG_NETINIT_IPv6ADDR_8`` (gateways ``10.42.0.1``, ``fc00::1``).
 
 .. list-table::
    :header-rows: 1
 
    * - Node
      - IP
+     - IPv6
      - MAC
      - Attached via
    * - node0
      - ``10.42.0.10``
+     - ``fc00::10``
      - ``52:54:00:2a:00:10``
      - ``tl-tap0``
    * - node1
      - ``10.42.0.11``
+     - ``fc00::11``
      - ``52:54:00:2a:00:11``
      - ``tl-tap1``
 

@@ -7,13 +7,14 @@
 #
 # QEMU nodes attach to tl-tap0/tl-tap1; sim nodes create their own TAP and
 # attach it to tl-br0 (CONFIG_SIM_NET_BRIDGE).  The host side of the bridge
-# is 10.42.0.1/24 and acts as the Linux peer.
+# is 10.42.0.1/24 and fc00::1/112 and acts as the Linux peer.
 
 set -eu
 
 TL_BRIDGE="${TL_BRIDGE:-tl-br0}"
 TL_BRIDGE_IP="${TL_BRIDGE_IP:-10.42.0.1/24}"
 TL_BRIDGE_MAC="${TL_BRIDGE_MAC:-52:54:00:2a:00:01}"
+TL_BRIDGE_IP6="${TL_BRIDGE_IP6:-fc00::1/112}"
 TL_TAPS="${TL_TAPS:-tl-tap0 tl-tap1}"
 
 SUDO=""
@@ -41,6 +42,12 @@ start() {
 
   run ip link set "$TL_BRIDGE" address "$TL_BRIDGE_MAC"
   run ip addr replace "$TL_BRIDGE_IP" dev "$TL_BRIDGE"
+
+  # IPv6 may be disabled by default (e.g. in a container); no DAD, so the
+  # address is usable at once.
+
+  run sysctl -qw "net.ipv6.conf.$TL_BRIDGE.disable_ipv6=0"
+  run ip -6 addr replace "$TL_BRIDGE_IP6" dev "$TL_BRIDGE" nodad
   run ip link set "$TL_BRIDGE" up
 
   for tap in $TL_TAPS; do

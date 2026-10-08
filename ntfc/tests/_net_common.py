@@ -34,6 +34,8 @@ VERDICT_RE = r"nettl: (PASS|FAIL) tx=[^\r\n]*[\r\n]"
 
 HOST_IP = "10.42.0.1"
 NODE_IPS = ("10.42.0.10", "10.42.0.11")
+HOST_IP6 = "fc00::1"
+NODE_IP6S = ("fc00::10", "fc00::11")
 UDP_END = 0xFFFFFFFF
 
 
@@ -47,6 +49,25 @@ def pattern(offset: int, length: int) -> bytes:
     return bytes(((offset + i) * 31 + 7) & 0xFF for i in range(length))
 
 
+def family(addr: str) -> socket.AddressFamily:
+    """Return the socket address family of an IP address.
+
+    :param addr: IPv4 or IPv6 address
+    :return: ``AF_INET6`` for IPv6, ``AF_INET`` otherwise
+    """
+    return socket.AF_INET6 if ":" in addr else socket.AF_INET
+
+
+def _opts(udp: bool, ipv6: bool) -> str:
+    """Return nettl protocol options.
+
+    :param udp: use UDP instead of TCP
+    :param ipv6: use IPv6
+    :return: option string, ending with a space when not empty
+    """
+    return ("-6 " if ipv6 else "") + ("-u " if udp else "")
+
+
 def _core(node: int) -> Any:
     """Return the NTFC core handler for a product.
 
@@ -57,7 +78,11 @@ def _core(node: int) -> Any:
 
 
 def nettl_server(
-    node: int, udp: bool, port: int, addr: Optional[str] = None
+    node: int,
+    udp: bool,
+    port: int,
+    addr: Optional[str] = None,
+    ipv6: bool = False,
 ) -> None:
     """Start a background nettl server on a node.
 
@@ -66,8 +91,9 @@ def nettl_server(
     :param port: listen port
     :param addr: node address reachable from the host; when given,
      :func:`nettl_cleanup` unblocks a server the test left running
+    :param ipv6: listen on IPv6
     """
-    proto = "-u " if udp else ""
+    proto = _opts(udp, ipv6)
     ret = _core(node).sendCommand(
         f"nettl -s {proto}-p {port} -t 30 &", "listening", timeout=10
     )
@@ -86,7 +112,7 @@ def nettl_cleanup() -> None:
         addr, port, udp = _SERVERS.pop()
         try:
             if udp:
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                with socket.socket(family(addr), socket.SOCK_DGRAM) as s:
                     s.sendto(struct.pack(">I", UDP_END), (addr, port))
             else:
                 socket.create_connection((addr, port), timeout=2).close()
@@ -95,18 +121,26 @@ def nettl_cleanup() -> None:
 
 
 def nettl_client(
-    node: int, addr: str, udp: bool, port: int, count: int
+    node: int,
+    addr: str,
+    udp: bool,
+    port: int,
+    count: int,
+    length: Optional[int] = None,
 ) -> str:
     """Run nettl client on a node and return its verdict line.
 
     :param node: product index
-    :param addr: server IPv4 address
+    :param addr: server IPv4 or IPv6 address
     :param udp: use UDP instead of TCP
     :param port: server port
     :param count: bytes (TCP) or datagrams (UDP)
+    :param length: UDP payload length (nettl default if not given)
     :return: verdict line or empty string
     """
-    proto = "-u " if udp else ""
+    proto = _opts(udp, family(addr) == socket.AF_INET6)
+    if length is not None:
+        proto += f"-l {length} "
     ret = _core(node).sendCommandReadUntilPattern(
         f"nettl -c {addr} {proto}-p {port} -n {count}",
         pattern=VERDICT_RE,
@@ -167,7 +201,7 @@ def host_udp_echo_check(
      on the first lost datagram)
     :return: True when all datagrams are echoed intact
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+    with socket.socket(family(addr), socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
         ok = True
         for seq in range(count):
