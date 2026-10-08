@@ -42,6 +42,12 @@ on:
       apps_ref:
         type: string
         default: master
+      ntfc_repo:
+        type: string
+        default: https://github.com/apache/nuttx-ntfc
+      ntfc_ref:
+        type: string
+        default: main
   workflow_dispatch:
     inputs:
       targets:
@@ -82,6 +88,12 @@ on:
       apps_ref:
         type: string
         default: master
+      ntfc_repo:
+        type: string
+        default: https://github.com/apache/nuttx-ntfc
+      ntfc_ref:
+        type: string
+        default: main
 
 run-name: >-
   tests: ${{ inputs.targets }}${{ inputs.session != '' && format(' / {0}', inputs.session) || '' }} @
@@ -258,6 +270,8 @@ jobs:
           NUTTX_REF: ${{ inputs.nuttx_ref }}
           APPS_REPO: ${{ inputs.apps_repo }}
           APPS_REF: ${{ inputs.apps_ref }}
+          NTFC_REPO: ${{ inputs.ntfc_repo }}
+          NTFC_REF: ${{ inputs.ntfc_ref }}
           TESTLAB_SESSION: ${{ inputs.session }}
           TESTLAB_TESTPATH: ${{ inputs.testpath }}
           IMAGE: ${{ steps.resolve.outputs.image }}

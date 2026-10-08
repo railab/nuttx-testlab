@@ -21,7 +21,7 @@ devices, virtio), root-only host setup.
 ```sh
 ./repo_init.sh
 python -m venv .venv && . .venv/bin/activate
-pip install -r ntfc/requirements.txt
+pip install -r ntfc/requirements.txt ./external/nuttx-ntfc
 python -m ntfc test --manifest ntfc/manifest-ci-sim.yaml
 ```
 
@@ -39,6 +39,8 @@ environment variable of the same name (or the matching input of the
 | `NUTTX_REF`  | `master`                               |
 | `APPS_REPO`  | `https://github.com/apache/nuttx-apps` |
 | `APPS_REF`   | `master`                               |
+| `NTFC_REPO`  | `https://github.com/apache/nuttx-ntfc` |
+| `NTFC_REF`   | `main`                                 |
 
 A ref can be a branch, a tag, or a full 40-character commit SHA:
 

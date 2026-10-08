@@ -33,9 +33,11 @@ Rules for working in this repo. Humans: start with
   banner header on every `.py`.
 - Shell: POSIX `sh`, `set -eu`, must pass `shellcheck`.
 - Default sources: `https://github.com/apache/nuttx` @ `master`,
-  `https://github.com/apache/nuttx-apps` @ `master`; every value overridable
+  `https://github.com/apache/nuttx-apps` @ `master`,
+  `https://github.com/apache/nuttx-ntfc` @ `main`; every value overridable
   by environment variable (`NUTTX_REPO`, `NUTTX_REF`, `APPS_REPO`,
-  `APPS_REF`) and by the matching `workflow_dispatch` input.
+  `APPS_REF`, `NTFC_REPO`, `NTFC_REF`) and by the matching
+  `workflow_dispatch` input.
 - Defconfigs live in this repo under
   `boards/<arch>/<chip>/<board>/configs/<scenario>/defconfig`, mirroring
   the upstream NuttX board path (out-of-tree configuration:

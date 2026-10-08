@@ -5,7 +5,7 @@
 #
 # Usage: tools/docker/run.sh [--image IMG] <manifest-name>
 #
-# Passes NUTTX_REPO/NUTTX_REF/APPS_REPO/APPS_REF, NTFC_PIP_SPEC,
+# Passes NUTTX_REPO/NUTTX_REF/APPS_REPO/APPS_REF/NTFC_REPO/NTFC_REF,
 # TESTLAB_SESSION and TESTLAB_TESTPATH through to the container.
 
 set -eu
@@ -22,7 +22,7 @@ root="$(git rev-parse --show-toplevel)"
 mkdir -p "$root/result"
 
 exec docker run --rm --init --privileged \
-  -e NUTTX_REPO -e NUTTX_REF -e APPS_REPO -e APPS_REF -e NTFC_PIP_SPEC -e TESTLAB_SESSION -e TESTLAB_TESTPATH \
+  -e NUTTX_REPO -e NUTTX_REF -e APPS_REPO -e APPS_REF -e NTFC_REPO -e NTFC_REF -e TESTLAB_SESSION -e TESTLAB_TESTPATH \
   -e "TESTLAB_OWNER=$(id -u):$(id -g)" \
   -v "$root:/src:ro" -v "$root/result:/out" \
   "$image" "$name"

@@ -359,8 +359,8 @@ creates ``result/`` there, and runs the image (default
 ``nuttx-testlab``, or ``--image``, or ``TESTLAB_IMAGE`` if set) with
 ``--rm --init --privileged``, mounting the repo read-only at ``/src``
 and ``result/`` at ``/out``, passing through ``NUTTX_REPO``,
-``NUTTX_REF``, ``APPS_REPO``, ``APPS_REF``, ``NTFC_PIP_SPEC``,
-``TESTLAB_SESSION`` and ``TESTLAB_TESTPATH``, and setting
+``NUTTX_REF``, ``APPS_REPO``, ``APPS_REF``, ``NTFC_REPO``,
+``NTFC_REF``, ``TESTLAB_SESSION`` and ``TESTLAB_TESTPATH``, and setting
 ``TESTLAB_OWNER`` to the invoking host user's ``uid:gid`` so the
 container can hand ownership of ``/out`` back at the end.
 
@@ -369,10 +369,10 @@ container can hand ownership of ``/out`` back at the end.
 
 1. ``rsync``s ``/src`` into ``/work`` (excluding ``external``,
    ``build``, ``result`` and ``.venv``).
-2. Runs ``repo_init.sh``, creates a venv and ``pip install``s
-   ``ntfc/requirements.txt``; if ``NTFC_PIP_SPEC`` is set, force-
-   reinstalls it (``--no-deps``) afterward to override the ``ntfc``
-   package spec. Runs ``start`` on every ``testenv/*.sh``.
+2. Runs ``repo_init.sh`` (NuttX, nuttx-apps and NTFC sources into
+   ``external/``), creates a venv and ``pip install``s
+   ``ntfc/requirements.txt`` and ``external/nuttx-ntfc``. Runs
+   ``start`` on every ``testenv/*.sh``.
 3. If ``TESTLAB_SESSION`` is unset, runs
    ``python -m ntfc test --manifest <manifest>`` (the whole manifest);
    otherwise looks up that session's ``confpath``/``testpath`` in the

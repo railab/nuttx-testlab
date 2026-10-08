@@ -35,9 +35,7 @@ sh repo_init.sh
 python -m venv .venv
 # shellcheck disable=SC1091
 . .venv/bin/activate
-pip install -q -r ntfc/requirements.txt
-[ -z "${NTFC_PIP_SPEC:-}" ] || \
-  pip install -q --force-reinstall --no-deps "$NTFC_PIP_SPEC"
+pip install -q -r ntfc/requirements.txt ./external/nuttx-ntfc
 
 # shellcheck disable=SC2317,SC2329 # invoked via trap
 cleanup() {

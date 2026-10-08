@@ -1,19 +1,21 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 #
-# repo_init.sh -- fetch NuttX sources into external/ and link testlab apps.
+# repo_init.sh -- fetch NuttX and NTFC sources into external/ and link
+# testlab apps.
 #
 # Usage: ./repo_init.sh [-f|--force] [-h|--help]
 #
 # Sources come from sources.env; each value can be overridden with an
-# environment variable (NUTTX_REPO, NUTTX_REF, APPS_REPO, APPS_REF).
+# environment variable (NUTTX_REPO, NUTTX_REF, APPS_REPO, APPS_REF,
+# NTFC_REPO, NTFC_REF).
 
 set -eu
 
 FORCE=0
 
 usage() {
-  sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,11p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -55,12 +57,14 @@ fetch() {
 
 fetch "$NUTTX_REPO" "$NUTTX_REF" external/nuttx
 fetch "$APPS_REPO" "$APPS_REF" external/apps
+fetch "$NTFC_REPO" "$NTFC_REF" external/nuttx-ntfc
 
 ln -s "$(pwd -P)/apps" external/apps/external
 
 {
   echo "nuttx $NUTTX_REPO $NUTTX_REF $(git -C external/nuttx rev-parse HEAD)"
   echo "apps $APPS_REPO $APPS_REF $(git -C external/apps rev-parse HEAD)"
+  echo "ntfc $NTFC_REPO $NTFC_REF $(git -C external/nuttx-ntfc rev-parse HEAD)"
 } > external/sources.txt
 
 cat external/sources.txt
