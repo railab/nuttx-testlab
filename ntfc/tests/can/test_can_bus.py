@@ -48,39 +48,6 @@ pytestmark = [pytest.mark.dep_config("CONFIG_CAN")]
 HOST_GAP_S = 0.001
 
 
-# arch/sim/src/sim/sim_cansock.c:sim_can_work() (SocketCAN) and
-# arch/sim/src/sim/sim_canchar.c:sim_can_work() (character driver) each
-# read one frame from the host socket per run and requeue themselves after
-# USEC2TICK(1000), one 10 ms sim tick. Frames from an earlier burst are
-# still queued when this test's receiver starts, so it consumes stale
-# frames and misses the new ones.
-
-SIM_CAN_RX_BUG = (
-    "sim_{}.c drains one host frame per 10 ms tick: stale frames "
-    "from earlier bursts reach later sockets (nuttx 20f3b659372c)"
-)
-
-
-@pytest.fixture
-def sim_can_rx_xfail(request: pytest.FixtureRequest) -> None:
-    """Expect stale-frame delivery on the sim CAN driver.
-
-    :param request: pytest request of the test using this fixture
-    """
-    core = pytest.products[1].core(0)
-    if core.conf.kv_check("CONFIG_ARCH_SIM"):
-        if core.conf.kv_check("CONFIG_NET_CAN"):
-            backend = "cansock"
-        else:
-            backend = "canchar"
-
-        request.applymarker(
-            pytest.mark.xfail(
-                strict=True, reason=SIM_CAN_RX_BUG.format(backend)
-            )
-        )
-
-
 @pytest.fixture(scope="module", autouse=True)
 def can_bus_up() -> None:
     """Bring up ``can0`` on every node that uses SocketCAN.
@@ -156,7 +123,6 @@ def test_can_node_to_host() -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-@pytest.mark.usefixtures("sim_can_rx_xfail")
 def test_can_filter() -> None:
     """A receiver's exact-ID filter rejects frames on another CAN ID.
 
