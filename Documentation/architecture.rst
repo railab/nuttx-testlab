@@ -20,7 +20,7 @@ Flow overview
              |
              v
    NTFC build  (ntfc/configs/<target>/<scenario>/config.yaml:
-                defconfig (boards/ in this repo) + per-node kv,
+                one defconfig per node (boards/ in this repo),
                 "python -m ntfc test ...")
              |
              v
@@ -224,11 +224,10 @@ own ``Kconfig`` sourced instead of the empty out-of-tree stub),
 ``CONFIG_ARCH_BOARD_CUSTOM_DIR_RELPATH=y`` and
 ``CONFIG_ARCH_BOARD_CUSTOM_NAME``. No board source is copied into this
 repo; the upstream board directory under ``external/nuttx`` is used
-as-is. ``config.yaml`` only keeps ``kv:`` overrides that must differ
-between products of the same scenario (currently
-``CONFIG_NETINIT_IPADDR``, and on ``sim`` also
-``CONFIG_NETINIT_MACADDR_1``, for the two `Host network (ip-pair)`_
-nodes); everything else lives in the defconfig.
+as-is. ``config.yaml`` has no ``kv:`` overrides: nodes of one scenario
+that differ get one defconfig each, e.g. ``ip-pair-node0`` and
+``ip-pair-node1`` for the two `Host network (ip-pair)`_ nodes (IP and,
+on ``sim``, MAC address).
 
 .. list-table::
    :header-rows: 1
@@ -302,16 +301,16 @@ Node IPs come from ``CONFIG_NETINIT_IPADDR`` (gateway ``10.42.0.1``).
      - defconfig
      - NIC
    * - ``sim``
-     - ``boards/sim/sim/sim/configs/ip-pair``
+     - ``boards/sim/sim/sim/configs/ip-pair-node0``, ``-node1``
      - own TAP joined to ``tl-br0`` (``CONFIG_SIM_NET_BRIDGE``)
    * - ``qemu-armv8a``
-     - ``boards/arm64/qemu/qemu-armv8a/configs/ip-pair``
+     - ``boards/arm64/qemu/qemu-armv8a/configs/ip-pair-node0``, ``-node1``
      - ``virtio-net-device``
    * - ``rv-virt``
-     - ``boards/risc-v/qemu-rv/rv-virt/configs/ip-pair``
+     - ``boards/risc-v/qemu-rv/rv-virt/configs/ip-pair-node0``, ``-node1``
      - ``virtio-net-device``
    * - ``qemu-intel64``
-     - ``boards/x86_64/qemu/qemu-intel64/configs/ip-pair``
+     - ``boards/x86_64/qemu/qemu-intel64/configs/ip-pair-node0``, ``-node1``
      - ``e1000``
 
 Host SocketCAN bus (can-bus)

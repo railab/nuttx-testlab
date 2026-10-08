@@ -43,10 +43,10 @@ Rules for working in this repo. Humans: start with
   the upstream NuttX board path (out-of-tree configuration:
   `CONFIG_ARCH_BOARD_CUSTOM=y`, `CONFIG_ARCH_BOARD_CUSTOM_DIR` set to
   the upstream board directory, e.g. `"./boards/sim/sim/sim"`). Do not
-  copy board source code into this repo. NTFC `kv` overrides are only
-  for values that must differ between products of the same scenario
-  (e.g. `CONFIG_NETINIT_IPADDR`); everything else belongs in the
-  defconfig.
+  copy board source code into this repo. No NTFC `kv` overrides: every
+  product has its own complete defconfig; nodes of one scenario that
+  differ (e.g. IP address) get one defconfig each
+  (`configs/<scenario>-node0`, `-node1`).
 - NTFC config paths: `cwd: './external'`, `build_dir: './build/...'`
   (relative to the repo root); `defconfig` is relative to
   `external/nuttx`, e.g. `'../../boards/sim/sim/sim/configs/smoke'`.
@@ -89,8 +89,7 @@ Signed-off-by: AuthorName <Valid@EmailAddress>
    `Defconfigs` in `Documentation/architecture.rst`).
 3. NTFC config for each target:
    `ntfc/configs/<target>/<scenario>/config.yaml`, `defconfig` pointing
-   at the new defconfig, `kv` only for values that must differ between
-   products.
+   at the new defconfig, no `kv`.
 4. Test module `ntfc/tests/<area>/test_*.py`, using shared helpers
    (`ntfc/tests/_*.py`) and the `cmd_check` marker where appropriate.
 5. Sessions named `<target>-<scenario>` in `ntfc/manifest-ci-<target>.yaml`.

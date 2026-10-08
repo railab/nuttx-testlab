@@ -18,9 +18,7 @@ product0:
                   -global virtio-mmio.force-legacy=false
                   -netdev tap,id=n0,ifname=tl-tap0,script=no,downscript=no
                   -device virtio-net-device,netdev=n0,mac=52:54:00:2a:00:10'
-      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/ip-pair'
-      kv:
-        CONFIG_NETINIT_IPADDR: "0x0a2a000a"
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/ip-pair-node0'
 
 product1:
   name: "rv-virt-node1"
@@ -36,6 +34,4 @@ product1:
                   -global virtio-mmio.force-legacy=false
                   -netdev tap,id=n1,ifname=tl-tap1,script=no,downscript=no
                   -device virtio-net-device,netdev=n1,mac=52:54:00:2a:00:11'
-      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/ip-pair'
-      kv:
-        CONFIG_NETINIT_IPADDR: "0x0a2a000b"
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/ip-pair-node1'

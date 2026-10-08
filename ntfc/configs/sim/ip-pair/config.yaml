@@ -11,10 +11,7 @@ product0:
       name: 'main'
       device: 'sim'
       line_buffered: true
-      defconfig: '../../boards/sim/sim/sim/configs/ip-pair'
-      kv:
-        CONFIG_NETINIT_IPADDR: "0x0a2a000a"
-        CONFIG_NETINIT_MACADDR_1: "0x002a0010"
+      defconfig: '../../boards/sim/sim/sim/configs/ip-pair-node0'
 
 product1:
   name: "sim-node1"
@@ -23,7 +20,4 @@ product1:
       name: 'main'
       device: 'sim'
       line_buffered: true
-      defconfig: '../../boards/sim/sim/sim/configs/ip-pair'
-      kv:
-        CONFIG_NETINIT_IPADDR: "0x0a2a000b"
-        CONFIG_NETINIT_MACADDR_1: "0x002a0011"
+      defconfig: '../../boards/sim/sim/sim/configs/ip-pair-node1'
