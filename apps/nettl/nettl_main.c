@@ -67,6 +67,7 @@ struct nettl_args_s
   bool        server;
   bool        udp;
   bool        write_only;
+  bool        ipv6;
   FAR char   *addr;
   uint16_t    port;
   size_t      count;
@@ -174,40 +175,80 @@ static void nettl_settimeout(int sd, int timeout)
   setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 }
 
+/* Fill the socket address for the server (any address) or the client
+ * (args->addr) and return its length, 0 on a bad address.
+ */
+
+static socklen_t nettl_sockaddr(FAR const struct nettl_args_s *args,
+                                FAR struct sockaddr_storage *ss)
+{
+  FAR struct sockaddr_in *sa = (FAR struct sockaddr_in *)ss;
+#ifdef CONFIG_NET_IPv6
+  FAR struct sockaddr_in6 *sa6 = (FAR struct sockaddr_in6 *)ss;
+#endif
+
+  memset(ss, 0, sizeof(*ss));
+
+#ifdef CONFIG_NET_IPv6
+  if (args->ipv6)
+    {
+      sa6->sin6_family = AF_INET6;
+      sa6->sin6_port   = htons(args->port);
+      if (!args->server &&
+          inet_pton(AF_INET6, args->addr, &sa6->sin6_addr) != 1)
+        {
+          return 0;
+        }
+
+      return sizeof(*sa6);
+    }
+#endif
+
+  sa->sin_family = AF_INET;
+  sa->sin_port   = htons(args->port);
+  if (args->server)
+    {
+      sa->sin_addr.s_addr = htonl(INADDR_ANY);
+    }
+  else if (inet_pton(AF_INET, args->addr, &sa->sin_addr) != 1)
+    {
+      return 0;
+    }
+
+  return sizeof(*sa);
+}
+
 static int nettl_socket(FAR const struct nettl_args_s *args,
-                        FAR struct sockaddr_in *sa)
+                        FAR struct sockaddr_storage *ss,
+                        FAR socklen_t *salen)
 {
   int sd;
 
-  sd = socket(AF_INET, args->udp ? SOCK_DGRAM : SOCK_STREAM, 0);
+  *salen = nettl_sockaddr(args, ss);
+  if (*salen == 0)
+    {
+      printf("nettl: bad address %s\n", args->addr);
+      return -1;
+    }
+
+  sd = socket(ss->ss_family, args->udp ? SOCK_DGRAM : SOCK_STREAM, 0);
   if (sd < 0)
     {
       printf("nettl: socket failed %d\n", errno);
       return -1;
     }
 
-  memset(sa, 0, sizeof(*sa));
-  sa->sin_family = AF_INET;
-  sa->sin_port   = htons(args->port);
-
   if (args->server)
     {
       int on = 1;
 
       setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-      sa->sin_addr.s_addr = htonl(INADDR_ANY);
-      if (bind(sd, (FAR struct sockaddr *)sa, sizeof(*sa)) < 0)
+      if (bind(sd, (FAR struct sockaddr *)ss, *salen) < 0)
         {
           printf("nettl: bind failed %d\n", errno);
           close(sd);
           return -1;
         }
-    }
-  else if (inet_pton(AF_INET, args->addr, &sa->sin_addr) != 1)
-    {
-      printf("nettl: bad address %s\n", args->addr);
-      close(sd);
-      return -1;
     }
 
   nettl_settimeout(sd, args->timeout);
@@ -246,14 +287,15 @@ static int nettl_tcp_server_write(int cd,
 
 static int nettl_tcp_server(FAR const struct nettl_args_s *args)
 {
-  struct sockaddr_in sa;
+  struct sockaddr_storage sa;
+  socklen_t salen;
   size_t rx  = 0;
   size_t err = 0;
   ssize_t ret;
   int sd;
   int cd;
 
-  sd = nettl_socket(args, &sa);
+  sd = nettl_socket(args, &sa, &salen);
   if (sd < 0 || listen(sd, 1) < 0)
     {
       printf("nettl: FAIL rx=0 err=1\n");
@@ -307,7 +349,8 @@ static int nettl_tcp_server(FAR const struct nettl_args_s *args)
 
 static int nettl_tcp_client(FAR const struct nettl_args_s *args)
 {
-  struct sockaddr_in sa;
+  struct sockaddr_storage sa;
+  socklen_t salen;
   size_t tx  = 0;
   size_t rx  = 0;
   size_t err = 0;
@@ -316,9 +359,9 @@ static int nettl_tcp_client(FAR const struct nettl_args_s *args)
   size_t got;
   int sd;
 
-  sd = nettl_socket(args, &sa);
+  sd = nettl_socket(args, &sa, &salen);
   if (sd < 0 ||
-      connect(sd, (FAR struct sockaddr *)&sa, sizeof(sa)) < 0)
+      connect(sd, (FAR struct sockaddr *)&sa, salen) < 0)
     {
       printf("nettl: connect failed %d\n", errno);
       printf("nettl: FAIL tx=0 rx=0 err=1\n");
@@ -382,8 +425,9 @@ static uint32_t nettl_get32(FAR const uint8_t *buf)
 
 static int nettl_udp_server(FAR const struct nettl_args_s *args)
 {
-  struct sockaddr_in sa;
-  struct sockaddr_in from;
+  struct sockaddr_storage sa;
+  struct sockaddr_storage from;
+  socklen_t salen;
   socklen_t fromlen;
   size_t rx  = 0;
   size_t err = 0;
@@ -391,7 +435,7 @@ static int nettl_udp_server(FAR const struct nettl_args_s *args)
   uint32_t seq;
   int sd;
 
-  sd = nettl_socket(args, &sa);
+  sd = nettl_socket(args, &sa, &salen);
   if (sd < 0)
     {
       printf("nettl: FAIL rx=0 err=1\n");
@@ -446,7 +490,8 @@ static int nettl_elapsed_ms(FAR const struct timespec *start)
 
 static int nettl_udp_server_reuse(FAR const struct nettl_args_s *args)
 {
-  struct sockaddr_in sa;
+  struct sockaddr_storage sa;
+  socklen_t salen;
   struct pollfd fds[NETTL_REUSE_MAX];
   size_t got[NETTL_REUSE_MAX];
   int sds[NETTL_REUSE_MAX];
@@ -461,7 +506,7 @@ static int nettl_udp_server_reuse(FAR const struct nettl_args_s *args)
 
   for (i = 0; i < args->reuse; i++)
     {
-      sds[i] = nettl_socket(args, &sa);
+      sds[i] = nettl_socket(args, &sa, &salen);
       if (sds[i] < 0)
         {
           while (i-- > 0)
@@ -554,7 +599,8 @@ static int nettl_udp_server_reuse(FAR const struct nettl_args_s *args)
 
 static int nettl_udp_client(FAR const struct nettl_args_s *args)
 {
-  struct sockaddr_in sa;
+  struct sockaddr_storage sa;
+  socklen_t salen;
   size_t rx   = 0;
   size_t lost = 0;
   size_t err  = 0;
@@ -566,7 +612,7 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
   bool badlen;
   int sd;
 
-  sd = nettl_socket(args, &sa);
+  sd = nettl_socket(args, &sa, &salen);
   if (sd < 0)
     {
       printf("nettl: FAIL tx=0 rx=0 lost=0 err=1\n");
@@ -584,7 +630,7 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
       for (retry = 0; retry < NETTL_UDP_RETRIES && !matched; retry++)
         {
           if (sendto(sd, g_txbuf, args->len + NETTL_UDP_HDR, 0,
-                     (FAR struct sockaddr *)&sa, sizeof(sa)) < 0)
+                     (FAR struct sockaddr *)&sa, salen) < 0)
             {
               continue;  /* send failure consumes this retry */
             }
@@ -639,7 +685,7 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
   for (retry = 0; retry < NETTL_UDP_RETRIES; retry++)
     {
       sendto(sd, g_txbuf, NETTL_UDP_HDR, 0,
-             (FAR struct sockaddr *)&sa, sizeof(sa));
+             (FAR struct sockaddr *)&sa, salen);
     }
 
   close(sd);
@@ -651,9 +697,9 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
 
 static void nettl_usage(FAR const char *progname)
 {
-  printf("Usage: %s -s [-u] [-p port] [-n count] [-l len] [-t sec] "
+  printf("Usage: %s -s [-6] [-u] [-p port] [-n count] [-l len] [-t sec] "
          "[-w] [-D sec] [-L n]\n", progname);
-  printf("       %s -c addr [-u] [-p port] [-n count] [-l len] "
+  printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
          "[-t sec]\n", progname);
 }
 
@@ -671,7 +717,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:up:n:l:t:wD:L:")) != ERROR)
+  while ((opt = getopt(argc, argv, "sc:6up:n:l:t:wD:L:")) != ERROR)
     {
       unsigned long val;
 
@@ -683,6 +729,11 @@ int main(int argc, FAR char *argv[])
           case 'c':
             args.addr = optarg;
             break;
+#ifdef CONFIG_NET_IPv6
+          case '6':
+            args.ipv6 = true;
+            break;
+#endif
           case 'u':
             args.udp = true;
             break;
