@@ -268,6 +268,32 @@ node0 against the host. Same sessions as the ``ip`` module.
      - A host RST during a transfer ends the node server with a
        verdict; a new server then echoes 16 KiB intact.
 
+``ip`` link changes
+-------------------
+
+Source: ``ntfc/tests/ip/test_ip_link.py``. Interface and link changes on
+node1; its link, bridge port and static address are restored after
+each test. Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_link_ifdown_ifup``
+     - After ``ifdown eth0`` the host gets no ping replies; after
+       ``ifup eth0`` node1 pings the host, answers the host and echoes
+       16 KiB over TCP.
+   * - ``test_link_host_port_flap``
+     - node1's host bridge port is set down (no ping replies) and up
+       again: node1 pings the host, answers the host and echoes 16 KiB
+       over TCP.
+   * - ``test_link_readdress``
+     - ``ifconfig eth0 10.42.0.21``: node1 pings the host and answers
+       on the new address, not on the old one, and echoes 16 KiB over
+       TCP on the new address.
+
 ``ip`` services
 ---------------
 
