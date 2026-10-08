@@ -48,6 +48,15 @@ start() {
 
   run sysctl -qw "net.ipv6.conf.$TL_BRIDGE.disable_ipv6=0"
   run ip -6 addr replace "$TL_BRIDGE_IP6" dev "$TL_BRIDGE" nodad
+
+  # IGMP/MLD snooping with short timers (centiseconds): when a test turns
+  # the querier on, General Query every 5 s, membership expires after 15 s
+  # without a report.
+
+  run ip link set "$TL_BRIDGE" type bridge mcast_snooping 1 \
+    mcast_querier 0 mcast_query_interval 500 \
+    mcast_query_response_interval 100 mcast_membership_interval 1500 \
+    mcast_last_member_interval 100 mcast_startup_query_interval 300
   run ip link set "$TL_BRIDGE" up
 
   for tap in $TL_TAPS; do

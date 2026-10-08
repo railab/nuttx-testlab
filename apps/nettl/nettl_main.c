@@ -69,6 +69,7 @@ struct nettl_args_s
   bool        write_only;
   bool        ipv6;
   FAR char   *addr;
+  FAR char   *group;
   uint16_t    port;
   size_t      count;
   size_t      len;
@@ -218,6 +219,49 @@ static socklen_t nettl_sockaddr(FAR const struct nettl_args_s *args,
   return sizeof(*sa);
 }
 
+/* Join the multicast group args->group on the default device */
+
+static int nettl_join(int sd, FAR const struct nettl_args_s *args)
+{
+#ifdef CONFIG_NET_MLD
+  if (args->ipv6)
+    {
+      struct ipv6_mreq mreq6;
+
+      memset(&mreq6, 0, sizeof(mreq6));
+      if (inet_pton(AF_INET6, args->group, &mreq6.ipv6mr_multiaddr) != 1)
+        {
+          errno = EINVAL;
+          return -1;
+        }
+
+      return setsockopt(sd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6,
+                        sizeof(mreq6));
+    }
+#endif
+
+#ifdef CONFIG_NET_IGMP
+  if (!args->ipv6)
+    {
+      struct ip_mreq mreq;
+
+      memset(&mreq, 0, sizeof(mreq));
+      if (inet_pton(AF_INET, args->group, &mreq.imr_multiaddr) != 1)
+        {
+          errno = EINVAL;
+          return -1;
+        }
+
+      mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+      return setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq,
+                        sizeof(mreq));
+    }
+#endif
+
+  errno = ENOSYS;
+  return -1;
+}
+
 static int nettl_socket(FAR const struct nettl_args_s *args,
                         FAR struct sockaddr_storage *ss,
                         FAR socklen_t *salen)
@@ -246,6 +290,13 @@ static int nettl_socket(FAR const struct nettl_args_s *args,
       if (bind(sd, (FAR struct sockaddr *)ss, *salen) < 0)
         {
           printf("nettl: bind failed %d\n", errno);
+          close(sd);
+          return -1;
+        }
+
+      if (args->group != NULL && nettl_join(sd, args) < 0)
+        {
+          printf("nettl: join %s failed %d\n", args->group, errno);
           close(sd);
           return -1;
         }
@@ -697,8 +748,8 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
 
 static void nettl_usage(FAR const char *progname)
 {
-  printf("Usage: %s -s [-6] [-u] [-p port] [-n count] [-l len] [-t sec] "
-         "[-w] [-D sec] [-L n]\n", progname);
+  printf("Usage: %s -s [-6] [-u] [-g group] [-p port] [-n count] "
+         "[-l len] [-t sec] [-w] [-D sec] [-L n]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
          "[-t sec]\n", progname);
 }
@@ -717,7 +768,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6up:n:l:t:wD:L:")) != ERROR)
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:")) != ERROR)
     {
       unsigned long val;
 
@@ -736,6 +787,9 @@ int main(int argc, FAR char *argv[])
 #endif
           case 'u':
             args.udp = true;
+            break;
+          case 'g':
+            args.group = optarg;
             break;
           case 'w':
             args.write_only = true;
@@ -822,10 +876,11 @@ int main(int argc, FAR char *argv[])
       return EXIT_FAILURE;
     }
 
-  /* -w is a TCP server option; -L is a UDP server option. */
+  /* -w is a TCP server option; -L and -g are UDP server options. */
 
   if ((args.write_only && (!args.server || args.udp)) ||
-      (args.reuse > 0 && (!args.server || !args.udp)))
+      ((args.reuse > 0 || args.group != NULL) &&
+       (!args.server || !args.udp)))
     {
       nettl_usage(argv[0]);
       return EXIT_FAILURE;

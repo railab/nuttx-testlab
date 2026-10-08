@@ -209,6 +209,31 @@ test. Same sessions as the ``ip`` module.
      - ``dhcpd_start eth0`` on node0 leases ``10.42.0.100``: node1 has the
        address and pings node0.
 
+``ip`` multicast
+----------------
+
+Source: ``ntfc/tests/ip/test_ip_mcast.py``. IPv4 (IGMP, group
+``239.42.0.1``) and IPv6 (MLD, group ``ff12::42``) variants. The host
+bridge is the querier (General Query every 5 s, membership timeout
+15 s); its group table (``bridge mdb``) shows the node reports. Same
+sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_mcast_host_to_node``
+     - node0 ``nettl -s -u -g`` joins the group (bridge shows the
+       membership); 50 host datagrams to the group echoed intact.
+   * - ``test_mcast_node_to_node``
+     - node1 joins the group; node0 client to the group:
+       ``nettl: PASS``.
+   * - ``test_mcast_membership_lifetime``
+     - node0's membership is still in the bridge table 20 s after the
+       join, and is gone within 10 s after its socket closes.
+
 ``ip`` services
 ---------------
 

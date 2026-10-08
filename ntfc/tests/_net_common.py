@@ -83,6 +83,7 @@ def nettl_server(
     port: int,
     addr: Optional[str] = None,
     ipv6: bool = False,
+    group: Optional[str] = None,
 ) -> None:
     """Start a background nettl server on a node.
 
@@ -92,8 +93,9 @@ def nettl_server(
     :param addr: node address reachable from the host; when given,
      :func:`nettl_cleanup` unblocks a server the test left running
     :param ipv6: listen on IPv6
+    :param group: multicast group to join (UDP only)
     """
-    proto = _opts(udp, ipv6)
+    proto = _opts(udp, ipv6) + (f"-g {group} " if group else "")
     ret = _core(node).sendCommand(
         f"nettl -s {proto}-p {port} -t 30 &", "listening", timeout=10
     )
@@ -186,6 +188,7 @@ def host_udp_echo_check(
     timeout: float = 2.0,
     interval: float = 0.0,
     retries: int = 0,
+    mcast_dev: Optional[str] = None,
 ) -> bool:
     """Act as nettl UDP client from the host.
 
@@ -199,16 +202,18 @@ def host_udp_echo_check(
     :param retries: extra send attempts for a datagram that times out,
      on top of the first attempt (0 keeps the original behaviour: stop
      on the first lost datagram)
+    :param mcast_dev: host interface for a multicast ``addr``
     :return: True when all datagrams are echoed intact
     """
     with socket.socket(family(addr), socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
+        dest = _mcast_dest(sock, addr, port, mcast_dev)
         ok = True
         for seq in range(count):
             dgram = struct.pack(">I", seq) + pattern(seq * length, length)
             echo: Optional[bytes] = None
             for _attempt in range(retries + 1):
-                sock.sendto(dgram, (addr, port))
+                sock.sendto(dgram, dest)
                 try:
                     echo = sock.recv(len(dgram) + 16)
                     break
@@ -221,5 +226,32 @@ def host_udp_echo_check(
             if interval:
                 time.sleep(interval)
         for _ in range(3):
-            sock.sendto(struct.pack(">I", UDP_END), (addr, port))
+            sock.sendto(struct.pack(">I", UDP_END), dest)
     return ok
+
+
+def _mcast_dest(
+    sock: socket.socket, addr: str, port: int, mcast_dev: Optional[str]
+) -> Tuple[Any, ...]:
+    """Set up multicast sending on ``mcast_dev`` and return the destination.
+
+    :param sock: UDP socket
+    :param addr: destination address
+    :param port: destination port
+    :param mcast_dev: host interface for a multicast ``addr``, or None
+    :return: ``sendto()`` address
+    """
+    if not mcast_dev:
+        return (addr, port)
+    if family(addr) == socket.AF_INET6:
+        index = socket.if_nametoindex(mcast_dev)
+        sock.setsockopt(
+            socket.IPPROTO_IPV6,
+            socket.IPV6_MULTICAST_IF,
+            struct.pack("@I", index),
+        )
+        return (addr, port, 0, index)
+    sock.setsockopt(
+        socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(HOST_IP)
+    )
+    return (addr, port)
