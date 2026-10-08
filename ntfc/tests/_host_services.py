@@ -24,6 +24,7 @@ root (the Docker runner).
 """
 
 import socket
+import socketserver
 import struct
 import threading
 import time
@@ -471,6 +472,63 @@ class HttpServer:
         )
 
     def __enter__(self) -> "HttpServer":
+        """Start serving.
+
+        :return: this server
+        """
+        self._thread.start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        """Stop serving.
+
+        :param exc_type: exception type, if any
+        :param exc: exception, if any
+        :param tb: traceback, if any
+        """
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class TcpEchoServer:
+    """Threaded TCP server echoing every connection; counts connections."""
+
+    def __init__(self, addr: str, port: int) -> None:
+        """Bind the server.
+
+        :param addr: host address to bind
+        :param port: TCP port
+        """
+        owner = self
+
+        class Handler(socketserver.BaseRequestHandler):
+            """Echo until the peer closes."""
+
+            def handle(self) -> None:
+                """Echo one connection."""
+                while True:
+                    data = self.request.recv(4096)
+                    if not data:
+                        break
+                    self.request.sendall(data)
+                with owner.lock:
+                    owner.connections += 1
+
+        self.lock = threading.Lock()
+        self.connections = 0
+        socketserver.ThreadingTCPServer.allow_reuse_address = True
+        self.server = socketserver.ThreadingTCPServer((addr, port), Handler)
+        self.server.daemon_threads = True
+        self._thread = threading.Thread(
+            target=self.server.serve_forever, daemon=True
+        )
+
+    def __enter__(self) -> "TcpEchoServer":
         """Start serving.
 
         :return: this server

@@ -134,8 +134,8 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
      - After killing (``kill -9``) ``CONFIG_NET_TCP_PREALLOC_CONNS +
        1`` TCP listeners each blocked in accept(), a probe client
        still allocates a socket and is refused by the host
-       (``connect failed 111``). Runs last in the session
-       (``@pytest.mark.run(order=-1)``): it poisons the node.
+       (``connect failed 111``). Runs second to last in the session
+       (``@pytest.mark.run(order=-2)``): it poisons the node.
 
 ``ip`` IPv6
 -----------
@@ -233,6 +233,40 @@ sessions as the ``ip`` module.
    * - ``test_mcast_membership_lifetime``
      - node0's membership is still in the bridge table 20 s after the
        join, and is gone within 10 s after its socket closes.
+
+``ip`` TCP
+----------
+
+Source: ``ntfc/tests/ip/test_ip_tcp.py``. TCP connection handling on
+node0 against the host. Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_tcp_concurrent_host_to_node``
+     - ``nettl -s -C 8``: 8 host connections, opened one after another
+       (each once the previous one echoed its first 1 KiB), 32 KiB each,
+       echoed interleaved and intact.
+   * - ``test_tcp_half_close``
+     - 64 KiB sent, then ``shutdown(SHUT_WR)``: all data echoed, then
+       EOF from the node.
+   * - ``test_tcp_churn_node_client``
+     - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential node client
+       connections to a host echo server (node closes first, so each
+       socket ends in TIME_WAIT): all pass. Runs last in the session
+       (``@pytest.mark.run(order=-1)``).
+   * - ``test_tcp_churn_node_server``
+     - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential host connections
+       to node servers (host closes first): all pass.
+   * - ``test_tcp_backlog_overflow``
+     - 8 host connection attempts while the server waits 5 s before
+       ``accept()``; afterwards the server churn above still passes.
+   * - ``test_tcp_rst_mid_transfer``
+     - A host RST during a transfer ends the node server with a
+       verdict; a new server then echoes 16 KiB intact.
 
 ``ip`` services
 ---------------

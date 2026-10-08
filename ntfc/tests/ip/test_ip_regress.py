@@ -196,7 +196,7 @@ def test_tcp_long_transfer() -> None:
 
 
 @pytest.mark.cmd_check("nettl_main")
-@pytest.mark.run(order=-1)
+@pytest.mark.run(order=-2)
 @pytest.mark.usefixtures("sim_tcp_leak_xfail")
 def test_tcp_kill_listener_leak() -> None:
     """A kill -9 of a task blocked in accept() must not leak its conn.
@@ -210,7 +210,8 @@ def test_tcp_kill_listener_leak() -> None:
     (``connect failed 111``); FAIL if the leak exhausted the
     preallocated pool (``socket failed 12`` / ``connect failed 12``).
 
-    Runs last in the session (``order=-1``): it poisons the node.
+    Runs second to last in the session (``order=-2``): it poisons the
+    node.
     """
     core = _core(0)
     prealloc = core.conf.kv_check("CONFIG_NET_TCP_PREALLOC_CONNS")

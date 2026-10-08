@@ -57,6 +57,7 @@
 #define NETTL_UDP_LEN_DEFAULT  (NETTL_UDP_LEN < NETTL_BUFSIZE ? \
                                  NETTL_UDP_LEN : NETTL_BUFSIZE)
 #define NETTL_REUSE_MAX        4
+#define NETTL_CONN_MAX         8
 
 /****************************************************************************
  * Private Types
@@ -74,6 +75,7 @@ struct nettl_args_s
   size_t      count;
   size_t      len;
   size_t      reuse;
+  size_t      conns;
   int         timeout;
   int         delay;
 };
@@ -395,6 +397,116 @@ static int nettl_tcp_server(FAR const struct nettl_args_s *args)
 
   close(cd);
   printf("nettl: %s rx=%zu err=%zu\n", err == 0 ? "PASS" : "FAIL", rx, err);
+  return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/* Echo args->conns TCP connections at once, verifying each stream */
+
+static int nettl_tcp_server_multi(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_storage sa;
+  struct pollfd fds[NETTL_CONN_MAX + 1];
+  size_t rx[NETTL_CONN_MAX];
+  size_t accepted = 0;
+  size_t done     = 0;
+  size_t total    = 0;
+  size_t err      = 0;
+  socklen_t salen;
+  ssize_t ret;
+  size_t i;
+  int sd;
+
+  sd = nettl_socket(args, &sa, &salen);
+  if (sd < 0 || listen(sd, args->conns) < 0)
+    {
+      printf("nettl: FAIL rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  printf("nettl: listening tcp %u\n", args->port);
+
+  fds[0].fd     = sd;
+  fds[0].events = POLLIN;
+  for (i = 0; i < args->conns; i++)
+    {
+      fds[i + 1].fd     = -1;
+      fds[i + 1].events = POLLIN;
+      rx[i]             = 0;
+    }
+
+  while (done < args->conns)
+    {
+      if (poll(fds, args->conns + 1, args->timeout * 1000) <= 0)
+        {
+          printf("nettl: poll timeout or error %d\n", errno);
+          err++;
+          break;
+        }
+
+      if ((fds[0].revents & POLLIN) != 0)
+        {
+          int cd = accept(sd, NULL, NULL);
+
+          if (cd < 0)
+            {
+              printf("nettl: accept failed %d\n", errno);
+              err++;
+              break;
+            }
+
+          fds[++accepted].fd = cd;
+          if (accepted == args->conns)
+            {
+              fds[0].fd = -1;  /* Stop polling the listener */
+            }
+        }
+
+      for (i = 1; i <= accepted; i++)
+        {
+          if (fds[i].fd < 0 ||
+              (fds[i].revents & (POLLIN | POLLHUP | POLLERR)) == 0)
+            {
+              continue;
+            }
+
+          ret = recv(fds[i].fd, g_rxbuf, NETTL_BUFSIZE, 0);
+          if (ret > 0)
+            {
+              err      += nettl_check(g_rxbuf, rx[i - 1], ret);
+              rx[i - 1] += ret;
+              total    += ret;
+              if (nettl_sendall(fds[i].fd, g_rxbuf, (size_t)ret) < 0)
+                {
+                  err++;
+                }
+
+              continue;
+            }
+
+          if (ret < 0)
+            {
+              printf("nettl: recv failed %d\n", errno);
+              err++;
+            }
+
+          close(fds[i].fd);
+          fds[i].fd = -1;
+          done++;
+        }
+    }
+
+  for (i = 1; i <= accepted; i++)
+    {
+      if (fds[i].fd >= 0)
+        {
+          close(fds[i].fd);
+        }
+    }
+
+  close(sd);
+  err += args->conns - done;
+  printf("nettl: %s rx=%zu err=%zu\n", err == 0 ? "PASS" : "FAIL",
+         total, err);
   return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
@@ -749,7 +861,7 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
 static void nettl_usage(FAR const char *progname)
 {
   printf("Usage: %s -s [-6] [-u] [-g group] [-p port] [-n count] "
-         "[-l len] [-t sec] [-w] [-D sec] [-L n]\n", progname);
+         "[-l len] [-t sec] [-w] [-D sec] [-L n] [-C n]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
          "[-t sec]\n", progname);
 }
@@ -768,7 +880,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:")) != ERROR)
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:C:")) != ERROR)
     {
       unsigned long val;
 
@@ -811,6 +923,15 @@ int main(int argc, FAR char *argv[])
               }
 
             args.reuse = (size_t)val;
+            break;
+          case 'C':
+            if (!nettl_parse_uint(optarg, 1, NETTL_CONN_MAX, &val))
+              {
+                nettl_usage(argv[0]);
+                return EXIT_FAILURE;
+              }
+
+            args.conns = (size_t)val;
             break;
           case 'p':
             if (!nettl_parse_uint(optarg, 1, 65535, &val))
@@ -876,9 +997,9 @@ int main(int argc, FAR char *argv[])
       return EXIT_FAILURE;
     }
 
-  /* -w is a TCP server option; -L and -g are UDP server options. */
+  /* -w and -C are TCP server options; -L and -g are UDP server options. */
 
-  if ((args.write_only && (!args.server || args.udp)) ||
+  if (((args.write_only || args.conns > 0) && (!args.server || args.udp)) ||
       ((args.reuse > 0 || args.group != NULL) &&
        (!args.server || !args.udp)))
     {
@@ -899,7 +1020,8 @@ int main(int argc, FAR char *argv[])
                                    nettl_udp_server(&args);
         }
 
-      return nettl_tcp_server(&args);
+      return args.conns > 1 ? nettl_tcp_server_multi(&args) :
+                              nettl_tcp_server(&args);
     }
 
   return args.udp ? nettl_udp_client(&args) : nettl_tcp_client(&args);
