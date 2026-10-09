@@ -134,8 +134,8 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
      - After killing (``kill -9``) ``CONFIG_NET_TCP_PREALLOC_CONNS +
        1`` TCP listeners each blocked in accept(), a probe client
        still allocates a socket and is refused by the host
-       (``connect failed 111``). Runs second to last in the session
-       (``@pytest.mark.run(order=-2)``): it poisons the node.
+       (``connect failed 111``). Runs last in the session
+       (``@pytest.mark.run(order=-1)``): it poisons the node.
 
 ``ip`` IPv6
 -----------
@@ -256,8 +256,8 @@ node0 against the host. Same sessions as the ``ip`` module.
    * - ``test_tcp_churn_node_client``
      - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential node client
        connections to a host echo server (node closes first, so each
-       socket ends in TIME_WAIT): all pass. Runs last in the session
-       (``@pytest.mark.run(order=-1)``).
+       socket ends in TIME_WAIT): all pass. Runs second to last in the
+       session (``@pytest.mark.run(order=-2)``).
    * - ``test_tcp_churn_node_server``
      - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential host connections
        to node servers (host closes first): all pass.

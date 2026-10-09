@@ -158,14 +158,14 @@ def test_tcp_half_close() -> None:
     assert _server_verdict() == f"nettl: PASS rx={size} err=0"
 
 
-@pytest.mark.run(order=-1)
+@pytest.mark.run(order=-2)
 @pytest.mark.usefixtures("solinger_time_wait_xfail")
 def test_tcp_churn_node_client() -> None:
     """Node 0 opens and closes more connections than it preallocates.
 
     The node closes first, so each socket ends in TIME_WAIT on the node.
-    Runs last in the session (``order=-1``): a failure leaves the node
-    without TCP resources for the TIME_WAIT period.
+    Runs second to last in the session (``order=-2``): a failure leaves
+    the node without TCP resources for the TIME_WAIT period.
     """
     count, port = 3 * _prealloc(), 5252
     with TcpEchoServer(HOST_IP, port) as srv:
