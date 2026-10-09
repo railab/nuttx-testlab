@@ -294,6 +294,48 @@ each test. Same sessions as the ``ip`` module.
        on the new address, not on the old one, and echoes 16 KiB over
        TCP on the new address.
 
+``ip`` Modbus TCP
+-----------------
+
+Source: ``ntfc/tests/ip/test_ip_modbus.py``. nxmodbus on the nodes:
+``nxmbserver`` as slave (port 502), ``nxmbclient`` as master; the host
+peer is pymodbus (master, or slave on port 1502). Same sessions as the
+``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_modbus_slave_read``
+     - A host master reads holding and input registers, coils and
+       discrete inputs of node0 with the values of the nxmbserver
+       register map.
+   * - ``test_modbus_slave_write``
+     - Single and multiple register and coil writes read back the
+       written values.
+   * - ``test_modbus_slave_exception``
+     - Raw requests get the exception response: illegal data address
+       (read at or across the end of the map), illegal data value
+       (quantity 0 or 126, FC05 value not ``0x0000``/``0xFF00``).
+   * - ``test_modbus_master_read``
+     - node0 reads all four tables of a host slave and prints the
+       slave's values.
+   * - ``test_modbus_master_write``
+     - ``write-holding``, ``write-holdings`` and ``write-coil`` of node0
+       reach the host slave with the same function code, address and
+       values, and read back.
+   * - ``test_modbus_master_write_coils``
+     - ``write-coils`` with 6 values sets each listed coil on the host
+       slave (one FC15 request with the same values).
+   * - ``test_modbus_master_exception``
+     - A host slave exception response fails the read; without a slave
+       the client reports the refused connection.
+   * - ``test_modbus_master_to_node_slave``
+     - node0 writes registers and coils on a node1 slave and reads them
+       back; untouched registers keep the register map values.
+
 ``ip`` services
 ---------------
 

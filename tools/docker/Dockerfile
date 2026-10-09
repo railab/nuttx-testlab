@@ -77,7 +77,7 @@ RUN (curl -fsSL --retry 3 "https://raw.githubusercontent.com/torvalds/linux/${LI
 ENV PATH="/opt/aarch64-none-elf/bin:/opt/riscv-none-elf/bin:${PATH}"
 ENV CC=gcc-14 CXX=g++-14
 
-RUN pip install --break-system-packages --no-cache-dir kconfiglib
+RUN pip install --break-system-packages --no-cache-dir kconfiglib pymodbus==3.15.0
 
 COPY entrypoint.sh /usr/local/bin/testlab-entrypoint
 RUN chmod +x /usr/local/bin/testlab-entrypoint
