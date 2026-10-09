@@ -33,6 +33,7 @@ RUN apt-get update \
         iperf \
         iproute2 \
         iputils-ping \
+        unzip \
         kmod \
         make \
         mosquitto \

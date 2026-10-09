@@ -16,3 +16,6 @@ sessions:
     confpath: ntfc/configs/rv-virt/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus
     resources: [ttyTL0]
+  - name: "rv-virt-python"
+    confpath: ntfc/configs/rv-virt/python/config.yaml
+    testpath: ntfc/tests/python

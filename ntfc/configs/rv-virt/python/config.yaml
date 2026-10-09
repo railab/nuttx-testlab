@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/rv-virt/python'
+
+product:
+  name: "rv-virt-python"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      line_buffered: true
+      exec_path: 'qemu-system-riscv32'
+      exec_args: '-semihosting -M virt,aclint=on -cpu rv32 -smp 1
+                 -global virtio-mmio.force-legacy=false
+                 -device virtio-rng-device,bus=virtio-mmio-bus.0
+                 -netdev user,id=u0
+                 -device virtio-net-device,netdev=u0,bus=virtio-mmio-bus.1
+                 -bios none -nographic'
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/python'

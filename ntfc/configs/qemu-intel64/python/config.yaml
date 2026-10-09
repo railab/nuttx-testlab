@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-intel64/python'
+
+product:
+  name: "qemu-intel64-python"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      exec_path: 'qemu-system-x86_64'
+      exec_args: '-m 2G -smp 4 -cpu host -enable-kvm -nographic
+                  -serial mon:stdio -netdev user,id=u0
+                  -device e1000,netdev=u0'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/python'

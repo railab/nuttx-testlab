@@ -508,8 +508,9 @@ Source: ``ntfc/tests/modbus/test_modbus_rtu.py``. Modbus RTU between
 one node and pymodbus on the host over a serial line (see
 :doc:`architecture`), host end ``/dev/ttyTL1``. nxmodbus:
 ``nxmbserver`` slave (unit 1) and ``nxmbclient`` master at 19200 baud,
-register maps as in `ip Modbus TCP`_. Sessions: ``sim-modbus-rtu``, ``qemu-armv8a-modbus-rtu``,
-``rv-virt-modbus-rtu``, ``qemu-intel64-modbus-rtu``.
+register maps as in `ip Modbus TCP`_. Sessions: ``sim-modbus-rtu``,
+``qemu-armv8a-modbus-rtu``, ``rv-virt-modbus-rtu``,
+``qemu-intel64-modbus-rtu``.
 
 .. list-table::
    :header-rows: 1
@@ -550,3 +551,39 @@ register maps as in `ip Modbus TCP`_. Sessions: ``sim-modbus-rtu``, ``qemu-armv8
    * - ``test_modbus_rtu_slave_restart``
      - ``nxmbserver`` started a second time in the same boot serves
        requests.
+
+``python`` module
+-----------------
+
+Source: ``ntfc/tests/python/test_python.py``. CPython
+(``apps/interpreters/python``) on one node with QEMU user networking;
+the host is ``10.0.2.2`` for the node. Sessions ``rv-virt-python`` and
+``qemu-intel64-python``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_python_version``
+     - ``python -c`` prints the major version ``3``.
+   * - ``test_python_stdlib``
+     - ``hashlib``, ``zlib``, ``base64``, ``struct``, ``math``, ``json``
+       and ``re`` give the same results as on the host.
+   * - ``test_python_exception``
+     - ``1/0`` prints a ``ZeroDivisionError`` traceback; NSH answers
+       afterwards.
+   * - ``test_python_files``
+     - A 1000-line file in ``/tmp`` is written, read back, listed and
+       removed.
+   * - ``test_python_script``
+     - A script written with ``echo`` computes ``fib(90)`` and a sum.
+   * - ``test_python_threads``
+     - 4 threads increment a counter 1000 times each under a lock (4000);
+       ``time.sleep(0.5)`` takes 0.45 to 1.5 s.
+   * - ``test_python_thread_stack``
+     - A thread serializes a 100-level nested list with ``json.dumps``
+       (C recursion).
+   * - ``test_python_socket_host``
+     - A Python TCP client echoes 64 KiB with a host server intact.
