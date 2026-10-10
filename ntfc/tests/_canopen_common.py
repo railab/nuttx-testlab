@@ -253,12 +253,14 @@ def start_app(node: int, app: str, pattern: str, timeout: int = 15) -> str:
     :param app: ``coslave`` or ``comaster``
     :param pattern: regex that ends the startup output
     :param timeout: timeout in seconds
-    :return: console output up to ``pattern`` (or the timeout)
+    :return: console output up to ``pattern`` (or the timeout), with NSH
+     prompts removed: on SMP targets NSH can print its prompt into the
+     middle of the example's first line
     """
     ret = core(node).sendCommandReadUntilPattern(
         f"{app} &", pattern=pattern, timeout=timeout
     )
-    return str(ret.output)
+    return re.sub(r"nsh> (?:\x1b\[K)?", "", str(ret.output))
 
 
 def app_pid(output: str, app: str) -> Optional[int]:

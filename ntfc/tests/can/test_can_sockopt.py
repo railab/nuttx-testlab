@@ -31,6 +31,7 @@ from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CAN_EFF_MASK,
     CAN_RTR_FLAG,
     CLASSIC_FRAMES,
+    CTUCANFD_EFF_BUG,
     MARKER_ID,
     VERDICT_RE,
     Frame,
@@ -40,12 +41,14 @@ from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     canopt_run,
     canopt_start,
     canopt_verdict,
+    ctucanfd_eff_mangled,
     filter_match,
     host_expect,
     host_send,
     host_socket,
     kv_value,
     verdict_of,
+    xfail_on_ctucanfd,
 )
 
 pytestmark = [
@@ -127,16 +130,29 @@ def test_can_so_rcvtimeo() -> None:
 
 
 @pytest.mark.parametrize("case", list(FILTERS))
-def test_can_raw_filter(case: str) -> None:
+def test_can_raw_filter(request: pytest.FixtureRequest, case: str) -> None:
     """CAN_RAW_FILTER passes exactly the frames SocketCAN rules select.
 
     The host sends the classic frame table (SFF, EFF, RTR, DLC 0..8);
     the frames the node receives must be those the filter list matches,
     in order and intact.
+
+    :param request: pytest request
+    :param case: filter case
     """
     opts, filters = FILTERS[case]
     if case == "max":
         filters = _max_filters()
+
+    if any(
+        ctucanfd_eff_mangled(f.can_id) != f.can_id
+        and (
+            filter_match(f.can_id, filters)
+            or filter_match(ctucanfd_eff_mangled(f.can_id), filters)
+        )
+        for f in CLASSIC_FRAMES
+    ):
+        xfail_on_ctucanfd(request, CTUCANFD_EFF_BUG)
 
     expected = [
         f.can_id for f in CLASSIC_FRAMES if filter_match(f.can_id, filters)

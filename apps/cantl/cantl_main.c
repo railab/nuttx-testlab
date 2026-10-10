@@ -151,10 +151,12 @@ static int cantl_elapsed_ms(FAR const struct timespec *start)
                (now.tv_nsec - start->tv_nsec) / 1000000);
 }
 
+#ifdef CONFIG_CAN
 static bool cantl_is_chardev(FAR const char *endpoint)
 {
   return endpoint[0] == '/';
 }
+#endif
 
 /****************************************************************************
  * SocketCAN backend

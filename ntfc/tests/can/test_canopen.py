@@ -38,6 +38,7 @@ from typing import Iterator, List
 
 import canopen
 import pytest
+from _can_common import KVASER_RX_BUG, kvaser_node
 from _canopen_common import (
     COB_HB,
     COB_SYNC,
@@ -524,13 +525,21 @@ def test_canopen_master_sdo_abort(bus: HostBus) -> None:
         del bus.net[SLAVE_ID]
 
 
-def test_canopen_node_to_node(bus: HostBus) -> None:
+def test_canopen_node_to_node(
+    request: pytest.FixtureRequest, bus: HostBus
+) -> None:
     """``comaster`` on node 0 drives ``coslave`` on node 1.
 
+    :param request: pytest request
     :param bus: host bus
     """
     if _is_chardev(0):
         pytest.skip(CHARDEV_RECV_BUG)
+
+    if kvaser_node(1):
+        request.applymarker(
+            pytest.mark.xfail(strict=False, reason=KVASER_RX_BUG)
+        )
 
     mark = bus.log.mark()
     slave_out = start_app(1, "coslave", SLAVE_RUNNING)

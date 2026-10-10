@@ -501,8 +501,10 @@ tmpfs at ``/tl`` and are checked with ``md5``.
 
 Source: ``ntfc/tests/can/test_can_bus.py``. Two nodes and the host
 share one SocketCAN bus, vcan ``can0`` (see :doc:`architecture`).
-Sessions: ``sim-can-bus`` (SocketCAN, ``can0``) and ``sim-can-char``
-(CAN character driver, ``/dev/can0``).
+Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus`` (SocketCAN,
+``can0``), ``sim-can-char`` and ``qemu-intel64-can-char`` (CAN
+character driver, ``/dev/can0``). Nodes and the host send 1 ms apart
+unless stated otherwise.
 
 .. list-table::
    :header-rows: 1
@@ -526,6 +528,9 @@ Sessions: ``sim-can-bus`` (SocketCAN, ``can0``) and ``sim-can-char``
        ``cantl: PASS rx=20 lost=0 err=0`` while the host sends
        unrelated ``0x456`` frames before, during and after node 0's
        ``0x123`` transmission.
+   * - ``test_can_node_burst_to_host``
+     - Node 0 sends 200 frames back to back; the host decodes all 200
+       intact (0 lost, 0 corrupt).
 
 ``can`` socket options
 ----------------------
@@ -534,7 +539,7 @@ Source: ``ntfc/tests/can/test_can_sockopt.py``. Node 0 runs one
 ``canopt`` check (``apps/canopt``) on ``can0``; the host plays the bus
 side. The frame tables (classic: SFF, EFF, RTR, DLC 0..8; CAN FD: all
 lengths 0..64 with BRS/ESI) are in ``ntfc/tests/_canopt_common.py``.
-Session: ``sim-can-bus``.
+Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
 
 .. list-table::
    :header-rows: 1
@@ -610,7 +615,7 @@ options`_.
 
 Source: ``ntfc/tests/can/test_can_timestamp.py``. The host sends 10
 frames 20 ms apart to ``canopt ts``, which lets the first ones queue
-before it reads. Session: ``sim-can-bus``.
+before it reads. Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
 
 .. list-table::
    :header-rows: 1
@@ -631,8 +636,8 @@ before it reads. Session: ``sim-can-bus``.
 ------------------------
 
 Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
-``/dev/can0`` of node 0; skipped on SocketCAN nodes. Session:
-``sim-can-char``.
+``/dev/can0`` of node 0; skipped on SocketCAN nodes. Sessions:
+``sim-can-char``, ``qemu-intel64-can-char``.
 
 .. list-table::
    :header-rows: 1

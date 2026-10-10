@@ -2,7 +2,7 @@
 
 config:
   cwd: './external'
-  build_dir: './build/qemu-intel64/can-bus'
+  build_dir: './build/qemu-intel64/can-char'
 
 product0:
   name: "intel64-node0"
@@ -18,7 +18,7 @@ product0:
                   -object can-host-socketcan,id=canhost0,if=can0,canbus=canbus0
                   -object can-bus,id=canbus1
                   -device ctucan_pci,canbus0=canbus0,canbus1=canbus1'
-      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/can-bus-ctucanfd'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/can-char-ctucanfd'
 
 product1:
   name: "intel64-node1"
@@ -33,4 +33,4 @@ product1:
                   -object can-bus,id=canbus0
                   -object can-host-socketcan,id=canhost0,if=can0,canbus=canbus0
                   -device kvaser_pci,canbus=canbus0'
-      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/can-bus-kvaser'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/can-char-kvaser'

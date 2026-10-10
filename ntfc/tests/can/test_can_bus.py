@@ -27,25 +27,31 @@ vcan ``can0``, so this module runs unmodified against either.
 
 import pytest
 from _can_common import (
+    CAN_CHARDEV,
     CAN_ID_ALT,
     CAN_ID_DEFAULT,
     CAN_IFNAME,
+    CTUCANFD_TX_BUSY_BUG,
+    KVASER_RX_BUG,
     can_endpoint,
     canfd_supported,
     cantl_receiver_start,
     cantl_receiver_verdict,
     cantl_sender,
+    ctucanfd_node,
     host_can_send,
     host_can_socket,
     host_can_verify,
+    kvaser_node,
 )
 
-pytestmark = [pytest.mark.dep_config("CONFIG_CAN")]
-
-# Gap between host-sent frames. 1 ms is ~8x a classic 8-byte frame at
-# 1 Mbit/s, enough for a node to drain its RX FIFO between frames.
+# Gap between frames the host or a node sends. 1 ms is ~8x a classic
+# 8-byte frame at 1 Mbit/s, enough for a node to drain its RX FIFO and
+# TX buffers between frames. Back-to-back sending is covered by
+# test_can_node_burst_to_host.
 
 HOST_GAP_S = 0.001
+NODE_GAP_MS = 1
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -79,7 +85,7 @@ def test_can_node_to_node(fd: bool) -> None:
 
     count = 30
     cantl_receiver_start(1, count, fd=fd)
-    tx = cantl_sender(0, count, fd=fd)
+    tx = cantl_sender(0, count, fd=fd, gap_ms=NODE_GAP_MS)
     assert tx.startswith("cantl: PASS"), tx
     rx = cantl_receiver_verdict(1)
     assert rx == f"cantl: PASS rx={count} lost=0 err=0", rx
@@ -113,7 +119,7 @@ def test_can_node_to_host() -> None:
     count = 20
     sock = host_can_socket(can_id=CAN_ID_DEFAULT, timeout=10.0)
     try:
-        tx = cantl_sender(0, count)
+        tx = cantl_sender(0, count, gap_ms=NODE_GAP_MS)
         assert tx.startswith("cantl: PASS"), tx
         rx, lost, err = host_can_verify(sock, count)
     finally:
@@ -123,7 +129,7 @@ def test_can_node_to_host() -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-def test_can_filter() -> None:
+def test_can_filter(request: pytest.FixtureRequest) -> None:
     """A receiver's exact-ID filter rejects frames on another CAN ID.
 
     Node 0 and the host both send: node 0 sends the frames the receiver
@@ -131,14 +137,43 @@ def test_can_filter() -> None:
     frames on ``CAN_ID_ALT`` before, during and after. The receiver's
     exact-ID filter (hardware, or software when the driver has none)
     must pass only the matching ID.
+
+    :param request: pytest request
     """
+    if kvaser_node(1) and can_endpoint(1) == CAN_CHARDEV:
+        request.applymarker(
+            pytest.mark.xfail(strict=False, reason=KVASER_RX_BUG)
+        )
     count = 20
     cantl_receiver_start(1, count, can_id=CAN_ID_DEFAULT)
 
     host_can_send(5, can_id=CAN_ID_ALT)
-    tx = cantl_sender(0, count, can_id=CAN_ID_DEFAULT)
+    tx = cantl_sender(0, count, can_id=CAN_ID_DEFAULT, gap_ms=NODE_GAP_MS)
     host_can_send(5, can_id=CAN_ID_ALT)
 
     assert tx.startswith("cantl: PASS"), tx
     rx = cantl_receiver_verdict(1)
     assert rx == f"cantl: PASS rx={count} lost=0 err=0", rx
+
+
+@pytest.mark.cmd_check("cantl_main")
+def test_can_node_burst_to_host(request: pytest.FixtureRequest) -> None:
+    """Node 0 sends back-to-back; the host verifies every frame intact.
+
+    :param request: pytest request
+    """
+    if ctucanfd_node(0):
+        request.applymarker(
+            pytest.mark.xfail(strict=False, reason=CTUCANFD_TX_BUSY_BUG)
+        )
+
+    count = 200
+    sock = host_can_socket(can_id=CAN_ID_DEFAULT, timeout=10.0)
+    try:
+        tx = cantl_sender(0, count)
+        assert tx.startswith("cantl: PASS"), tx
+        rx, lost, err = host_can_verify(sock, count)
+    finally:
+        sock.close()
+
+    assert (rx, lost, err) == (count, 0, 0)

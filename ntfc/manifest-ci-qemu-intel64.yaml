@@ -16,9 +16,14 @@ sessions:
     confpath: ntfc/configs/qemu-intel64/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus
     resources: [ttyTL0]
-  # qemu-intel64-can-bus (ntfc/configs/qemu-intel64/can-bus) is not listed:
-  # the kvaser/ctucanfd PCI SocketCAN drivers do not compile on nuttx
-  # master, and one failing build aborts the whole manifest.
+  - name: "qemu-intel64-can-bus"
+    confpath: ntfc/configs/qemu-intel64/can-bus/config.yaml
+    testpath: ntfc/tests/can
+    resources: [can0]
+  - name: "qemu-intel64-can-char"
+    confpath: ntfc/configs/qemu-intel64/can-char/config.yaml
+    testpath: ntfc/tests/can
+    resources: [can0]
   - name: "qemu-intel64-python"
     confpath: ntfc/configs/qemu-intel64/python/config.yaml
     testpath: ntfc/tests/python

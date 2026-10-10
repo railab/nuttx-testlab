@@ -337,9 +337,10 @@ Manifests
 sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 ``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``) and
 ``<target>-modbus-rtu`` (``ntfc/tests/modbus``, ``resources:
-[ttyTL0]``, see `Host serial line (modbus-rtu)`_). ``sim`` also has
-``sim-can-bus`` and ``sim-can-char`` (``ntfc/tests/can``,
-``resources: [can0]``, see `Host SocketCAN bus (can-bus)`_).
+[ttyTL0]``, see `Host serial line (modbus-rtu)`_). ``sim`` and
+``qemu-intel64`` also have ``<target>-can-bus`` and ``<target>-can-char``
+(``ntfc/tests/can``, ``resources: [can0]``, see `Host SocketCAN bus
+(can-bus)`_).
 
 Host network (ip-pair)
 ----------------------
@@ -391,10 +392,10 @@ Host SocketCAN bus (can-bus)
 -----------------------------
 
 ``testenv/can-bus.sh {start|stop|status}`` creates host vcan ``can0``;
-all nodes and the host share it as one bus. Nodes run ``ifup can0``.
-The sim ``can-bus`` and ``can-char`` defconfigs also build the Lely
-CANopen examples ``coslave`` and ``comaster`` (SocketCAN and character
-driver backend); lely-core is downloaded at build time from
+all nodes and the host share it as one bus. ``can-bus`` nodes use
+SocketCAN (``ifup can0``), ``can-char`` nodes the CAN character driver
+(``/dev/can0``). All CAN defconfigs also build the Lely CANopen examples
+``coslave`` and ``comaster``; lely-core is downloaded at build time from
 ``CONFIG_CANUTILS_LELYCANOPEN_URL``, pinned to a commit.
 The ``canopen-net`` scenario runs four sim nodes from one defconfig,
 ``boards/sim/sim/sim/configs/canopen-net`` (``conode``,
@@ -411,12 +412,24 @@ and role come from the ``conode`` command line.
      - ``boards/sim/sim/sim/configs/can-bus``
      - ``CONFIG_SIM_CANDEV_SOCK`` (host ``can0``)
    * - ``qemu-intel64``
-     - ``boards/x86_64/qemu/qemu-intel64/configs/can-bus-kvaser`` (node0),
-       ``boards/x86_64/qemu/qemu-intel64/configs/can-bus-ctucanfd``
-       (node1)
-     - QEMU ``can-host-socketcan,if=can0``; node0 ``kvaser_pci``
-       (``CAN_KVASER``, classic), node1 ``ctucan_pci``
-       (``CAN_CTUCANFD``, CAN FD)
+     - ``boards/x86_64/qemu/qemu-intel64/configs/can-bus-ctucanfd``
+       (node0), ``can-bus-kvaser`` (node1); ``can-char-ctucanfd``,
+       ``can-char-kvaser``
+     - QEMU ``can-host-socketcan,if=can0``; node0 ``ctucan_pci``
+       (``CAN_CTUCANFD``, CAN FD), node1 ``kvaser_pci``
+       (``CAN_KVASER``, classic)
+   * - ``qemu-armv8a``
+     - ``boards/arm64/qemu/qemu-armv8a/configs/can-bus`` (both nodes,
+       not in the manifest)
+     - as ``qemu-intel64``, ``ctucan_pci`` on both nodes; GICv2
+       (``ARM64_GIC_VERSION=2``, ``gic-version=2``) for PCI INTx
+
+The ``qemu-intel64`` CAN nodes run
+``-cpu host,+invtsc,vmware-cpuid-freq=on`` with
+``ARCH_INTEL64_CORE_FREQ_KHZ=0`` and ``ARCH_INTEL64_TSC_FREQ_VMWARE``:
+NuttX reads the TSC frequency from CPUID ``0x40000010`` instead of
+assuming one, so its clock keeps real time (CANopen heartbeat and SYNC
+periods).
 
 Host serial line (modbus-rtu)
 -----------------------------

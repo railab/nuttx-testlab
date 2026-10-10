@@ -34,7 +34,7 @@ import time
 from typing import Any, Iterator, List, NamedTuple, Tuple
 
 import pytest
-from _can_common import CAN_CHARDEV, CAN_IFNAME, can_endpoint
+from _can_common import CAN_CHARDEV, CAN_IFNAME, can_endpoint, ctucanfd_node
 
 CAN_EFF_FLAG = 0x80000000
 CAN_RTR_FLAG = 0x40000000
@@ -51,6 +51,25 @@ KICK_ID = 0x7FD
 
 VERDICT_RE = r"canopt: (PASS|FAIL)[^\r\n]*[\r\n]"
 READY = "canopt: ready"
+
+CTUCANFD_EFF_BUG = (
+    "drivers/can/ctucanfd_pci.c: a 29-bit CAN ID is read from and written "
+    "to only the 18-bit id_ext field of the frame ID word, the upper 11 bits "
+    "(base ID field) are lost"
+)
+CTUCANFD_TX_BUG = (
+    "drivers/can/ctucanfd_pci.c: ctucanfd_sock_transmit() stores "
+    "can_id & CAN_RTR_FLAG and flags & CANFD_ESI in 1-bit bitfields (RTR and "
+    "ESI always go out as 0) and drops 29-bit ID bits; drivers/can/"
+    "can_common.c: can_bytes2dlc()/can_dlc2bytes() map CAN FD lengths above "
+    "8 only with CONFIG_CAN_FD, so a SocketCAN-only build sends and receives "
+    "them as 8 bytes"
+)
+CTUCANFD_FD_RX_BUG = (
+    "drivers/can/ctucanfd_pci.c drops the upper 11 bits of 29-bit CAN IDs; "
+    "drivers/can/can_common.c: can_dlc2bytes() maps CAN FD DLC 9..15 to 8 "
+    "bytes unless CONFIG_CAN_FD (character driver) is set"
+)
 
 # (node, deadline) of background canopt checks that may still run
 
@@ -158,6 +177,30 @@ def filter_match(can_id: int, filters: List[Tuple[int, int]]) -> bool:
         if bool(fid & CAN_INV_FILTER) != hit:
             return True
     return False
+
+
+def ctucanfd_eff_mangled(can_id: int) -> int:
+    """Return the CAN ID a CTU CAN FD node sees for a sent ID.
+
+    :param can_id: CAN ID with flags
+    :return: the ID with only the low 18 bits of a 29-bit ID kept
+    """
+    if can_id & CAN_EFF_FLAG:
+        return can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG | 0x3FFFF)
+    return can_id
+
+
+def xfail_on_ctucanfd(
+    request: pytest.FixtureRequest, reason: str, strict: bool = True
+) -> None:
+    """Mark the running test xfail if node 0 uses the CTU CAN FD driver.
+
+    :param request: pytest request of the running test
+    :param reason: xfail reason
+    :param strict: strict xfail
+    """
+    if ctucanfd_node(0):
+        request.applymarker(pytest.mark.xfail(strict=strict, reason=reason))
 
 
 def chardev_node(node: int) -> bool:

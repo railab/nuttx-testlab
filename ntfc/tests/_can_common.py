@@ -56,6 +56,21 @@ EXACT_ID_MASK = CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG
 TX_VERDICT_RE = r"cantl: (PASS|FAIL) tx=[^\r\n]*[\r\n]"
 RX_VERDICT_RE = r"cantl: (PASS|FAIL) rx=[^\r\n]*[\r\n]"
 
+CTUCANFD_TX_BUSY_BUG = (
+    "drivers/can/ctucanfd_pci.c: ctucanfd_sock_transmit() returns -EBUSY "
+    "while all TX buffers are still in TX OK state (only the TX interrupt "
+    "empties them), and netdev_upper_txpoll() drops the packet on a "
+    "transmit error; how many frames are lost depends on interrupt timing"
+)
+
+KVASER_RX_BUG = (
+    "drivers/can/kvaser_pci.c puts the SJA1000 in sleep mode, not reset "
+    "mode, while the device is down or closed, so QEMU's model keeps filling "
+    "its RX FIFO and stale frames come out after the next open; QEMU's "
+    "SJA1000 model also stores the data bytes of a remote frame but skips "
+    "none of them on Release Receive Buffer, which wedges its RX FIFO"
+)
+
 # (node, deadline) of cantl receivers started by the current test that may
 # still be running when it ends.
 
@@ -95,6 +110,24 @@ def can_endpoint(node: int) -> str:
 
     assert conf.kv_check("CONFIG_CAN"), "node has neither NET_CAN nor CAN"
     return CAN_CHARDEV
+
+
+def ctucanfd_node(node: int) -> bool:
+    """Check whether a node uses the CTU CAN FD PCI SocketCAN driver.
+
+    :param node: product index
+    :return: True if the node's build has ``CONFIG_CAN_CTUCANFD_SOCKET``
+    """
+    return bool(_core(node).conf.kv_check("CONFIG_CAN_CTUCANFD_SOCKET"))
+
+
+def kvaser_node(node: int) -> bool:
+    """Check whether a node uses the Kvaser PCI (SJA1000) CAN driver.
+
+    :param node: product index
+    :return: True if the node's build has ``CONFIG_CAN_KVASER``
+    """
+    return bool(_core(node).conf.kv_check("CONFIG_CAN_KVASER"))
 
 
 def canfd_supported(node: int) -> bool:
