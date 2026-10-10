@@ -21,6 +21,8 @@
 import re
 import socket
 import struct
+import subprocess
+import time
 from typing import Any, List
 
 import pytest
@@ -46,6 +48,13 @@ SOLINGER_TIME_WAIT_BUG = (
     "net/tcp/tcp_conn.c: with CONFIG_NET_SOLINGER tcp_alloc() never "
     "reuses TIME_WAIT connections, so a node client fails once "
     "CONFIG_NET_TCP_PREALLOC_CONNS sockets are in TIME_WAIT"
+)
+
+KEEPALIVE_ERRNO_BUG = (
+    "net/tcp/tcp_timer.c: keep-alive expiry reports TCP_ABORT instead of "
+    "TCP_TIMEDOUT and tcp_recvhandler() (net/tcp/tcp_recvfrom.c) maps "
+    "every TCP_DISCONN_EVENTS flag to -ENOTCONN, so recv() fails with "
+    "ENOTCONN instead of ETIMEDOUT"
 )
 
 
@@ -251,3 +260,65 @@ def test_tcp_rst_mid_transfer() -> None:
     assert _server_verdict().startswith("nettl: "), "server hung"
     nettl_server(0, False, port, NODE_IPS[0])
     assert host_tcp_echo_check(NODE_IPS[0], port, 16 * CHUNK)
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
+def test_tcp_keepalive_live_peer() -> None:
+    """Keep-alive probes answered by the host keep an idle connection up.
+
+    The node client idles 6 s with keep-alive (1 s idle, 1 s interval, 3
+    probes), so the connection only survives if the host answers the
+    probes; then it echoes 1 KiB.
+    """
+    port = 5256
+    with TcpEchoServer(HOST_IP, port):
+        out = (
+            _core()
+            .sendCommandReadUntilPattern(
+                f"nettl -c {HOST_IP} -p {port} -n {CHUNK} -k 1 -t 6",
+                pattern=VERDICT_RE,
+                timeout=30,
+            )
+            .output
+        )
+    assert "nettl: idle ok" in out, out
+    found = re.search(VERDICT_RE, out)
+    assert found and found.group(1) == "PASS", out
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
+@pytest.mark.xfail(strict=True, reason=KEEPALIVE_ERRNO_BUG)
+def test_tcp_keepalive_dead_peer() -> None:
+    """Unanswered keep-alive probes end the connection with ETIMEDOUT.
+
+    The host stops answering the node (a blackhole route to it) while
+    the node client idles in recv() with keep-alive (1 s idle, 1 s
+    interval, 3 probes). recv() must fail with ETIMEDOUT (110) within
+    10 s, well before its 20 s receive timeout.
+    """
+    port = 5257
+    route = ["ip", "route", "add", "blackhole", f"{NODE_IPS[0]}/32"]
+    with TcpEchoServer(HOST_IP, port) as srv:
+        out = (
+            _core()
+            .sendCommandReadUntilPattern(
+                f"nettl -c {HOST_IP} -p {port} -n {CHUNK} -k 1 -t 20 &",
+                pattern=r"nettl \[\d+:",
+                timeout=10,
+            )
+            .output
+        )
+        assert re.search(r"nettl \[\d+:", out), out
+        assert srv.accepted.wait(10), "node did not connect"
+        subprocess.run(route, check=True)
+        start = time.monotonic()
+        try:
+            out = _core().readUntilPattern(VERDICT_RE, timeout=25).output
+        finally:
+            route[2] = "del"
+            subprocess.run(route, check=False)
+    elapsed = time.monotonic() - start
+    found = re.search(r"nettl: recv failed (\d+)", out)
+    assert found, out
+    assert elapsed < 10, f"detected after {elapsed:.1f} s"
+    assert found.group(1) == "110", out

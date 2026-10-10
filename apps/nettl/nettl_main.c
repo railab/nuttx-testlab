@@ -37,6 +37,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 
 /****************************************************************************
@@ -78,6 +79,7 @@ struct nettl_args_s
   size_t      conns;
   int         timeout;
   int         delay;
+  int         keepidle;
 };
 
 /****************************************************************************
@@ -510,6 +512,55 @@ static int nettl_tcp_server_multi(FAR const struct nettl_args_s *args)
   return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+/* Enable TCP keep-alive (idle seconds, 1 s interval, 3 probes) and wait
+ * idle in recv() for args->timeout seconds.  A receive timeout means the
+ * peer is alive; any other result fails the client.
+ */
+
+static int nettl_keepalive_idle(int sd, FAR const struct nettl_args_s *args)
+{
+#ifdef CONFIG_NET_TCP_KEEPALIVE
+  struct timeval idle;
+  struct timeval intvl;
+  int on  = 1;
+  int cnt = 3;
+  ssize_t ret;
+
+  /* NuttX takes the keep-alive times as struct timeval (an int argument
+   * is in deciseconds).
+   */
+
+  idle.tv_sec   = args->keepidle;
+  idle.tv_usec  = 0;
+  intvl.tv_sec  = 1;
+  intvl.tv_usec = 0;
+
+  if (setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)) < 0 ||
+      setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE, &idle,
+                 sizeof(idle)) < 0 ||
+      setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl,
+                 sizeof(intvl)) < 0 ||
+      setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt)) < 0)
+    {
+      printf("nettl: keepalive setsockopt failed %d\n", errno);
+      return -1;
+    }
+
+  ret = recv(sd, g_rxbuf, NETTL_BUFSIZE, 0);
+  if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+    {
+      printf("nettl: idle ok\n");
+      return 0;
+    }
+
+  printf("nettl: recv failed %d\n", ret < 0 ? errno : 0);
+  return -1;
+#else
+  printf("nettl: no keepalive support\n");
+  return -1;
+#endif
+}
+
 static int nettl_tcp_client(FAR const struct nettl_args_s *args)
 {
   struct sockaddr_storage sa;
@@ -529,6 +580,11 @@ static int nettl_tcp_client(FAR const struct nettl_args_s *args)
       printf("nettl: connect failed %d\n", errno);
       printf("nettl: FAIL tx=0 rx=0 err=1\n");
       return EXIT_FAILURE;
+    }
+
+  if (args->keepidle > 0 && nettl_keepalive_idle(sd, args) < 0)
+    {
+      err++;
     }
 
   while (tx < args->count && err == 0)
@@ -863,7 +919,7 @@ static void nettl_usage(FAR const char *progname)
   printf("Usage: %s -s [-6] [-u] [-g group] [-p port] [-n count] "
          "[-l len] [-t sec] [-w] [-D sec] [-L n] [-C n]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
-         "[-t sec]\n", progname);
+         "[-t sec] [-k idle]\n", progname);
 }
 
 /****************************************************************************
@@ -880,7 +936,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:C:")) != ERROR)
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:C:k:")) != ERROR)
     {
       unsigned long val;
 
@@ -914,6 +970,16 @@ int main(int argc, FAR char *argv[])
               }
 
             args.delay = (int)val;
+            break;
+
+          case 'k':
+            if (!nettl_parse_uint(optarg, 1, INT_MAX, &val))
+              {
+                nettl_usage(argv[0]);
+                return EXIT_FAILURE;
+              }
+
+            args.keepidle = (int)val;
             break;
           case 'L':
             if (!nettl_parse_uint(optarg, 1, NETTL_REUSE_MAX, &val))

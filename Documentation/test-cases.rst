@@ -267,6 +267,12 @@ node0 against the host. Same sessions as the ``ip`` module.
    * - ``test_tcp_rst_mid_transfer``
      - A host RST during a transfer ends the node server with a
        verdict; a new server then echoes 16 KiB intact.
+   * - ``test_tcp_keepalive_live_peer``
+     - A node client with keep-alive (1 s idle, 1 s interval, 3 probes)
+       idles 6 s against a host server, then echoes 1 KiB.
+   * - ``test_tcp_keepalive_dead_peer``
+     - Same client while the host stops answering (blackhole route to
+       the node): ``recv()`` fails with ``ETIMEDOUT`` within 10 s.
 
 ``ip`` link changes
 -------------------

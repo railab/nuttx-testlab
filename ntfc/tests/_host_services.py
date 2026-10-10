@@ -511,6 +511,7 @@ class TcpEchoServer:
 
             def handle(self) -> None:
                 """Echo one connection."""
+                owner.accepted.set()
                 while True:
                     data = self.request.recv(4096)
                     if not data:
@@ -521,6 +522,7 @@ class TcpEchoServer:
 
         self.lock = threading.Lock()
         self.connections = 0
+        self.accepted = threading.Event()
         socketserver.ThreadingTCPServer.allow_reuse_address = True
         self.server = socketserver.ThreadingTCPServer((addr, port), Handler)
         self.server.daemon_threads = True
