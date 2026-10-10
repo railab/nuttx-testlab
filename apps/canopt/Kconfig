@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_CANOPT
+	tristate "canopt: CAN feature test tool"
+	default n
+	depends on NET_CAN || CAN
+	---help---
+		Runs one CAN feature check per invocation (SocketCAN socket
+		options, filters, timestamps, CAN FD, poll; CAN character
+		driver ioctls, frame types and FIFO behavior) and prints a
+		single PASS/FAIL verdict line.
+
+if TESTLAB_CANOPT
+
+config TESTLAB_CANOPT_PROGNAME
+	string "Program name"
+	default "canopt"
+
+config TESTLAB_CANOPT_PRIORITY
+	int "canopt task priority"
+	default 100
+
+config TESTLAB_CANOPT_STACKSIZE
+	int "canopt stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

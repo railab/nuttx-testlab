@@ -197,6 +197,28 @@ with ``/`` in place of the ifname, e.g. ``cantl -s /dev/can0 ...``.
   driver supports it, else filters in software (e.g. the sim character
   driver, which always returns ``-ENOTTY`` for ``CANIOC_*``).
 
+``apps/canopt``
+~~~~~~~~~~~~~~~
+
+``canopt`` (``CONFIG_TESTLAB_CANOPT``, needs ``NET_CAN`` or ``CAN``)::
+
+   canopt <check> <ifname|/dev/canN> [-F id/mask]... [-Z] [-M] [-f] [-q]
+          [-m none|us|ns] [-n count] [-g gap_ms] [-l 0|1] [-o 0|1] [-t sec]
+
+- One CAN feature check per run. SocketCAN checks (ifname): ``sockopt``,
+  ``optbits``, ``rcvbuf``, ``rcvtimeo``, ``rx``, ``tx``, ``fdrx``,
+  ``legacy``, ``ts``, ``loopback``, ``poll``, ``hup``. Character driver
+  checks (device path): ``crx``, ``ctx``, ``cioctl``, ``calign``,
+  ``cnonblock``, ``coverflow``, ``cfionread``, ``ciflush``, ``crtr``.
+  See :doc:`test-cases` for what each one verifies.
+- Frame tables (``canopt_table.c``, mirrored in
+  ``ntfc/tests/_canopt_common.py``): 18 classic frames (SFF, EFF, RTR,
+  DLC 0..8) and 11 CAN FD frames (lengths 0..64, BRS/ESI); payload byte
+  ``k`` is ``((id & 0xff) + 7 * k + len) & 0xff``. CAN ID ``0x7fe`` ends a
+  host sequence, ``0x7fd`` frames only wake up a blocked reader.
+- Checks that need host traffic print ``canopt: ready`` first.
+- Verdict: ``canopt: PASS|FAIL <check> ...``; exit 0 on PASS.
+
 NTFC configs
 ------------
 

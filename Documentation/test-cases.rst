@@ -501,6 +501,150 @@ Sessions: ``sim-can-bus`` (SocketCAN, ``can0``) and ``sim-can-char``
        unrelated ``0x456`` frames before, during and after node 0's
        ``0x123`` transmission.
 
+``can`` socket options
+----------------------
+
+Source: ``ntfc/tests/can/test_can_sockopt.py``. Node 0 runs one
+``canopt`` check (``apps/canopt``) on ``can0``; the host plays the bus
+side. The frame tables (classic: SFF, EFF, RTR, DLC 0..8; CAN FD: all
+lengths 0..64 with BRS/ESI) are in ``ntfc/tests/_canopt_common.py``.
+Session: ``sim-can-bus``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_can_sockopt_roundtrip``
+     - ``CAN_RAW_FILTER`` (default catch-all, up to
+       ``NET_CAN_RAW_FILTER_MAX``, empty list), ``CAN_RAW_ERR_FILTER``,
+       ``CAN_RAW_LOOPBACK``, ``CAN_RAW_RECV_OWN_MSGS``,
+       ``CAN_RAW_FD_FRAMES`` and ``SO_TIMESTAMP`` read back what was set;
+       too many filters and bad lengths give ``EINVAL``, unknown options
+       ``ENOPROTOOPT``.
+   * - ``test_can_sockopt_no_alias``
+     - Setting ``SO_TIMESTAMPNS`` leaves ``CAN_RAW_FD_FRAMES`` at 0 and
+       vice versa.
+   * - ``test_can_so_rcvbuf``
+     - ``SO_RCVBUF`` at level ``SOL_SOCKET`` is accepted and read back.
+   * - ``test_can_so_rcvtimeo``
+     - A read on an idle socket with a 300 ms ``SO_RCVTIMEO`` fails with
+       ``EAGAIN`` after 200..3000 ms.
+   * - ``test_can_raw_filter``
+     - Variants ``default``, ``empty``, ``sff-any-format``,
+       ``sff-exact``, ``multi``, ``inverted`` (``CAN_INV_FILTER``),
+       ``eff-exact``, ``rtr``, ``max``: the node receives exactly the
+       classic-table frames the filter list matches under SocketCAN
+       rules, in order and intact.
+   * - ``test_can_loopback``
+     - Variants ``off``, ``on``, ``recv-own``: a frame sent on socket A
+       reaches socket B on the same node only with
+       ``CAN_RAW_LOOPBACK``, A itself only with
+       ``CAN_RAW_RECV_OWN_MSGS`` too; the host always receives it.
+   * - ``test_can_nonblock_poll``
+     - ``EAGAIN`` on an empty socket (``O_NONBLOCK``, ``MSG_DONTWAIT``),
+       ``poll()`` idle timeout and ``POLLOUT``, a nonblocking write the
+       host receives, ``select()`` and ``poll()`` wake-ups for two host
+       frames.
+   * - ``test_can_poll_hup``
+     - ``poll()`` returns ``POLLHUP`` on ``ifdown can0``.
+   * - ``test_can_stats``
+     - ``/proc/net/stat`` CAN ``Received`` grows by the 5 host frames,
+       ``Sent`` by the frames ``canopt tx`` sent.
+
+``can`` frame types
+-------------------
+
+Source: ``ntfc/tests/can/test_can_frames.py``. Same setup as `can socket
+options`_.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_can_tx_frame_types``
+     - The host receives both tables from the node intact (ID, flags,
+       length, BRS/ESI, payload); a ``CANFD_MTU`` write on a classic
+       socket fails with ``EINVAL``.
+   * - ``test_can_fd_rx``
+     - A ``CAN_RAW_FD_FRAMES`` socket receives both tables: CAN FD
+       frames as ``CANFD_MTU`` with length and BRS/ESI intact, classic
+       frames as ``CAN_MTU``.
+   * - ``test_can_fd_to_classic_socket``
+     - Variants ``blocking`` (reader waits in ``read()``) and ``queued``
+       (frames queue before the first read): a classic socket on a bus
+       carrying both tables reads only the 18 classic frames, each
+       ``CAN_MTU`` bytes.
+
+``can`` timestamps
+------------------
+
+Source: ``ntfc/tests/can/test_can_timestamp.py``. The host sends 10
+frames 20 ms apart to ``canopt ts``, which lets the first ones queue
+before it reads. Session: ``sim-can-bus``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_can_rx_timestamp``
+     - Variants ``us`` (``SO_TIMESTAMP``) and ``ns``
+       (``SO_TIMESTAMPNS``): one control message per frame,
+       ``CLOCK_REALTIME`` between check start and read, monotonic,
+       spread over at least half the host's 180 ms send span.
+   * - ``test_can_rx_no_timestamp``
+     - Variants ``classic`` and ``fd`` socket: without a timestamp
+       option ``recvmsg()`` returns no control message.
+
+``can`` character driver
+------------------------
+
+Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
+``/dev/can0`` of node 0; skipped on SocketCAN nodes. Session:
+``sim-can-char``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_can_char_rx_frame_types``
+     - ``read()`` returns both tables intact: ID, ``ch_extid``,
+       ``ch_rtr``, DLC (CAN FD DLC 9..15 = 12..64 bytes),
+       ``ch_edl``/``ch_brs``/``ch_esi``, payload.
+   * - ``test_can_char_tx_frame_types``
+     - ``write()`` of both tables; the host receives every frame intact.
+   * - ``test_can_char_ioctl``
+     - ``CANIOC_GET/SET_MSGALIGN`` and ``FIONWRITE`` round trip;
+       ``CANIOC_GET_BITTIMING`` and ``CANIOC_ADD/DEL_STDFILTER`` work or
+       return ``ENOTTY``.
+   * - ``test_can_char_msgalign``
+     - 6 queued messages: alignment 1 returns 3 packed messages into a
+       3-message buffer, 0 exactly one, 16 two messages padded to 16
+       bytes each.
+   * - ``test_can_char_nonblock_poll``
+     - ``O_NONBLOCK``: ``EAGAIN`` when empty, ``poll()`` idle timeout and
+       ``POLLOUT``, a nonblocking write the host receives, ``POLLIN`` for
+       a host frame, then ``EAGAIN``.
+   * - ``test_can_char_rx_overflow``
+     - ``CONFIG_CAN_RXFIFOSIZE + 16`` unread host frames: one
+       ``CAN_ERROR5_RXOVERFLOW`` error message, then
+       ``CONFIG_CAN_RXFIFOSIZE - 1`` frames.
+   * - ``test_can_char_fionread``
+     - ``FIONREAD`` returns 5 (``int``) with 5 messages queued.
+   * - ``test_can_char_iflush``
+     - ``CANIOC_IFLUSH`` returns 0; the next nonblocking read returns
+       ``EAGAIN``.
+   * - ``test_can_char_rtr_request``
+     - ``CANIOC_RTR`` returns the 8-byte reply a host responder sends to
+       the remote request.
+
 ``modbus`` module
 -----------------
 
