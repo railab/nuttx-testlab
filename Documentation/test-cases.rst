@@ -645,6 +645,82 @@ Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
      - ``CANIOC_RTR`` returns the 8-byte reply a host responder sends to
        the remote request.
 
+``can`` CANopen
+----------------
+
+Source: ``ntfc/tests/can/test_canopen.py`` (helpers in
+``ntfc/tests/_canopen_common.py``). The nuttx-apps Lely CANopen
+examples against python-canopen on the host: ``coslave`` (node-ID 2,
+heartbeat 50 ms, TPDO1 ``0x182`` on every SYNC with a counter
+incremented every 100 ms) and ``comaster`` (node-ID 1, heartbeat
+50 ms, SYNC every 100 ms; reads ``0x1000`` of node 2, starts it and
+prints each RPDO1 counter). Both exit on NMT reset node. Same sessions
+as the ``can`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_canopen_slave_boot``
+     - The first frame is the boot-up message; then PRE-OPERATIONAL
+       heartbeats, mean period 40-62.5 ms, no gap of 100 ms.
+   * - ``test_canopen_slave_nmt``
+     - Start, stop, pre-operational (to node 2 and to all nodes) give
+       heartbeat states ``0x05``, ``0x04``, ``0x7F``; a command for
+       node 3 is ignored; reset communication sends boot-up, then
+       ``0x7F``.
+   * - ``test_canopen_slave_frame_burst``
+     - Back-to-back NMT start and stop leave the slave STOPPED (3
+       times).
+   * - ``test_canopen_slave_sdo_read``
+     - Expedited uploads of ``0x1000``, ``0x1005``, ``0x1017``,
+       ``0x1018``, ``0x1800``, ``0x1A00`` and ``0x1F80`` return the
+       example's object dictionary values.
+   * - ``test_canopen_slave_sdo_write``
+     - Expedited, segmented and block downloads to ``0x2000`` read back
+       (block upload included).
+   * - ``test_canopen_slave_sdo_abort``
+     - Abort codes: write to read-only ``0x2001`` ``0x06010002``,
+       object ``0x3000`` ``0x06020000``, sub-index ``0x1018:9``
+       ``0x06090011``, 2 bytes to a ``UNSIGNED32`` ``0x06070013``.
+   * - ``test_canopen_slave_stopped``
+     - A STOPPED slave answers neither SDO nor SYNC; after
+       pre-operational it answers SDO again.
+   * - ``test_canopen_slave_heartbeat_time``
+     - Writing ``0x1017`` = 200 gives a 180-220 ms mean heartbeat
+       period; 0 stops the heartbeat; 50 restarts it.
+   * - ``test_canopen_slave_tpdo``
+     - No TPDO on SYNC in PRE-OPERATIONAL; in OPERATIONAL 10 SYNCs give
+       10 4-byte TPDOs; the counter never decreases and grows.
+   * - ``test_canopen_slave_tpdo_config``
+     - TPDO1 disabled, transmission type 2 and COB-ID ``0x190`` over SDO:
+       10 SYNCs give 5 TPDOs on ``0x190``, none on ``0x182``.
+   * - ``test_canopen_slave_time``
+     - A TIME message for 2030-01-01 12:00 sets the node clock: ``date``
+       shows ``Jan 01 12:00:xx 2030``.
+   * - ``test_canopen_slave_reset_node``
+     - NMT reset node stops the heartbeat and ends ``coslave``.
+   * - ``test_canopen_master_boot``
+     - With a host slave, ``comaster`` sends an SDO upload of
+       ``0x1000``, prints the host value, starts the host slave (state
+       OPERATIONAL), sends boot-up then ``0x05`` heartbeats and SYNC
+       with a 90-110 ms mean period.
+   * - ``test_canopen_master_rpdo``
+     - PDOs ``0x182`` from the host with 7, 1000 and ``0xDEADBEEF`` are
+       printed by ``comaster`` in order.
+   * - ``test_canopen_master_sdo_abort``
+     - A host slave without ``0x1000``: ``comaster`` prints abort code
+       ``0x06020000`` and still starts the network.
+   * - ``test_canopen_node_to_node``
+     - ``comaster`` on node 0, ``coslave`` on node 1: device type
+       ``0x00000000`` read, node 1 OPERATIONAL, at least 5 increasing
+       counter values printed from its TPDOs.
+   * - ``test_canopen_classic_frames``
+     - Every frame ``coslave`` sends during NMT start, 5 SYNCs and an
+       SDO upload is a classic CAN frame.
+
 ``modbus`` module
 -----------------
 

@@ -345,6 +345,10 @@ Host SocketCAN bus (can-bus)
 
 ``testenv/can-bus.sh {start|stop|status}`` creates host vcan ``can0``;
 all nodes and the host share it as one bus. Nodes run ``ifup can0``.
+The sim ``can-bus`` and ``can-char`` defconfigs also build the Lely
+CANopen examples ``coslave`` and ``comaster`` (SocketCAN and character
+driver backend); lely-core is downloaded at build time from
+``CONFIG_CANUTILS_LELYCANOPEN_URL``, pinned to a commit.
 
 .. list-table::
    :header-rows: 1
@@ -402,10 +406,11 @@ the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``gcc-14``/``g++-14``), QEMU packages (``qemu-system-arm``,
 ``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``socat``,
 ``iperf`` (iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker
-and host clients), ``kconfiglib``, ``pymodbus`` and ``pyserial`` (pip),
-and a Linux-kernel ``scripts/config`` fetched as ``kconfig-tweak``; the
-ARM64 and RISC-V bare-metal cross-toolchains are downloaded and unpacked
-under ``/opt``. The entrypoint is ``/usr/local/bin/testlab-entrypoint``
+and host clients), ``kconfiglib``, ``pymodbus``, ``pyserial``,
+``python-can`` and ``canopen`` (pip), and a Linux-kernel
+``scripts/config`` fetched as ``kconfig-tweak``; the ARM64 and RISC-V
+bare-metal cross-toolchains are downloaded and unpacked under
+``/opt``. The entrypoint is ``/usr/local/bin/testlab-entrypoint``
 (``entrypoint.sh``), working directory ``/work``.
 
 ``tools/docker/run.sh``::
