@@ -63,6 +63,13 @@ SIM_TCP_LEAK_BUG = (
 )
 
 #: Confirmed reproducing on every target with CONFIG_SIG_DEFAULT.
+KILL_CALL_BUG = (
+    "nuttx: a task terminated by a signal default action (_exit()) while "
+    "blocked in an OS call never runs the rest of the call, so its file "
+    "reference and network state are leaked and the socket is never closed"
+)
+
+#: Confirmed reproducing on every target with CONFIG_SIG_DEFAULT.
 KILL_POLL_BUG = (
     "nuttx: a task terminated by a signal default action (_exit()) while "
     "blocked in poll() never runs poll_teardown(), so the file references "
@@ -204,19 +211,69 @@ def test_tcp_long_transfer() -> None:
     assert host_tcp_echo_check(NODE_IPS[0], port, nbytes, timeout=10.0)
 
 
-def _udp_bound(core: Any, port: int) -> bool:
-    """Return True when a node UDP socket is bound to a local port.
+def _bound(core: Any, port: int, proto: str = "udp") -> bool:
+    """Return True when a node socket uses a local port.
 
     :param core: NTFC core handler of the node
-    :param port: local UDP port
-    :return: True when ``/proc/net/udp`` has a row with that local port
+    :param port: local port
+    :param proto: ``udp`` or ``tcp``
+    :return: True when ``/proc/net/<proto>`` has a row with that local port
     """
     ret = core.sendCommandReadUntilPattern(
-        "cat /proc/net/udp", pattern=r"nsh> ", timeout=10
+        f"cat /proc/net/{proto}", pattern=r"nsh> ", timeout=10
     )
     return bool(
         re.search(rf"^ *\d+: .*:{port} ", str(ret.output), re.MULTILINE)
     )
+
+
+def _wait_unbound(core: Any, port: int, proto: str = "udp") -> bool:
+    """Wait up to 5 s for a node port to be released.
+
+    :param core: NTFC core handler of the node
+    :param port: local port
+    :param proto: ``udp`` or ``tcp``
+    :return: True when the port left ``/proc/net/<proto>``
+    """
+    deadline = time.monotonic() + 5
+    while _bound(core, port, proto) and time.monotonic() < deadline:
+        time.sleep(0.5)
+    return not _bound(core, port, proto)
+
+
+def _wait_refused(port: int) -> bool:
+    """Wait up to 5 s for node 0 to refuse TCP connections to a port.
+
+    :param port: node TCP port
+    :return: True when a host connect is refused, False when it connects
+     or times out
+    """
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            socket.create_connection((NODE_IPS[0], port), timeout=2).close()
+            return False
+        except ConnectionRefusedError:
+            return True
+        except OSError:
+            time.sleep(0.5)
+    return False
+
+
+def _start_killable(core: Any, cmd: str, pattern: str) -> str:
+    """Start a background nettl server and return its PID.
+
+    :param core: NTFC core handler of the node
+    :param cmd: nettl command line, without the trailing ``&``
+    :param pattern: console pattern printed once the server listens
+    :return: PID of the server task
+    """
+    result = core.sendCommandReadUntilPattern(
+        f"{cmd} &", pattern=pattern, timeout=10
+    )
+    found = re.search(PID_RE, result.output)
+    assert found, result.output
+    return found.group(1)
 
 
 @pytest.mark.cmd_check("nettl_main")
@@ -239,22 +296,17 @@ def test_udp_kill_poll_close(signo: int) -> None:
     count = 3
     length = 64
     core = _core(0)
-    result = core.sendCommandReadUntilPattern(
-        f"nettl -s -u -L 1 -n {count} -l {length} -p {port} -t 60 &",
-        pattern=r"listening udp",
-        timeout=10,
+    pid = _start_killable(
+        core,
+        f"nettl -s -u -L 1 -n {count} -l {length} -p {port} -t 60",
+        r"listening udp",
     )
-    found = re.search(PID_RE, result.output)
-    assert found, result.output
     time.sleep(1.0)  # let the server reach its blocking poll()
-    assert _udp_bound(core, port)
+    assert _bound(core, port)
 
-    ret = core.sendCommand(f"kill -{signo} {found.group(1)}", timeout=10)
+    ret = core.sendCommand(f"kill -{signo} {pid}", timeout=10)
     assert ret == 0
-    deadline = time.monotonic() + 5
-    while _udp_bound(core, port) and time.monotonic() < deadline:
-        time.sleep(0.5)
-    assert not _udp_bound(core, port)
+    assert _wait_unbound(core, port)
 
     ret = core.sendCommand(
         f"nettl -s -u -L 1 -n {count} -l {length} -p {port} -t 15 &",
@@ -269,6 +321,76 @@ def test_udp_kill_poll_close(signo: int) -> None:
     assert found.group(0).rstrip("\r\n") == (
         f"nettl: PASS rx={count} err=0"
     ), result.output
+
+
+@pytest.mark.cmd_check("nettl_main")
+@pytest.mark.dep_config("CONFIG_SIG_DEFAULT")
+@pytest.mark.xfail(strict=True, reason=KILL_CALL_BUG)
+@pytest.mark.parametrize("call", ["recvfrom", "epoll_wait", "accept", "recv"])
+def test_kill_blocked_call_close(call: str) -> None:
+    """A task killed while blocked in an OS call releases its socket.
+
+    NuttX bug found by this project (nuttx e794a88e1e, no upstream fix
+    yet): a task terminated by the default action of a signal while
+    blocked in an OS call never runs the rest of the call, so the call's
+    file reference and network state are leaked and its socket is never
+    closed. A ``nettl`` server is killed (``kill -9``) while blocked in:
+
+    - ``recvfrom``: ``nettl -s -u``, UDP. PASS: the port leaves
+      ``/proc/net/udp`` within 5 s, the node survives 3 host datagrams
+      sent to the port, and a restarted server echoes 3 datagrams.
+    - ``epoll_wait``: ``nettl -s -u -L 1 -E``, UDP. PASS: as
+      ``recvfrom``.
+    - ``accept``: ``nettl -s``, TCP. PASS: a host connect to the port is
+      refused within 5 s, and a restarted server echoes 4 KiB.
+    - ``recv``: ``nettl -s`` with a host connection open. PASS: the host
+      sees the connection closed (EOF or reset) within 5 s, and a server
+      started on another port echoes 4 KiB.
+    """
+    ports = {
+        "recvfrom": 5430,
+        "accept": 5431,
+        "recv": 5432,
+        "epoll_wait": 5433,
+    }
+    port = ports[call]
+    udp = call in ("recvfrom", "epoll_wait")
+    opts = {"recvfrom": "-u ", "epoll_wait": "-u -L 1 -E -n 3 -l 64 "}
+    core = _core(0)
+    pid = _start_killable(
+        core,
+        f"nettl -s {opts.get(call, '')}-p {port} -t 60",
+        rf"listening {'udp' if udp else 'tcp'}",
+    )
+    host = None
+    if call == "recv":
+        host = socket.create_connection((NODE_IPS[0], port), timeout=5)
+    try:
+        time.sleep(1.0)  # let the server reach its blocking call
+        ret = core.sendCommand(f"kill -9 {pid}", timeout=10)
+        assert ret == 0
+        if udp:
+            assert _wait_unbound(core, port)
+        elif host is not None:
+            try:
+                assert host.recv(16) == b""
+            except ConnectionResetError:
+                pass
+        else:
+            assert _wait_refused(port)
+    finally:
+        if host is not None:
+            host.close()
+
+    if udp:
+        _send_udp_burst(NODE_IPS[0], port, 3, 64)
+        nettl_server(0, True, port, NODE_IPS[0])
+        assert host_udp_echo_check(NODE_IPS[0], port, 3)
+    else:
+        # The closed connection of "recv" keeps its port in TIME_WAIT
+        port += 10 if call == "recv" else 0
+        nettl_server(0, False, port, NODE_IPS[0])
+        assert host_tcp_echo_check(NODE_IPS[0], port, 4096)
 
 
 @pytest.mark.cmd_check("nettl_main")

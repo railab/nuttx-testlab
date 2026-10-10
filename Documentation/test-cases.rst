@@ -152,6 +152,17 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
        ``kill -15``) leaves ``/proc/net/udp`` within 5 s; a restarted
        server on the same port receives all 3 host datagrams. Needs
        ``CONFIG_SIG_DEFAULT``.
+   * - ``test_kill_blocked_call_close``
+     - A ``nettl`` server killed (``kill -9``) while blocked in an OS
+       call releases its socket. ``recvfrom`` (``nettl -s -u``) and
+       ``epoll_wait`` (``nettl -s -u -L 1 -E``): the port leaves
+       ``/proc/net/udp`` within 5 s, the node survives 3 host
+       datagrams sent to it, a restarted server echoes 3 datagrams.
+       ``accept`` (``nettl -s``): a host connect is refused within
+       5 s, a restarted server echoes 4 KiB. ``recv`` (``nettl -s``
+       with a host connection): the host sees the connection closed
+       within 5 s, a server on another port echoes 4 KiB. Needs
+       ``CONFIG_SIG_DEFAULT``.
    * - ``test_tcp_kill_listener_leak``
      - After killing (``kill -9``) ``CONFIG_NET_TCP_PREALLOC_CONNS +
        1`` TCP listeners each blocked in accept(), a probe client

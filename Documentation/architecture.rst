@@ -105,7 +105,8 @@ CLI::
 TCP/UDP server-only options (added for ``ip`` regression tests, see
 :doc:`test-cases`), full CLI::
 
-   nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec] [-L n]
+   nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec]
+            [-L n [-E]]
    nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec] [-k idle [-P]]
 
 - ``-k idle`` TCP client only: before the transfer, enable keep-alive
@@ -126,6 +127,7 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
   each has received ``-n`` datagrams of ``-l`` bytes each (or the
   ``-t`` timeout elapses); no echo. With ``-w`` or ``-L``, ``-n``/
   ``-l`` are server-side options instead of client-only.
+- ``-E`` with ``-L`` only: wait with epoll_wait() instead of poll().
 
 Protocol: both sides fill/verify a deterministic byte pattern,
 ``byte(offset) = (offset * 31 + 7) mod 256``, keyed by the byte's
