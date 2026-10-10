@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/sim/modbus-rtu'
+
+product:
+  name: "sim-modbus-rtu"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: '../../boards/sim/sim/sim/configs/modbus-rtu'

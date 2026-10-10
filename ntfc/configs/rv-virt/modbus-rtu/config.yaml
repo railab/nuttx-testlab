@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/rv-virt/modbus-rtu'
+
+product:
+  name: "rv-virt-modbus-rtu"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      boot_timeout: 30
+      line_buffered: true
+      exec_path: 'qemu-system-riscv32'
+      exec_args: '-semihosting -M virt,aclint=on -cpu rv32 -smp 1
+                  -bios none -nographic
+                  -global virtio-mmio.force-legacy=false
+                  -device virtio-serial-device
+                  -chardev serial,id=mb0,path=/dev/ttyTL0
+                  -device virtconsole,chardev=mb0'
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/modbus-rtu'

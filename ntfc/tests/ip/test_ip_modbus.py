@@ -18,27 +18,27 @@
 
 """Modbus TCP: NuttX nxmodbus slave and master against pymodbus.
 
-NuttX slave: ``nxmbserver`` (examples/nxmbserver) with its fixed
-register map: coils and discrete inputs 0, input register ``i`` holds
-``i * 10``, holding register ``i`` starts at ``i * 100``; 100 of each.
-
-NuttX master: ``nxmbclient`` (system/nxmbclient), which prints one
-``<addr> <value>`` line (tab separated) per read item and ``OK`` after a write.
+Register maps and ``nxmbclient`` output: see ``_modbus_common``.
 """
 
-import asyncio
 import re
 import socket
 import struct
-import threading
-from types import TracebackType
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Type
+from typing import Any, Iterator, List
 
 import pytest
+from _modbus_common import (
+    ILLEGAL_DATA_ADDRESS,
+    ILLEGAL_DATA_VALUE,
+    REGS,
+    WRITE_COILS_BUG,
+    HostSlave,
+    client_lines,
+    items,
+)
 from _net_common import HOST_IP, NODE_IPS
 from pymodbus.client import ModbusTcpClient
 from pymodbus.server import ModbusTcpServer
-from pymodbus.simulator import DataType, SimData, SimDevice
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NXMODBUS_TCP"),
@@ -48,16 +48,6 @@ pytestmark = [
 
 NODE_PORT = 502
 HOST_PORT = 1502
-REGS = 100
-
-ILLEGAL_DATA_ADDRESS = 2
-ILLEGAL_DATA_VALUE = 3
-
-WRITE_COILS_BUG = (
-    "system/nxmbclient: write-coils passes one byte per coil to "
-    "nxmb_write_coils(), which expects packed bits, so only the first "
-    "(count + 7) / 8 values are sent, as bits"
-)
 
 
 def _core(node: int) -> Any:
@@ -69,116 +59,14 @@ def _core(node: int) -> Any:
     return pytest.products[node].core(0)
 
 
-class HostSlave:
-    """pymodbus TCP slave on the host bridge with a known register map.
+def _host_slave() -> HostSlave:
+    """Return a pymodbus TCP slave on the host bridge, port 1502.
 
-    Coil ``i`` is ``i % 3 == 0``, discrete input ``i`` is ``i % 2 == 0``,
-    holding register ``i`` is ``1000 + i``, input register ``i`` is
-    ``2000 + i`` (``i`` < 100). Every write request is recorded as
-    ``(function code, address, values)``.
+    :return: slave, not yet started
     """
-
-    def __init__(self, addr: str, port: int) -> None:
-        """Prepare the slave.
-
-        :param addr: host address to bind
-        :param port: TCP port
-        """
-        self.addr = (addr, port)
-        self.writes: List[Tuple[int, int, List[Any]]] = []
-        self._loop = asyncio.new_event_loop()
-        self._ready = threading.Event()
-        self._server: Optional[ModbusTcpServer] = None
-        self._thread = threading.Thread(target=self._run, daemon=True)
-
-    async def _action(
-        self,
-        func: int,
-        start: int,
-        addr: int,
-        count: int,
-        regs: List[int],
-        values: Optional[List[Any]],
-    ) -> None:
-        """Record write requests.
-
-        :param func: request function code
-        :param start: address of ``regs[0]``
-        :param addr: request address
-        :param count: request count
-        :param regs: current registers
-        :param values: values to write, None for reads
-        """
-        if values is not None:
-            self.writes.append((func, addr, list(values)))
-
-    def _device(self) -> SimDevice:
-        """Build the simulated device.
-
-        :return: device with the register map in the class docstring
-        """
-        coils = [i % 3 == 0 for i in range(REGS)]
-        discrete = [i % 2 == 0 for i in range(REGS)]
-        return SimDevice(
-            id=1,
-            simdata=(
-                [SimData(0, values=coils, datatype=DataType.BITS)],
-                [SimData(0, values=discrete, datatype=DataType.BITS)],
-                [
-                    SimData(
-                        0,
-                        values=[1000 + i for i in range(REGS)],
-                        datatype=DataType.REGISTERS,
-                    )
-                ],
-                [
-                    SimData(
-                        0,
-                        values=[2000 + i for i in range(REGS)],
-                        datatype=DataType.REGISTERS,
-                    )
-                ],
-            ),
-            action=self._action,
-        )
-
-    def _run(self) -> None:
-        """Serve in this thread's event loop."""
-        asyncio.set_event_loop(self._loop)
-
-        async def serve() -> None:
-            self._server = ModbusTcpServer(self._device(), address=self.addr)
-            self._ready.set()
-            await self._server.serve_forever()
-
-        self._loop.run_until_complete(serve())
-
-    def __enter__(self) -> "HostSlave":
-        """Start serving.
-
-        :return: this slave
-        """
-        self._thread.start()
-        assert self._ready.wait(10), "pymodbus slave did not start"
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[TracebackType],
-    ) -> None:
-        """Stop serving.
-
-        :param exc_type: exception type, if any
-        :param exc: exception, if any
-        :param tb: traceback, if any
-        """
-        assert self._server is not None
-        asyncio.run_coroutine_threadsafe(
-            self._server.shutdown(), self._loop
-        ).result(10)
-        self._thread.join(10)
+    return HostSlave(
+        lambda dev: ModbusTcpServer(dev, address=(HOST_IP, HOST_PORT))
+    )
 
 
 def _start_slave(node: int) -> int:
@@ -344,37 +232,20 @@ def _client(node: int, server: str, port: int, cmd: str) -> List[str]:
         )
         .output
     )
-    lines = [line.strip() for line in out.replace("\r", "").split("\n")]
-    lines = [line for line in lines[1:] if line and line != "nsh>"]
-    assert not any(line.startswith("nsh:") for line in lines), lines
-    return lines
-
-
-def _items(lines: List[str]) -> Dict[int, int]:
-    """Parse the ``<addr> <value>`` lines of a read command.
-
-    :param lines: nxmbclient output lines
-    :return: value by address
-    """
-    items = {}
-    for line in lines:
-        found = re.fullmatch(r"(\d+)\s+(\d+)", line)
-        if found:
-            items[int(found.group(1))] = int(found.group(2))
-    return items
+    return client_lines(out)
 
 
 def test_modbus_master_read() -> None:
     """The NuttX master reads all four tables of a host slave."""
-    with HostSlave(HOST_IP, HOST_PORT):
+    with _host_slave():
         out = _client(0, HOST_IP, HOST_PORT, "read-holding 10 5")
-        assert _items(out) == {i: 1000 + i for i in range(10, 15)}, out
+        assert items(out) == {i: 1000 + i for i in range(10, 15)}, out
         out = _client(0, HOST_IP, HOST_PORT, "read-input 95 5")
-        assert _items(out) == {i: 2000 + i for i in range(95, 100)}, out
+        assert items(out) == {i: 2000 + i for i in range(95, 100)}, out
         out = _client(0, HOST_IP, HOST_PORT, "read-coils 0 12")
-        assert _items(out) == {i: int(i % 3 == 0) for i in range(12)}, out
+        assert items(out) == {i: int(i % 3 == 0) for i in range(12)}, out
         out = _client(0, HOST_IP, HOST_PORT, "read-discrete 3 9")
-        assert _items(out) == {i: int(i % 2 == 0) for i in range(3, 12)}, out
+        assert items(out) == {i: int(i % 2 == 0) for i in range(3, 12)}, out
 
 
 def test_modbus_master_write() -> None:
@@ -385,23 +256,23 @@ def test_modbus_master_write() -> None:
         ("write-coil 5 1", (5, 5, [True])),
         ("write-coil 6 0", (5, 6, [False])),
     ]
-    with HostSlave(HOST_IP, HOST_PORT) as slave:
+    with _host_slave() as slave:
         for cmd, _ in cmds:
             out = _client(0, HOST_IP, HOST_PORT, cmd)
             assert "OK" in out, f"{cmd}: {out}"
         out = _client(0, HOST_IP, HOST_PORT, "read-holding 20 4")
-        assert _items(out) == {20: 1, 21: 65535, 22: 0, 23: 32769}, out
+        assert items(out) == {20: 1, 21: 65535, 22: 0, 23: 32769}, out
     assert slave.writes == [expect for _, expect in cmds]
 
 
 @pytest.mark.xfail(strict=True, reason=WRITE_COILS_BUG)
 def test_modbus_master_write_coils() -> None:
     """``write-coils`` by the NuttX master sets each listed coil."""
-    with HostSlave(HOST_IP, HOST_PORT) as slave:
+    with _host_slave() as slave:
         out = _client(0, HOST_IP, HOST_PORT, "write-coils 40 1 0 1 1 0 1")
         assert "OK" in out, out
         out = _client(0, HOST_IP, HOST_PORT, "read-coils 40 6")
-        assert _items(out) == {40: 1, 41: 0, 42: 1, 43: 1, 44: 0, 45: 1}, out
+        assert items(out) == {40: 1, 41: 0, 42: 1, 43: 1, 44: 0, 45: 1}, out
     assert slave.writes == [(15, 40, [True, False, True, True, False, True])]
 
 
@@ -412,12 +283,12 @@ def test_modbus_master_exception() -> None:
     (``ECONNREFUSED``).
     """
     failed = "Error: read-holding failed:"
-    with HostSlave(HOST_IP, HOST_PORT):
+    with _host_slave():
         out = _client(0, HOST_IP, HOST_PORT, "read-holding 0 1")
-        assert _items(out) == {0: 1000}, out
+        assert items(out) == {0: 1000}, out
         out = _client(0, HOST_IP, HOST_PORT, f"read-holding {REGS} 1")
         assert any(line.startswith(failed) for line in out), out
-        assert not _items(out), out
+        assert not items(out), out
     out = _client(0, HOST_IP, HOST_PORT, "read-holding 0 1")
     assert "Error: failed to enable context: -111" in out, out
 
@@ -432,10 +303,10 @@ def test_modbus_master_to_node_slave() -> None:
             out = _client(0, NODE_IPS[1], NODE_PORT, f"write-coil {coil} 1")
             assert "OK" in out, out
         out = _client(0, NODE_IPS[1], NODE_PORT, "read-holding 49 5")
-        assert _items(out) == {49: 4900, 50: 7, 51: 8, 52: 9, 53: 5300}, out
+        assert items(out) == {49: 4900, 50: 7, 51: 8, 52: 9, 53: 5300}, out
         out = _client(0, NODE_IPS[1], NODE_PORT, "read-coils 60 4")
-        assert _items(out) == {60: 1, 61: 1, 62: 0, 63: 1}, out
+        assert items(out) == {60: 1, 61: 1, 62: 0, 63: 1}, out
         out = _client(0, NODE_IPS[1], NODE_PORT, "read-input 0 3")
-        assert _items(out) == {0: 0, 1: 10, 2: 20}, out
+        assert items(out) == {0: 0, 1: 10, 2: 20}, out
     finally:
         _stop_slave(1, pid)

@@ -12,3 +12,7 @@ sessions:
     confpath: ntfc/configs/rv-virt/ip-pair/config.yaml
     testpath: ntfc/tests/ip
     resources: [tl-br0]
+  - name: "rv-virt-modbus-rtu"
+    confpath: ntfc/configs/rv-virt/modbus-rtu/config.yaml
+    testpath: ntfc/tests/modbus
+    resources: [ttyTL0]

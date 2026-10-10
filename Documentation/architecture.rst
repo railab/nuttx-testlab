@@ -264,12 +264,13 @@ Manifests
 ``qemu-armv8a``, ``rv-virt``, ``qemu-intel64``) lists ``options:``
 (``fail_fast: false``, ``parallel: false``) and ``sessions:``, each a
 ``name``, a ``confpath`` (the target's ``config.yaml``) and a
-``testpath`` (a test module or directory). Every manifest has two
-sessions: ``<target>-smoke`` (``ntfc/tests/smoke``) and
-``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``).
-``sim`` also has ``sim-can-bus`` and ``sim-can-char``
-(``ntfc/tests/can``, ``resources: [can0]``, see
-`Host SocketCAN bus (can-bus)`_).
+``testpath`` (a test module or directory). Every manifest has three
+sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
+``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``) and
+``<target>-modbus-rtu`` (``ntfc/tests/modbus``, ``resources:
+[ttyTL0]``, see `Host serial line (modbus-rtu)`_). ``sim`` also has
+``sim-can-bus`` and ``sim-can-char`` (``ntfc/tests/can``,
+``resources: [can0]``, see `Host SocketCAN bus (can-bus)`_).
 
 Host network (ip-pair)
 ----------------------
@@ -340,19 +341,50 @@ all nodes and the host share it as one bus. Nodes run ``ifup can0``.
        (``CAN_KVASER``, classic), node1 ``ctucan_pci``
        (``CAN_CTUCANFD``, CAN FD)
 
+Host serial line (modbus-rtu)
+-----------------------------
+
+``testenv/modbus-rtu.sh {start|stop|status}`` runs ``socat`` joining
+two host pseudoterminals back to back: ``/dev/ttyTL0`` is opened by the
+target, ``/dev/ttyTL1`` by the tests.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - Node UART
+     - Wiring
+   * - ``sim``
+     - ``CONFIG_SIM_UART0_NAME="/dev/ttyTL0"``, the same path on the
+       node
+     - the sim process opens ``/dev/ttyTL0``
+   * - ``qemu-armv8a``
+     - virtio-serial, ``/dev/ttyS2`` (``ttyS1`` is the PL011 console)
+     - ``-device virtio-serial-device -chardev
+       serial,id=mb0,path=/dev/ttyTL0 -device virtconsole,chardev=mb0``
+   * - ``rv-virt``
+     - virtio-serial, ``/dev/ttyS1``
+     - as ``qemu-armv8a``
+   * - ``qemu-intel64``
+     - 16550 COM2 (``0x2f8``, IRQ 3, RX trigger 1 byte), ``/dev/ttyS1``
+     - ``-chardev serial,id=mb0,path=/dev/ttyTL0 -serial chardev:mb0``
+
+Defconfigs: ``boards/<arch>/<chip>/<board>/configs/modbus-rtu``. The
+line runs without parity: Linux pseudoterminals reject ``PARENB``.
+
 Docker image and runner
 ------------------------
 
 ``tools/docker/Dockerfile`` builds an ``ubuntu:24.04``-based image with
 the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``gcc-14``/``g++-14``), QEMU packages (``qemu-system-arm``,
-``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``iperf``
-(iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker and host
-clients), ``kconfiglib`` (pip), and a Linux-kernel ``scripts/config``
-fetched as ``kconfig-tweak``; the ARM64 and RISC-V bare-metal
-cross-toolchains are downloaded and unpacked under ``/opt``. The
-entrypoint is ``/usr/local/bin/testlab-entrypoint`` (``entrypoint.sh``),
-working directory ``/work``.
+``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``socat``,
+``iperf`` (iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker
+and host clients), ``kconfiglib``, ``pymodbus`` and ``pyserial`` (pip),
+and a Linux-kernel ``scripts/config`` fetched as ``kconfig-tweak``; the
+ARM64 and RISC-V bare-metal cross-toolchains are downloaded and unpacked
+under ``/opt``. The entrypoint is ``/usr/local/bin/testlab-entrypoint``
+(``entrypoint.sh``), working directory ``/work``.
 
 ``tools/docker/run.sh``::
 

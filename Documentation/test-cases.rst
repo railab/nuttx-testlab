@@ -5,7 +5,7 @@ Test cases
 
 This page lists every NTFC test module and test function that exists
 under ``ntfc/tests/`` today, what each one does and its exact PASS
-criteria. Shared helpers live in ``ntfc/tests/_net_common.py``;
+criteria. Shared helpers live in ``ntfc/tests/_*.py``;
 ``ntfc/tests/conftest.py`` only adjusts ``sys.path`` so test modules
 can import them.
 
@@ -500,3 +500,53 @@ Sessions: ``sim-can-bus`` (SocketCAN, ``can0``) and ``sim-can-char``
        ``cantl: PASS rx=20 lost=0 err=0`` while the host sends
        unrelated ``0x456`` frames before, during and after node 0's
        ``0x123`` transmission.
+
+``modbus`` module
+-----------------
+
+Source: ``ntfc/tests/modbus/test_modbus_rtu.py``. Modbus RTU between
+one node and pymodbus on the host over a serial line (see
+:doc:`architecture`), host end ``/dev/ttyTL1``. nxmodbus:
+``nxmbserver`` slave (unit 1) and ``nxmbclient`` master at 19200 baud,
+register maps as in `ip Modbus TCP`_. Sessions: ``sim-modbus-rtu``, ``qemu-armv8a-modbus-rtu``,
+``rv-virt-modbus-rtu``, ``qemu-intel64-modbus-rtu``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_modbus_rtu_master_read``
+     - The node reads all four tables of a host slave and prints the
+       slave's values.
+   * - ``test_modbus_rtu_master_write``
+     - ``write-holding``, ``write-holdings`` and ``write-coil`` reach
+       the host slave with the same function code, address and values,
+       and read back.
+   * - ``test_modbus_rtu_master_write_coils``
+     - ``write-coils`` with 6 values sets each listed coil on the host
+       slave (one FC15 request with the same values).
+   * - ``test_modbus_rtu_master_exception``
+     - A host slave exception response fails the read; with no slave
+       on the line the read times out (``-110``).
+   * - ``test_modbus_rtu_slave_read``
+     - A host master reads holding and input registers, coils and
+       discrete inputs with the values of the nxmbserver register map.
+   * - ``test_modbus_rtu_slave_write``
+     - FC05, FC06, FC15, FC16 and FC23 writes read back the written
+       values.
+   * - ``test_modbus_rtu_slave_diag``
+     - Diagnostics Return Query Data (FC08/0) echoes the request.
+   * - ``test_modbus_rtu_slave_id``
+     - Report Server ID (FC17) returns byte count 2, unit 1, run
+       indicator ``0xFF``.
+   * - ``test_modbus_rtu_slave_exception``
+     - Raw requests get the exception response, as
+       ``test_modbus_slave_exception``.
+   * - ``test_modbus_rtu_slave_framing``
+     - No reply to a frame with a bad CRC or for unit 2; a broadcast
+       (unit 0) write gets no reply but is applied.
+   * - ``test_modbus_rtu_slave_restart``
+     - ``nxmbserver`` started a second time in the same boot serves
+       requests.
