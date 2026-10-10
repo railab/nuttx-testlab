@@ -43,6 +43,8 @@ pytestmark = [
 
 SERVER_VERDICT_RE = r"nettl: (PASS|FAIL) rx=\d+ err=\d+[\r\n]"
 CHUNK = 1024
+POLLERR = 0x08
+POLLHUP = 0x10
 
 SOLINGER_TIME_WAIT_BUG = (
     "net/tcp/tcp_conn.c: with CONFIG_NET_SOLINGER tcp_alloc() never "
@@ -54,7 +56,8 @@ KEEPALIVE_ERRNO_BUG = (
     "net/tcp/tcp_timer.c: keep-alive expiry reports TCP_ABORT instead of "
     "TCP_TIMEDOUT and tcp_recvhandler() (net/tcp/tcp_recvfrom.c) maps "
     "every TCP_DISCONN_EVENTS flag to -ENOTCONN, so recv() fails with "
-    "ENOTCONN instead of ETIMEDOUT"
+    "ENOTCONN and poll() sets SO_ERROR to ECONNREFUSED instead of "
+    "ETIMEDOUT"
 )
 
 
@@ -286,23 +289,23 @@ def test_tcp_keepalive_live_peer() -> None:
     assert found and found.group(1) == "PASS", out
 
 
-@pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
-@pytest.mark.xfail(strict=True, reason=KEEPALIVE_ERRNO_BUG)
-def test_tcp_keepalive_dead_peer() -> None:
-    """Unanswered keep-alive probes end the connection with ETIMEDOUT.
+def _keepalive_dead_peer(port: int, opts: str) -> str:
+    """Run a keep-alive node client while the host stops answering it.
 
-    The host stops answering the node (a blackhole route to it) while
-    the node client idles in recv() with keep-alive (1 s idle, 1 s
-    interval, 3 probes). recv() must fail with ETIMEDOUT (110) within
-    10 s, well before its 20 s receive timeout.
+    The host blackholes the route to node 0 once the client is connected
+    and idle (1 s idle, 1 s interval, 3 probes, 20 s timeout). The
+    connection must be found dead within 10 s.
+
+    :param port: host echo server port
+    :param opts: extra ``nettl`` client options
+    :return: node output up to the client verdict
     """
-    port = 5257
     route = ["ip", "route", "add", "blackhole", f"{NODE_IPS[0]}/32"]
     with TcpEchoServer(HOST_IP, port) as srv:
         out = (
             _core()
             .sendCommandReadUntilPattern(
-                f"nettl -c {HOST_IP} -p {port} -n {CHUNK} -k 1 -t 20 &",
+                f"nettl -c {HOST_IP} -p {port} -n {CHUNK} -k 1 -t 20{opts} &",
                 pattern=r"nettl \[\d+:",
                 timeout=10,
             )
@@ -318,7 +321,39 @@ def test_tcp_keepalive_dead_peer() -> None:
             route[2] = "del"
             subprocess.run(route, check=False)
     elapsed = time.monotonic() - start
+    assert elapsed < 10, f"detected after {elapsed:.1f} s"
+    return out
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
+@pytest.mark.xfail(strict=True, reason=KEEPALIVE_ERRNO_BUG)
+def test_tcp_keepalive_dead_peer() -> None:
+    """Unanswered keep-alive probes end the connection with ETIMEDOUT.
+
+    The node client idles in recv() with keep-alive while the host stops
+    answering it (a blackhole route to the node). recv() must fail with
+    ETIMEDOUT (110) within 10 s, well before its 20 s receive timeout.
+    """
+    out = _keepalive_dead_peer(5257, "")
     found = re.search(r"nettl: recv failed (\d+)", out)
     assert found, out
-    assert elapsed < 10, f"detected after {elapsed:.1f} s"
     assert found.group(1) == "110", out
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
+@pytest.mark.xfail(strict=True, reason=KEEPALIVE_ERRNO_BUG)
+def test_tcp_keepalive_dead_peer_poll() -> None:
+    """Unanswered keep-alive probes wake poll() with a pending ETIMEDOUT.
+
+    Same as ``test_tcp_keepalive_dead_peer`` with the client waiting in
+    poll(POLLIN): poll() must report POLLERR and POLLHUP within 10 s and
+    getsockopt(SO_ERROR) must return ETIMEDOUT (110).
+    """
+    out = _keepalive_dead_peer(5258, " -P")
+    found = re.search(
+        r"nettl: poll revents (0x[0-9a-f]+) so_error (-?\d+)", out
+    )
+    assert found, out
+    revents = int(found.group(1), 16)
+    assert revents & POLLERR and revents & POLLHUP, out
+    assert found.group(2) == "110", out

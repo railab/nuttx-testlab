@@ -75,6 +75,23 @@ Test functions
   ``nettl -c 127.0.0.1 -u -p 5101 -n 50``. PASS: the captured verdict
   line is exactly ``nettl: PASS tx=50 rx=50 lost=0 err=0``.
 
+``test_nsh_max_args``
+  ``hello`` with as many argv entries as NSH accepts
+  (``CONFIG_NSH_MAXARGUMENTS``, raised to 11 by ``nshlib/nsh.h`` with
+  networking and ``ifconfig``). PASS: ``Hello, World`` printed, no
+  ``too many arguments`` error.
+
+``test_nsh_too_many_args``
+  ``hello`` with one argv entry more. PASS: NSH prints
+  ``nsh: hello: too many arguments`` and ``hello`` does not run.
+  Skipped if the command line does not fit in ``CONFIG_LINE_MAX``.
+
+``test_exit_ends_all_threads``
+  Runs ``exittl`` (``apps/exittl``): a child task whose second thread
+  catches ``SIGTERM`` and waits in ``pause()`` calls ``exit()`` from
+  its main thread. PASS: ``exittl: PASS`` (the child is gone within
+  5 s and the ``SIGTERM`` handler did not run).
+
 ``ip`` module
 -------------
 
@@ -278,6 +295,10 @@ node0 against the host. Same sessions as the ``ip`` module.
    * - ``test_tcp_keepalive_dead_peer``
      - Same client while the host stops answering (blackhole route to
        the node): ``recv()`` fails with ``ETIMEDOUT`` within 10 s.
+   * - ``test_tcp_keepalive_dead_peer_poll``
+     - Same, client waiting in ``poll(POLLIN)`` (``nettl -P``):
+       ``POLLERR`` and ``POLLHUP`` within 10 s, then
+       ``getsockopt(SO_ERROR)`` returns ``ETIMEDOUT``.
 
 ``ip`` link changes
 -------------------

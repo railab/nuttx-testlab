@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_EXITTL
+	tristate "exittl: exit() with other threads test tool"
+	default n
+	depends on !DISABLE_PTHREAD && !BUILD_KERNEL
+	---help---
+		Starts a child task whose second thread catches SIGTERM and
+		waits in pause(), then calls exit() from the child's main
+		thread.  Prints a PASS verdict line if the whole child task
+		ends within the timeout and the SIGTERM handler never ran.
+
+if TESTLAB_EXITTL
+
+config TESTLAB_EXITTL_PROGNAME
+	string "Program name"
+	default "exittl"
+
+config TESTLAB_EXITTL_PRIORITY
+	int "exittl task priority"
+	default 100
+
+config TESTLAB_EXITTL_STACKSIZE
+	int "exittl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

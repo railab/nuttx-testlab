@@ -106,7 +106,15 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
 :doc:`test-cases`), full CLI::
 
    nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec] [-L n]
-   nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec]
+   nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec] [-k idle [-P]]
+
+- ``-k idle`` TCP client only: before the transfer, enable keep-alive
+  (``idle`` s idle, 1 s interval, 3 probes) and wait idle in
+  ``recv()`` for the ``-t`` timeout. Prints ``nettl: idle ok`` on the
+  timeout, else ``nettl: recv failed <errno>`` and fails.
+- ``-P`` with ``-k``: wait in ``poll(POLLIN)`` instead of ``recv()``;
+  on an event prints ``nettl: poll revents 0x<revents> so_error
+  <SO_ERROR>`` and fails.
 
 - ``-w`` TCP server only: after accept(), send ``-n`` bytes of
   pattern data to the client (no echo) then close; does not combine
@@ -172,6 +180,19 @@ process exit ``EXIT_FAILURE`` (``1``); a usage error (bad option, bad
 numeric argument, both/neither of ``-s``/``-c``, or a UDP ``-l`` out of
 range) prints usage and exits ``EXIT_FAILURE`` before printing any
 verdict line.
+
+``apps/exittl``
+~~~~~~~~~~~~~~~
+
+``exittl`` (``CONFIG_TESTLAB_EXITTL``, flat builds with pthreads) checks
+that ``exit()`` ends a whole task. It starts a child task (``task_create``)
+whose second thread installs a ``SIGTERM`` handler and waits in
+``pause()``; the child's main thread then calls ``exit()``. The handler
+sets a flag that the parent reads (flat build: shared memory).
+
+- Verdict: ``exittl: PASS pid=<n>`` if the child is gone (``kill(pid, 0)``
+  fails with ``ESRCH``) within 5 s and the handler never ran, else
+  ``exittl: FAIL pid=<n> alive=<0|1> handler=<0|1>``; exit 0 on PASS.
 
 ``apps/cantl``
 ~~~~~~~~~~~~~~

@@ -80,6 +80,7 @@ struct nettl_args_s
   int         timeout;
   int         delay;
   int         keepidle;
+  bool        keeppoll;
 };
 
 /****************************************************************************
@@ -513,15 +514,18 @@ static int nettl_tcp_server_multi(FAR const struct nettl_args_s *args)
 }
 
 /* Enable TCP keep-alive (idle seconds, 1 s interval, 3 probes) and wait
- * idle in recv() for args->timeout seconds.  A receive timeout means the
- * peer is alive; any other result fails the client.
+ * idle in recv() (or in poll() with -P) for args->timeout seconds.  A
+ * timeout means the peer is alive; any other result fails the client.
  */
 
 static int nettl_keepalive_idle(int sd, FAR const struct nettl_args_s *args)
 {
 #ifdef CONFIG_NET_TCP_KEEPALIVE
+  struct pollfd pfd;
   struct timeval idle;
   struct timeval intvl;
+  socklen_t len;
+  int soerr;
   int on  = 1;
   int cnt = 3;
   ssize_t ret;
@@ -543,6 +547,31 @@ static int nettl_keepalive_idle(int sd, FAR const struct nettl_args_s *args)
       setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt)) < 0)
     {
       printf("nettl: keepalive setsockopt failed %d\n", errno);
+      return -1;
+    }
+
+  if (args->keeppoll)
+    {
+      pfd.fd      = sd;
+      pfd.events  = POLLIN;
+      pfd.revents = 0;
+
+      ret = poll(&pfd, 1, args->timeout * 1000);
+      if (ret == 0)
+        {
+          printf("nettl: idle ok\n");
+          return 0;
+        }
+
+      soerr = 0;
+      len   = sizeof(soerr);
+      if (getsockopt(sd, SOL_SOCKET, SO_ERROR, &soerr, &len) < 0)
+        {
+          soerr = -errno;
+        }
+
+      printf("nettl: poll revents 0x%x so_error %d\n",
+             ret < 0 ? 0 : pfd.revents, soerr);
       return -1;
     }
 
@@ -919,7 +948,7 @@ static void nettl_usage(FAR const char *progname)
   printf("Usage: %s -s [-6] [-u] [-g group] [-p port] [-n count] "
          "[-l len] [-t sec] [-w] [-D sec] [-L n] [-C n]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
-         "[-t sec] [-k idle]\n", progname);
+         "[-t sec] [-k idle [-P]]\n", progname);
 }
 
 /****************************************************************************
@@ -936,7 +965,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:C:k:")) != ERROR)
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:C:k:P")) != ERROR)
     {
       unsigned long val;
 
@@ -980,6 +1009,9 @@ int main(int argc, FAR char *argv[])
               }
 
             args.keepidle = (int)val;
+            break;
+          case 'P':
+            args.keeppoll = true;
             break;
           case 'L':
             if (!nettl_parse_uint(optarg, 1, NETTL_REUSE_MAX, &val))
