@@ -219,6 +219,32 @@ with ``/`` in place of the ifname, e.g. ``cantl -s /dev/can0 ...``.
 - Checks that need host traffic print ``canopt: ready`` first.
 - Verdict: ``canopt: PASS|FAIL <check> ...``; exit 0 on PASS.
 
+``apps/conode``
+~~~~~~~~~~~~~~~
+
+``conode`` (``CONFIG_TESTLAB_CONODE``, Lely CANopen with ``CSDO``,
+``MASTER``, ``RPDO``, ``TPDO``, ``SYNC``) is a SocketCAN CANopen node::
+
+   conode -i id [-m] [-r id,...] [-s sync_ms] [-b hb_ms] [-c hbc_ms]
+          [-d ifname] [slave_id ...]
+
+- Every node: heartbeat ``-b`` ms (default 100), TPDO1 ``0x180 + id``
+  on each SYNC with a counter (``0x2100``, +1 per SYNC in OPERATIONAL);
+  RPDOs for TPDO1 of the ``-r`` nodes, checked for gaps.
+- Master (``-m``): SYNC producer (``-s``, default 100 ms), heartbeat
+  consumer for each slave (``-c``, default 500 ms). On a slave's boot-up
+  it writes ``0x2000`` = ``boots << 16 | id << 8 | slave`` over SDO,
+  reads it back and sends NMT start. ``-r`` defaults to the slaves.
+- Objects indexed by node-ID: ``0x2201``/``0x2202``/``0x2203`` PDOs
+  received/skipped/not increasing, ``0x2204`` last NMT state,
+  ``0x2205``/``0x2206`` heartbeat timeouts/recoveries, ``0x2207``
+  boot-ups; ``0x2210`` non-zero clears the PDO counts; ``0x2211``
+  frames the socket did not accept; ``0x2001`` is free.
+- Console: ``conode: st <id> <state>``, ``conode: hb <id>
+  timeout|resolved``, ``conode: boot <id> PASS|FAIL ...``. SIGTERM
+  prints ``conode: PASS|FAIL rx=<n> lost=<n> bad=<n> txerr=<n>
+  errno=<n>`` and exits.
+
 NTFC configs
 ------------
 
@@ -349,6 +375,10 @@ The sim ``can-bus`` and ``can-char`` defconfigs also build the Lely
 CANopen examples ``coslave`` and ``comaster`` (SocketCAN and character
 driver backend); lely-core is downloaded at build time from
 ``CONFIG_CANUTILS_LELYCANOPEN_URL``, pinned to a commit.
+The ``canopen-net`` scenario runs four sim nodes from one defconfig,
+``boards/sim/sim/sim/configs/canopen-net`` (``conode``,
+``CONFIG_USEC_PER_TICK=1000`` for SYNC periods down to 2 ms); node-ID
+and role come from the ``conode`` command line.
 
 .. list-table::
    :header-rows: 1

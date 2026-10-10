@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/sim/canopen-net'
+
+product0:
+  name: "sim-node0"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: '../../boards/sim/sim/sim/configs/canopen-net'
+
+product1:
+  name: "sim-node1"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: '../../boards/sim/sim/sim/configs/canopen-net'
+
+product2:
+  name: "sim-node2"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: '../../boards/sim/sim/sim/configs/canopen-net'
+
+product3:
+  name: "sim-node3"
+  cores:
+    core0:
+      name: 'main'
+      device: 'sim'
+      line_buffered: true
+      defconfig: '../../boards/sim/sim/sim/configs/canopen-net'

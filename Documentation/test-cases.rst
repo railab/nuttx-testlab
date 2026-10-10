@@ -721,6 +721,65 @@ as the ``can`` module.
      - Every frame ``coslave`` sends during NMT start, 5 SYNCs and an
        SDO upload is a classic CAN frame.
 
+``canopen`` network
+-------------------
+
+Source: ``ntfc/tests/canopen/test_canopen_net.py`` (helpers in
+``ntfc/tests/_canopen_net.py``). ``conode`` master node-ID 1 (node 0),
+slaves 2-4 (nodes 1-3), python-canopen node 5 on the host; every node
+receives TPDO1 of all others. SYNC 100 ms, heartbeat 100 ms, master
+heartbeat consumer 500 ms. Every PDO check also requires no transmit
+error on any node. Session: ``sim-canopen-net``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_canopen_net_boot``
+     - The master sees nodes 2-5 OPERATIONAL, each booted at least once,
+       no heartbeat timeout; all heartbeats report ``0x05``.
+   * - ``test_canopen_net_master_sdo``
+     - ``0x2000`` of nodes 2-5 holds the value the master wrote at their
+       last boot.
+   * - ``test_canopen_net_heartbeat``
+     - Nodes 1-4 send ``0x05`` heartbeats, mean period 80-125 ms, no gap
+       of 200 ms.
+   * - ``test_canopen_net_pdo``
+     - Over 20 SYNCs every node receives TPDO1 of every other node, no
+       counter skipped or repeated; one TPDO per SYNC per node.
+   * - ``test_canopen_net_host_sdo_concurrent``
+     - Parallel host SDO to nodes 1-4, 30 rounds each: expedited and
+       segmented write of ``0x2001`` read back, ``0x1018:1`` read.
+   * - ``test_canopen_net_nmt_broadcast``
+     - NMT stop and pre-operational to all: nodes 2-5 report ``0x04`` and
+       ``0x7F`` (heartbeat and master view), send no TPDO; the master
+       stays OPERATIONAL with SYNC and TPDO. Start to all: PDOs resume
+       without gaps.
+   * - ``test_canopen_net_hb_timeout``
+     - ``conode`` on node 4 stopped: the master counts one heartbeat
+       timeout within 1.2 s. Restarted: one recovery, one boot-up,
+       ``0x2000`` rewritten, OPERATIONAL, PDOs without gaps.
+   * - ``test_canopen_net_duplicate_bootup``
+     - A host boot-up for running node 3: the master boots it again
+       (``0x2000`` rewritten, NMT start); node 3 stays OPERATIONAL and
+       its PDOs continue without gaps.
+   * - ``test_canopen_net_duplicate_bootup_state``
+     - After a duplicate boot-up the master's state of node 3 returns to
+       OPERATIONAL.
+   * - ``test_canopen_net_bus_load``
+     - SYNC 2 ms for 5 s (``0x1006`` over SDO): mean SYNC period at most
+       2.5 ms, every receiver got at least 95% of the PDOs of each node
+       without gaps, no heartbeat timeout.
+   * - ``test_canopen_net_master_restart``
+     - The stopped master prints ``conode: PASS``; restarted, it resets
+       all nodes, sees one boot-up of each and boots all to
+       OPERATIONAL.
+   * - ``test_canopen_net_kill_restart``
+     - ``conode`` on node 4 killed with SIGKILL and restarted is booted
+       to OPERATIONAL and answers SDO.
+
 ``modbus`` module
 -----------------
 

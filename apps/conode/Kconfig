@@ -1,0 +1,35 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_CONODE
+	tristate "conode: CANopen network node (Lely)"
+	default n
+	depends on NET_CAN && CANUTILS_LELYCANOPEN
+	depends on CANUTILS_LELYCANOPEN_CSDO && CANUTILS_LELYCANOPEN_MASTER
+	depends on CANUTILS_LELYCANOPEN_RPDO && CANUTILS_LELYCANOPEN_TPDO
+	depends on CANUTILS_LELYCANOPEN_SYNC
+	select NETUTILS_NETLIB
+	---help---
+		CANopen node on SocketCAN built on Lely CANopen.  Node-ID and
+		role come from the command line: a master boots a list of
+		slaves (SDO, NMT start), consumes their heartbeats and produces
+		SYNC; every node sends a counter in TPDO1 on each SYNC and
+		checks the counters it receives from its peers.
+
+if TESTLAB_CONODE
+
+config TESTLAB_CONODE_PROGNAME
+	string "Program name"
+	default "conode"
+
+config TESTLAB_CONODE_PRIORITY
+	int "conode task priority"
+	default 100
+
+config TESTLAB_CONODE_STACKSIZE
+	int "conode stack size"
+	default 8192
+
+endif

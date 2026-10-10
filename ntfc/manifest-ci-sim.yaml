@@ -20,6 +20,10 @@ sessions:
     confpath: ntfc/configs/sim/can-char/config.yaml
     testpath: ntfc/tests/can
     resources: [can0]
+  - name: "sim-canopen-net"
+    confpath: ntfc/configs/sim/canopen-net/config.yaml
+    testpath: ntfc/tests/canopen
+    resources: [can0]
   - name: "sim-modbus-rtu"
     confpath: ntfc/configs/sim/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus
