@@ -77,6 +77,36 @@ def _core(node: int) -> Any:
     return pytest.products[node].core(0)
 
 
+def tcp_free(node: int) -> int:
+    """Return the number of free TCP connections of a node.
+
+    :param node: product index
+    :return: ``CONFIG_NET_TCP_PREALLOC_CONNS`` minus ``/proc/net/tcp`` rows
+    """
+    total = int(_core(node).conf.kv_check("CONFIG_NET_TCP_PREALLOC_CONNS"))
+    ret = _core(node).sendCommandReadUntilPattern(
+        "cat /proc/net/tcp", pattern=r"nsh> ", timeout=10
+    )
+    rows = re.findall(r"^ *\d+: ", str(ret.output), re.MULTILINE)
+    return total - len(rows)
+
+
+def wait_tcp_room(room: int, timeout: float = 130) -> None:
+    """Wait until both nodes have free TCP connections.
+
+    Closed connections stay in TIME_WAIT for 2 minutes and are not
+    recycled while ``CONFIG_NET_SOLINGER`` is set, so tests that open many
+    short connections can use up the preallocated pool.
+
+    :param room: number of free connections needed on each node
+    :param timeout: seconds to wait per node
+    """
+    for node in range(len(NODE_IPS)):
+        deadline = time.monotonic() + timeout
+        while tcp_free(node) < room and time.monotonic() < deadline:
+            time.sleep(5)
+
+
 def nettl_server(
     node: int,
     udp: bool,

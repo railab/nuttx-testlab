@@ -39,7 +39,7 @@ from typing import Any, Iterator, List, Optional, Tuple, Type
 
 import pytest
 from _host_services import MosquittoBroker
-from _net_common import HOST_IP
+from _net_common import HOST_IP, wait_tcp_room
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP")]
 
@@ -112,30 +112,13 @@ def broker() -> Iterator[MosquittoBroker]:
         yield mosquitto
 
 
-def _tcp_free(node: int) -> int:
-    """Return the number of free TCP connections of a node.
-
-    :param node: product index
-    :return: ``CONFIG_NET_TCP_PREALLOC_CONNS`` minus ``/proc/net/tcp`` rows
-    """
-    total = int(_core(node).conf.kv_check("CONFIG_NET_TCP_PREALLOC_CONNS"))
-    out = _run(node, "cat /proc/net/tcp", timeout=10)
-    return total - len(re.findall(r"^ *\d+: ", out, re.MULTILINE))
-
-
 @pytest.fixture(autouse=True)
 def tcp_room() -> None:
     """Wait until both nodes have free TCP connections.
 
-    Every MQTT session is a short TCP connection; closed ones stay in
-    TIME_WAIT for 2 minutes and are not recycled while
-    ``CONFIG_NET_SOLINGER`` is set, so earlier tests may have used up
-    the preallocated pool.
+    Every MQTT session is a short TCP connection.
     """
-    for node in (0, 1):
-        deadline = time.monotonic() + 130
-        while _tcp_free(node) < TCP_ROOM and time.monotonic() < deadline:
-            time.sleep(5)
+    wait_tcp_room(TCP_ROOM)
 
 
 class HostSub:

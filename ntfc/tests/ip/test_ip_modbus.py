@@ -36,7 +36,7 @@ from _modbus_common import (
     client_lines,
     items,
 )
-from _net_common import HOST_IP, NODE_IPS
+from _net_common import HOST_IP, NODE_IPS, wait_tcp_room
 from pymodbus.client import ModbusTcpClient
 from pymodbus.server import ModbusTcpServer
 
@@ -48,6 +48,7 @@ pytestmark = [
 
 NODE_PORT = 502
 HOST_PORT = 1502
+TCP_ROOM = 4
 
 
 def _core(node: int) -> Any:
@@ -212,6 +213,15 @@ def test_modbus_slave_exception(
     :param code: expected exception code
     """
     assert _raw_request(pdu) == bytes([pdu[0] | 0x80, code])
+
+
+@pytest.fixture(autouse=True)
+def tcp_room() -> None:
+    """Wait until both nodes have free TCP connections.
+
+    Every ``nxmbclient`` call is a short TCP connection.
+    """
+    wait_tcp_room(TCP_ROOM)
 
 
 def _client(node: int, server: str, port: int, cmd: str) -> List[str]:
