@@ -130,6 +130,11 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
    * - ``test_tcp_long_transfer``
      - 4 MiB host-to-node TCP echo, 10 s per-operation stall
        watchdog: all bytes echoed intact.
+   * - ``test_udp_kill_poll_close``
+     - A UDP server blocked in poll() and killed (``kill -9``, and
+       ``kill -15``) leaves ``/proc/net/udp`` within 5 s; a restarted
+       server on the same port receives all 3 host datagrams. Needs
+       ``CONFIG_SIG_DEFAULT``.
    * - ``test_tcp_kill_listener_leak``
      - After killing (``kill -9``) ``CONFIG_NET_TCP_PREALLOC_CONNS +
        1`` TCP listeners each blocked in accept(), a probe client

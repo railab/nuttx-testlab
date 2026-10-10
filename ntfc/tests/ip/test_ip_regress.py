@@ -25,6 +25,7 @@ see each test's docstring for the commit it guards.
 import re
 import socket
 import struct
+import time
 from typing import Any
 
 import pytest
@@ -59,6 +60,14 @@ DEFAULT_TCP_PREALLOC_CONNS = 16
 SIM_TCP_LEAK_BUG = (
     "kill -9 of a task blocked in accept() leaks its TCP connection on "
     "sim (nuttx e26d467f, no upstream fix yet)"
+)
+
+#: Confirmed reproducing on every target with CONFIG_SIG_DEFAULT.
+KILL_POLL_BUG = (
+    "nuttx: a task terminated by a signal default action (_exit()) while "
+    "blocked in poll() never runs poll_teardown(), so the file references "
+    "taken in poll_setup() (fs/vfs/fs_poll.c) are leaked and the socket is "
+    "never closed"
 )
 
 
@@ -193,6 +202,73 @@ def test_tcp_long_transfer() -> None:
     nbytes = 4 * 1024 * 1024
     nettl_server(0, False, port, NODE_IPS[0])
     assert host_tcp_echo_check(NODE_IPS[0], port, nbytes, timeout=10.0)
+
+
+def _udp_bound(core: Any, port: int) -> bool:
+    """Return True when a node UDP socket is bound to a local port.
+
+    :param core: NTFC core handler of the node
+    :param port: local UDP port
+    :return: True when ``/proc/net/udp`` has a row with that local port
+    """
+    ret = core.sendCommandReadUntilPattern(
+        "cat /proc/net/udp", pattern=r"nsh> ", timeout=10
+    )
+    return bool(
+        re.search(rf"^ *\d+: .*:{port} ", str(ret.output), re.MULTILINE)
+    )
+
+
+@pytest.mark.cmd_check("nettl_main")
+@pytest.mark.dep_config("CONFIG_SIG_DEFAULT")
+@pytest.mark.xfail(strict=True, reason=KILL_POLL_BUG)
+@pytest.mark.parametrize("signo", [9, 15])
+def test_udp_kill_poll_close(signo: int) -> None:
+    """A task killed by a signal while blocked in poll() closes its socket.
+
+    NuttX bug found by this project (nuttx e794a88e1e, no upstream fix
+    yet): a task terminated by the default action of a signal while
+    blocked in poll() never drops the file references poll() holds, so
+    its sockets are never closed. ``nettl -s -u -L 1`` blocks in poll()
+    on one UDP socket; it is killed with ``kill -<signo>`` (SIGKILL,
+    and SIGTERM, which nettl does not catch). PASS: the port leaves
+    ``/proc/net/udp`` within 5 s, and a restarted server on the same
+    port receives all 3 host datagrams: ``nettl: PASS rx=3 err=0``.
+    """
+    port = 5410 + signo
+    count = 3
+    length = 64
+    core = _core(0)
+    result = core.sendCommandReadUntilPattern(
+        f"nettl -s -u -L 1 -n {count} -l {length} -p {port} -t 60 &",
+        pattern=r"listening udp",
+        timeout=10,
+    )
+    found = re.search(PID_RE, result.output)
+    assert found, result.output
+    time.sleep(1.0)  # let the server reach its blocking poll()
+    assert _udp_bound(core, port)
+
+    ret = core.sendCommand(f"kill -{signo} {found.group(1)}", timeout=10)
+    assert ret == 0
+    deadline = time.monotonic() + 5
+    while _udp_bound(core, port) and time.monotonic() < deadline:
+        time.sleep(0.5)
+    assert not _udp_bound(core, port)
+
+    ret = core.sendCommand(
+        f"nettl -s -u -L 1 -n {count} -l {length} -p {port} -t 15 &",
+        "listening",
+        timeout=10,
+    )
+    assert ret == 0
+    _send_udp_burst(NODE_IPS[0], port, count, length)
+    result = core.readUntilPattern(SERVER_VERDICT_RE, timeout=20)
+    found = re.search(SERVER_VERDICT_RE, result.output)
+    assert found, result.output
+    assert found.group(0).rstrip("\r\n") == (
+        f"nettl: PASS rx={count} err=0"
+    ), result.output
 
 
 @pytest.mark.cmd_check("nettl_main")
