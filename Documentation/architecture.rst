@@ -346,12 +346,12 @@ Docker image and runner
 ``tools/docker/Dockerfile`` builds an ``ubuntu:24.04``-based image with
 the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``gcc-14``/``g++-14``), QEMU packages (``qemu-system-arm``,
-``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``kconfiglib``
-(pip), and a Linux-kernel ``scripts/config`` fetched as
-``kconfig-tweak``; the ARM64 and RISC-V bare-metal cross-toolchains are
-downloaded and unpacked under ``/opt``. The entrypoint is
-``/usr/local/bin/testlab-entrypoint`` (``entrypoint.sh``), working
-directory ``/work``.
+``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``iperf``
+(iperf2), ``kconfiglib`` (pip), and a Linux-kernel ``scripts/config``
+fetched as ``kconfig-tweak``; the ARM64 and RISC-V bare-metal
+cross-toolchains are downloaded and unpacked under ``/opt``. The
+entrypoint is ``/usr/local/bin/testlab-entrypoint`` (``entrypoint.sh``),
+working directory ``/work``.
 
 ``tools/docker/run.sh``::
 

@@ -342,6 +342,56 @@ peer is pymodbus (master, or slave on port 1502). Same sessions as the
      - node0 writes registers and coils on a node1 slave and reads them
        back; untouched registers keep the register map values.
 
+``ip`` iperf
+------------
+
+Source: ``ntfc/tests/ip/test_ip_iperf.py``. ``iperf`` (``netutils/iperf``)
+on the nodes, iperf2 on the host. Each run lasts 5 s and is measured by
+the receiving node's server, or by the node client when the host
+receives. Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_iperf_tcp_node_to_host``
+     - node0 client to a host server: throughput at or above the floor.
+   * - ``test_iperf_tcp_host_to_node``
+     - Host client to a node0 server: throughput at or above the floor.
+   * - ``test_iperf_udp_host_to_node``
+     - Host client sends 1024-byte datagrams at 10 Mbit/s for 3 s to a
+       node0 server: the node receives at least 95% of the bytes sent.
+   * - ``test_iperf_tcp_node_to_node``
+     - node0 client to a node1 server: throughput at or above the floor.
+
+TCP floors in Mbit/s (``FLOORS`` in the test module):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - node to host
+     - host to node
+     - node to node
+   * - sim
+     - 80
+     - 100
+     - 2
+   * - qemu-armv8a
+     - 60
+     - 80
+     - 60
+   * - rv-virt
+     - 50
+     - 70
+     - 50
+   * - qemu-intel64
+     - 70
+     - 60
+     - 60
+
 ``ip`` services
 ---------------
 

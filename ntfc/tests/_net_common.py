@@ -101,7 +101,17 @@ def nettl_server(
     )
     assert ret == 0
     if addr:
-        _SERVERS.append((addr, port, udp))
+        track_server(addr, port, udp)
+
+
+def track_server(addr: str, port: int, udp: bool) -> None:
+    """Let :func:`nettl_cleanup` unblock a node server after the test.
+
+    :param addr: node address reachable from the host
+    :param port: server port
+    :param udp: UDP instead of TCP server
+    """
+    _SERVERS.append((addr, port, udp))
 
 
 def nettl_cleanup() -> None:

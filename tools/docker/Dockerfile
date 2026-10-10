@@ -30,6 +30,7 @@ RUN apt-get update \
         genromfs \
         git \
         gperf \
+        iperf \
         iproute2 \
         iputils-ping \
         kmod \
