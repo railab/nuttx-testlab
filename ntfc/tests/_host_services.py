@@ -23,12 +23,16 @@ used as a context manager. Standard ports are used, so the tests need
 root (the Docker runner).
 """
 
+import re
 import socket
 import socketserver
 import struct
+import subprocess
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import TracebackType
 from typing import Dict, Optional, Tuple, Type
 
@@ -552,3 +556,116 @@ class TcpEchoServer:
         """
         self.server.shutdown()
         self.server.server_close()
+
+
+class MosquittoBroker:
+    """Mosquitto MQTT broker process with its log kept in a file.
+
+    Anonymous access, no persistence: a restart drops retained messages
+    and sessions. The log (``log_type all``) shows every packet with its
+    flags, e.g. ``Received PUBLISH from c (d0, q1, r0, m1, 't', ...``.
+    """
+
+    def __init__(self, addr: str, port: int = 1883) -> None:
+        """Write the broker configuration.
+
+        :param addr: host address to listen on
+        :param port: TCP port
+        """
+        self.addr = addr
+        self.port = port
+        self._dir = tempfile.TemporaryDirectory(prefix="tl-mqtt-")
+        self.log = Path(self._dir.name) / "mosquitto.log"
+        self._conf = Path(self._dir.name) / "mosquitto.conf"
+        self._conf.write_text(
+            f"listener {port} {addr}\n"
+            "allow_anonymous true\n"
+            "persistence false\n"
+            "user root\n"
+            f"log_dest file {self.log}\n"
+            "log_type all\n"
+            "log_timestamp false\n"
+        )
+        self._proc: Optional[subprocess.Popen[bytes]] = None
+
+    def start(self) -> None:
+        """Start the broker and wait until it accepts connections."""
+        self._proc = subprocess.Popen(  # noqa: S603
+            ["mosquitto", "-c", str(self._conf)],  # noqa: S607
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                socket.create_connection((self.addr, self.port), 1).close()
+                return
+            except OSError:
+                time.sleep(0.1)
+        raise RuntimeError("mosquitto did not start")
+
+    def stop(self) -> None:
+        """Stop the broker; its clients see the connection close."""
+        if self._proc:
+            self._proc.terminate()
+            self._proc.wait(10)
+            self._proc = None
+
+    def mark(self) -> int:
+        """Return the current log size, a start offset for :meth:`wait`.
+
+        :return: log size in bytes
+        """
+        return self.log.stat().st_size if self.log.exists() else 0
+
+    def text(self, since: int = 0) -> str:
+        """Return the log written after an offset.
+
+        :param since: offset returned by :meth:`mark`
+        :return: log text
+        """
+        if not self.log.exists():
+            return ""
+        with self.log.open("rb") as log:
+            log.seek(since)
+            return log.read().decode(errors="replace")
+
+    def wait(self, regex: str, since: int = 0, timeout: float = 20) -> str:
+        """Wait for a log line written after an offset.
+
+        :param regex: pattern searched in the log (multiline)
+        :param since: offset returned by :meth:`mark`
+        :param timeout: seconds to wait
+        :return: matched text, empty string on timeout
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            found = re.search(regex, self.text(since), re.MULTILINE)
+            if found:
+                return found.group(0)
+            if time.monotonic() > deadline:
+                return ""
+            time.sleep(0.1)
+
+    def __enter__(self) -> "MosquittoBroker":
+        """Start the broker.
+
+        :return: this broker
+        """
+        self.start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        """Stop the broker and remove its files.
+
+        :param exc_type: exception type, if any
+        :param exc: exception, if any
+        :param tb: traceback, if any
+        """
+        self.stop()
+        self._dir.cleanup()

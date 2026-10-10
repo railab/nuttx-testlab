@@ -392,6 +392,48 @@ TCP floors in Mbit/s (``FLOORS`` in the test module):
      - 60
      - 60
 
+``ip`` MQTT
+-----------
+
+Source: ``ntfc/tests/ip/test_ip_mqtt.py``. MQTT clients on the nodes
+against a mosquitto broker on the host bridge (port 1883, anonymous, no
+persistence); the host peers are ``mosquitto_sub``/``mosquitto_pub``.
+Paho MQTT C: ``mqtt_pub``, ``mqtt_sub``; MQTT-C: ``mqttc_pub``,
+``mqttc_sub``. Before each test both nodes must have 4 free TCP
+connections (``/proc/net/tcp``); the test waits up to 130 s for closed
+connections to leave TIME_WAIT. Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_mqtt_pub``
+     - node0 ``mqtt_pub`` at QoS 0, 1 and 2: a host subscriber receives
+       exactly the payload at that QoS, not retained.
+   * - ``test_mqtt_pub_retained``
+     - ``mqtt_pub -r``: the broker gets a retained PUBLISH and a host
+       subscriber started afterwards receives it as retained.
+   * - ``test_mqtt_pub_not_retained``
+     - ``mqtt_pub`` without ``-r``, run after a ``-r`` run, publishes
+       with the retain flag clear.
+   * - ``test_mqtt_sub``
+     - node0 ``mqtt_sub`` prints a retained message on subscribe, then
+       host messages at QoS 0, 1 and 2; on SIGINT it sends DISCONNECT.
+   * - ``test_mqtt_node_to_node``
+     - node0 ``mqtt_pub`` messages at QoS 0, 1 and 2 are printed by
+       node1 ``mqtt_sub``.
+   * - ``test_mqttc_pub``
+     - ``mqttc_pub -n 2`` at QoS 0 and 1: a host subscriber receives
+       both messages at that QoS.
+   * - ``test_mqttc_sub_reconnect``
+     - node0 ``mqttc_sub`` prints a host message, resubscribes after a
+       broker restart and prints the next one, and exits on ``q``.
+   * - ``test_mqtt_no_broker``
+     - With the broker stopped, ``mqtt_pub`` reports ``Connect failed``
+       and then exits on SIGINT. Runs last.
+
 ``ip`` services
 ---------------
 

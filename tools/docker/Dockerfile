@@ -35,6 +35,8 @@ RUN apt-get update \
         iputils-ping \
         kmod \
         make \
+        mosquitto \
+        mosquitto-clients \
         ninja-build \
         pkg-config \
         python-is-python3 \

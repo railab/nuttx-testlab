@@ -347,7 +347,8 @@ Docker image and runner
 the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``gcc-14``/``g++-14``), QEMU packages (``qemu-system-arm``,
 ``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``iperf``
-(iperf2), ``kconfiglib`` (pip), and a Linux-kernel ``scripts/config``
+(iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker and host
+clients), ``kconfiglib`` (pip), and a Linux-kernel ``scripts/config``
 fetched as ``kconfig-tweak``; the ARM64 and RISC-V bare-metal
 cross-toolchains are downloaded and unpacked under ``/opt``. The
 entrypoint is ``/usr/local/bin/testlab-entrypoint`` (``entrypoint.sh``),
