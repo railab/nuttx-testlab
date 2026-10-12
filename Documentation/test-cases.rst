@@ -908,3 +908,163 @@ the host is ``10.0.2.2`` for the node. Sessions ``rv-virt-python`` and
        (C recursion).
    * - ``test_python_socket_host``
      - A Python TCP client echoes 64 KiB with a host server intact.
+
+``fs`` module
+-------------
+
+Source: ``ntfc/tests/fs/test_fs_v9fs.py``. One node mounts the host
+directory ``build/v9fs/<target>-<scenario>`` over virtio 9P (mount tag
+``tlshare``) at ``/mnt/v9fs`` (see :doc:`architecture`). Each test gets
+an empty directory ``tl/t<hash>`` created on the host and checks file
+contents, names and modes on the host directly. Data is the ``fstl``
+pattern; ``bin/`` holds the loadable programs ``elftl`` and ``elfsym``
+of the build and is in the node's ``PATH``. Sessions:
+``qemu-armv8a-v9fs``, ``rv-virt-v9fs``, ``qemu-intel64-v9fs`` (flat
+builds) and ``qemu-armv8a-v9fs-knsh`` (kernel build, every program a
+file on 9P).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_v9fs_mount_umount``
+     - After ``umount`` the share is not listed by ``mount``; after
+       ``mount -t v9fs -o trans=virtio,tag=tlshare`` a host file reads
+       back.
+   * - ``test_v9fs_mount_options``
+     - Mount succeeds with the tag first, in the middle (``msize=16384``
+       after it), last, followed by a trailing comma, and with
+       ``uname=``/``aname=``; a host file reads back and 200000 bytes
+       written by the node match on the host.
+   * - ``test_v9fs_shell_text``
+     - ``echo`` from NSH and ``cat`` of a host file give the same text
+       on both sides.
+   * - ``test_v9fs_write_small``
+     - 1000 bytes written by the node match on the host and read back.
+   * - ``test_v9fs_large_node_to_host``
+     - 5 MiB written by the node (64 KiB writes) match on the host and
+       read back.
+   * - ``test_v9fs_large_host_to_node``
+     - 5 MiB + 4099 bytes written by the host read back on the node
+       (20000-byte reads).
+   * - ``test_v9fs_append_reopen``
+     - 3000 bytes, then 5000 more with ``O_APPEND``: the host file is
+       the 8000-byte pattern.
+   * - ``test_v9fs_pread_pwrite``
+     - ``fstl pio``: ``pread``/``pwrite`` leave the offset alone,
+       ``lseek`` ``SEEK_SET``/``CUR``/``END``, a read past the end
+       returns 0, a write past the end leaves a zero-filled hole; the
+       host file matches.
+   * - ``test_v9fs_lseek_negative``
+     - ``lseek(fd, -1, SEEK_SET)`` fails with ``EINVAL``.
+   * - ``test_v9fs_truncate``
+     - ``ftruncate`` shrinks (data kept) and extends (zeros),
+       ``truncate()`` sets the size, ``O_TRUNC`` empties the file.
+   * - ``test_v9fs_append``
+     - With ``O_APPEND``, a write after ``lseek(fd, 0, SEEK_SET)`` lands
+       at the end and leaves the offset at the new end.
+   * - ``test_v9fs_fsync``
+     - ``fsync``/``fdatasync`` succeed on a written and on a read-only
+       descriptor; the host sees the 64 KiB.
+   * - ``test_v9fs_mkdir_rmdir``
+     - Directories made and removed from NSH appear and disappear on
+       the host.
+   * - ``test_v9fs_nested_dirs``
+     - 12 nested directories with a 1000-byte file at the bottom (16
+       path elements below the mount point); the host file matches.
+   * - ``test_v9fs_deep_path``
+     - Same with 14 nested directories (18 path elements).
+   * - ``test_v9fs_rename_file``
+     - ``mv`` renames a file; data and ``st_ino`` are unchanged.
+   * - ``test_v9fs_rename_dir``
+     - ``rename()`` moves a directory with contents into another one.
+   * - ``test_v9fs_rename_replace``
+     - ``rename()`` onto an existing file replaces it.
+   * - ``test_v9fs_rename_hardlink``
+     - Two host hard links have the same ``st_ino``; ``rename()`` from
+       one to the other succeeds and keeps both.
+   * - ``test_v9fs_unlink``
+     - ``rm`` removes the host file.
+   * - ``test_v9fs_readdir_large``
+     - ``fstl ls`` of 600 host files: each listed once, ``d_ino`` equals
+       ``st_ino``, the end is ``NULL`` with ``errno`` 0 (also when read
+       again), ``rewinddir`` lists the same count.
+   * - ``test_v9fs_readdir_entries``
+     - A file, a directory and a symlink are listed with their types
+       (8, 4, 10), the file size and three different non-zero
+       ``d_ino``.
+   * - ``test_v9fs_inode_numbers``
+     - ``st_ino`` is the same for ``stat``, ``stat`` again and
+       ``fstat``, differs between files and directories, and is shared
+       by hard links.
+   * - ``test_v9fs_stat_fields``
+     - ``stat`` size, mode, mtime, atime, link count, uid and gid equal
+       the host's; the directory is ``S_IFDIR``.
+   * - ``test_v9fs_statfs``
+     - ``statfs``: type ``0x01021997``, block size a multiple of the
+       host's, total size equal to the host's within one block, name
+       length equal.
+   * - ``test_v9fs_chmod``
+     - ``chmod`` 600, 644 and 755: the host file has that mode.
+   * - ``test_v9fs_utimens``
+     - ``utimens`` to 1000000000: the host mtime is that time.
+   * - ``test_v9fs_symlink_unsupported``
+     - ``symlink`` and ``readlink`` fail with ``ENOSYS``; opening a host
+       symlink fails with ``ELOOP``.
+   * - ``test_v9fs_errno``
+     - Each failing call returns the POSIX errno and leaves the host
+       directory unchanged: ``ENOENT`` (open, stat, unlink, rename of a
+       missing name, create in a missing directory), ``EEXIST`` (mkdir
+       of an existing directory or file, ``O_CREAT|O_EXCL`` of an
+       existing file), ``ENOTEMPTY`` (rmdir), ``ENOTDIR`` (rmdir of a
+       file, rename of a directory onto a file, opendir of a file, a
+       file used as a directory), ``EISDIR`` (unlink of a directory, also
+       ``EPERM``; rename of a file onto a directory; ``O_WRONLY`` of a
+       directory), ``EINVAL`` (rename of a directory into itself).
+   * - ``test_v9fs_concurrent_threads``
+     - Two threads write and read back 1 MiB each to their own files at
+       once; the host files match.
+   * - ``test_v9fs_concurrent_tasks``
+     - Two background ``fstl write`` tasks, 2 MiB each: both PASS and
+       the host files match.
+   * - ``test_v9fs_remount_persistence``
+     - A directory and a file written before ``umount`` are on the host
+       and read back after mounting again.
+   * - ``test_v9fs_getpath``
+     - ``fcntl(F_GETPATH)`` of an open file returns its full path.
+   * - ``test_v9fs_elf_args``
+     - ``/mnt/v9fs/bin/elftl args one two three`` prints
+       ``elftl: PASS argc=5 args=one,two,three``.
+   * - ``test_v9fs_elf_exit_status``
+     - ``posix_spawn`` and ``waitpid``: exit status 7 and 0.
+   * - ``test_v9fs_elf_path_search``
+     - ``elftl`` runs by name from NSH and with ``posix_spawnp``
+       (status 3).
+   * - ``test_v9fs_elf_twice``
+     - ``elftl libc`` (``qsort``, ``snprintf``, ``strtol``, string
+       functions, ``malloc``/``realloc``, ``errno``, ``clock_gettime``)
+       passes twice in a row.
+   * - ``test_v9fs_elf_relocations``
+     - ``elftl relocs``: 320 global functions called through a table of
+       pointers return ``x + i`` (``sum=371040``).
+   * - ``test_v9fs_elf_stack_priority``
+     - ``elftl stack``: stack size within 256 bytes below
+       ``CONFIG_TESTLAB_ELFTL_STACKSIZE``, priority
+       ``CONFIG_TESTLAB_ELFTL_PRIORITY``.
+   * - ``test_v9fs_elf_symbols``
+     - ``elfsym`` (calls ``getpid``, ``gettid``, ``putchar``) loads and
+       prints ``elfsym: PASS``.
+   * - ``test_v9fs_mount_bad_options``
+     - No tag: ``EINVAL``; unknown or missing ``trans=``: ``ENOENT``;
+       the share stays mounted.
+   * - ``test_v9fs_mount_long_uname``
+     - A 40-character ``uname=`` is accepted or rejected, and the share
+       mounts afterwards.
+   * - ``test_v9fs_mount_busy_tag``
+     - Mounting the mounted tag again or an unknown tag fails with
+       ``ENODEV``; unmount and mount again work.
+   * - ``test_v9fs_mount_wrong_tag``
+     - Mounting an unknown tag fails with ``ENODEV``; the share then
+       mounts and 100000 bytes written by the node match on the host.

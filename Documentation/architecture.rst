@@ -268,6 +268,59 @@ with ``/`` in place of the ifname, e.g. ``cantl -s /dev/can0 ...``.
   prints ``conode: PASS|FAIL rx=<n> lost=<n> bad=<n> txerr=<n>
   errno=<n>`` and exits.
 
+``apps/fstl``
+~~~~~~~~~~~~~
+
+``fstl`` (``CONFIG_TESTLAB_FSTL``) runs one file system check per call
+and prints one verdict line ``fstl: PASS|FAIL <check> ...``; exit 0 on
+PASS. It uses only POSIX calls, so it works on any file system::
+
+   fstl write|verify <path> <size> [-s seed] [-b bufsize] [-a]
+   fstl pio|trunc|append|sync <path>
+   fstl conc <dir> <n> <size>
+   fstl ls <dir> [-n count] [-q]
+   fstl stat|statfs|path <path>
+   fstl chmod <path> <octal>
+   fstl utime <path> <sec>
+   fstl deep <dir> <depth>
+   fstl err <op> <path> [path2] <ERRNO[|ERRNO]|OK>
+   fstl mount <fstype> <target> <data> <ERRNO|OK>
+   fstl umount <target> <ERRNO|OK>
+   fstl exec <path|name> <status> [args...]
+
+- Pattern: the 4-byte word at offset ``w`` (multiple of 4) is
+  ``w ^ (seed * 0x9e3779b9)``, little-endian, so no two words of a file
+  below 4 GiB are equal (``pattern()`` in ``ntfc/tests/_fs_common.py``).
+- ``ls`` checks every entry against ``lstat`` (``d_ino == st_ino``,
+  non-zero, ``d_type``), duplicates, the end of the directory (``NULL``
+  with ``errno`` 0, twice) and ``rewinddir``; it prints
+  ``fstl: ent <name> d_ino= st_ino= type= size=`` lines unless ``-q``.
+- ``err`` runs one call (``open``, ``wronly``, ``creat``, ``excl``,
+  ``opendir``, ``mkdir``, ``rmdir``, ``unlink``, ``stat``, ``rename``,
+  ``symlink``, ``readlink``, ``seekneg``) and compares its errno.
+- ``conc`` runs ``n`` threads that each write and read back
+  ``<dir>/conc<i>.bin`` (seed ``i + 1``); ``exec`` runs a program with
+  ``posix_spawn`` (``posix_spawnp`` for a name) and checks its exit
+  status.
+
+``apps/elftl``
+~~~~~~~~~~~~~~
+
+``elftl`` (``CONFIG_TESTLAB_ELFTL``) is built as a loadable ELF module
+(``=m``) and run from a file system::
+
+   elftl args [arg...] | exit <n> | relocs | libc | stack
+
+- ``relocs``: 320 global functions ``elftl_f000`` ... ``elftl_f319``
+  called through a table of pointers, entry ``i`` returns ``x + i``.
+- ``stack``: prints the stack size (``/proc/self/stack``) and priority
+  the loader gave the task (``nx_stacksize``/``nx_priority`` of the
+  file: ``TESTLAB_ELFTL_STACKSIZE``, default 24576, and
+  ``TESTLAB_ELFTL_PRIORITY``, default 90).
+- The same directory builds ``elfsym``, which calls ``getpid``,
+  ``gettid`` and ``putchar``.
+- Verdict: ``elftl: PASS|FAIL ...`` / ``elfsym: PASS|FAIL ...``.
+
 NTFC configs
 ------------
 
@@ -342,7 +395,9 @@ sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 [ttyTL0]``, see `Host serial line (modbus-rtu)`_). ``sim`` and
 ``qemu-intel64`` also have ``<target>-can-bus`` and ``<target>-can-char``
 (``ntfc/tests/can``, ``resources: [can0]``, see `Host SocketCAN bus
-(can-bus)`_).
+(can-bus)`_). ``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64`` also have
+``<target>-v9fs`` and ``qemu-armv8a`` has ``qemu-armv8a-v9fs-knsh``
+(``ntfc/tests/fs``, see `Host share (v9fs)`_).
 
 Host network (ip-pair)
 ----------------------
@@ -463,6 +518,53 @@ target, ``/dev/ttyTL1`` by the tests.
 
 Defconfigs: ``boards/<arch>/<chip>/<board>/configs/modbus-rtu``. The
 line runs without parity: Linux pseudoterminals reject ``PARENB``.
+
+Host share (v9fs)
+-----------------
+
+``testenv/v9fs.sh {start|stop|status}`` creates
+``build/v9fs/<target>-<scenario>`` for each
+``ntfc/configs/<target>/v9fs*``; QEMU (started in the repo root) exports
+it with ``-fsdev local,id=tlfs,path=...,security_model=none`` and mount
+tag ``tlshare``. ``security_model=none``
+keeps host modes and owners as they are, so the tests read them on the
+host directly. The ``fs`` tests empty the directory at the start of a
+session and copy the build's loadable programs to ``bin/``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - Device
+     - Transport
+   * - ``qemu-armv8a``
+     - ``virtio-9p-device``
+     - virtio-mmio (``DRIVERS_VIRTIO_MMIO``)
+   * - ``rv-virt``
+     - ``virtio-9p-device``
+     - virtio-mmio
+   * - ``qemu-intel64``
+     - ``virtio-9p-pci``
+     - virtio-pci (``DRIVERS_VIRTIO_PCI``, ``PCI_MSIX``)
+
+Defconfigs ``boards/<arch>/<chip>/<board>/configs/v9fs``: ``FS_V9FS``,
+``V9FS_VIRTIO_9P``, ``fstl``, ``elftl=m``, ``ELF`` with the generated
+system symbol table (``EXECFUNCS_HAVE_SYMTAB``,
+``EXECFUNCS_SYSTEM_SYMTAB``), ``NSH_FILE_APPS`` and
+``PATH_INITIAL="/mnt/v9fs/bin"``. NSH starts directly
+(``INIT_ENTRYPOINT="nsh_main"``). ``qemu-armv8a`` and ``qemu-intel64``
+set ``FS_LARGEFILE`` (64-bit ``off_t``); ``rv-virt`` keeps the default
+32-bit ``off_t``.
+
+``boards/arm64/qemu/qemu-armv8a/configs/v9fs-knsh`` is a kernel build
+(upstream ``knsh``) with no programs in the image: a second 9P device,
+tag ``tlbin``, exports the NTFC build directory read-only (NTFC starts
+QEMU in that directory for kernel builds, so the paths in its
+``config.yaml`` are relative to it), and
+``INIT_MOUNT`` mounts it at ``/system`` so ``/system/bin/init`` (NSH),
+``fstl`` and ``elftl`` load from it. ``PATH`` is
+``/system/bin:/mnt/v9fs/bin``; ``TLS_LOG2_MAXSTACK=15`` allows the
+24 KiB ``elftl`` stack.
 
 Docker image and runner
 ------------------------

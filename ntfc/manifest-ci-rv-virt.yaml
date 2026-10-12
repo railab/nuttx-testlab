@@ -19,3 +19,6 @@ sessions:
   - name: "rv-virt-python"
     confpath: ntfc/configs/rv-virt/python/config.yaml
     testpath: ntfc/tests/python
+  - name: "rv-virt-v9fs"
+    confpath: ntfc/configs/rv-virt/v9fs/config.yaml
+    testpath: ntfc/tests/fs

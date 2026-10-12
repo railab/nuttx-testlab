@@ -16,3 +16,9 @@ sessions:
     confpath: ntfc/configs/qemu-armv8a/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus
     resources: [ttyTL0]
+  - name: "qemu-armv8a-v9fs"
+    confpath: ntfc/configs/qemu-armv8a/v9fs/config.yaml
+    testpath: ntfc/tests/fs
+  - name: "qemu-armv8a-v9fs-knsh"
+    confpath: ntfc/configs/qemu-armv8a/v9fs-knsh/config.yaml
+    testpath: ntfc/tests/fs

@@ -1,0 +1,31 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_ELFTL
+	tristate "elftl: loadable program test"
+	default n
+	---help---
+		Small program meant to be built as a loadable ELF module
+		(=m) and run from a file system: argument passing, exit
+		status, libc calls, many relocations against many symbols,
+		and the stack size and priority taken from the program file.
+		Each run prints one PASS/FAIL verdict line.  Also builds
+		elfsym, a program that calls getpid(), gettid() and putchar().
+
+if TESTLAB_ELFTL
+
+config TESTLAB_ELFTL_PROGNAME
+	string "Program name"
+	default "elftl"
+
+config TESTLAB_ELFTL_PRIORITY
+	int "elftl task priority"
+	default 90
+
+config TESTLAB_ELFTL_STACKSIZE
+	int "elftl stack size"
+	default 24576
+
+endif

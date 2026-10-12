@@ -1,0 +1,35 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_FSTL
+	tristate "fstl: file system test tool"
+	default n
+	depends on !DISABLE_MOUNTPOINT && !DISABLE_PTHREAD
+	---help---
+		File system checks that do not depend on one file system:
+		pattern data I/O, positioned I/O, truncation, directory
+		listing, stat fields, error numbers, concurrent writers,
+		mount and program execution.  Each run prints one PASS/FAIL
+		verdict line.
+
+if TESTLAB_FSTL
+
+config TESTLAB_FSTL_PROGNAME
+	string "Program name"
+	default "fstl"
+
+config TESTLAB_FSTL_PRIORITY
+	int "fstl task priority"
+	default 100
+
+config TESTLAB_FSTL_STACKSIZE
+	int "fstl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+config TESTLAB_FSTL_BUFSIZE
+	int "fstl default I/O buffer size"
+	default 4096
+
+endif

@@ -27,3 +27,6 @@ sessions:
   - name: "qemu-intel64-python"
     confpath: ntfc/configs/qemu-intel64/python/config.yaml
     testpath: ntfc/tests/python
+  - name: "qemu-intel64-v9fs"
+    confpath: ntfc/configs/qemu-intel64/v9fs/config.yaml
+    testpath: ntfc/tests/fs
