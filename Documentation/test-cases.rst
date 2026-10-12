@@ -906,6 +906,9 @@ the host is ``10.0.2.2`` for the node. Sessions ``rv-virt-python`` and
    * - ``test_python_thread_stack``
      - A thread serializes a 100-level nested list with ``json.dumps``
        (C recursion).
+   * - ``test_python_thread_wakeup``
+     - The main thread returns from ``time.sleep(0.3)`` while a worker
+       thread busy-loops for 1.5 s, and joins it (no fatal error).
    * - ``test_python_socket_host``
      - A Python TCP client echoes 64 KiB with a host server intact.
 

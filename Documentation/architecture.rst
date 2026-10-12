@@ -578,7 +578,13 @@ and host clients), ``kconfiglib``, ``pymodbus``, ``pyserial``,
 ``python-can`` and ``canopen`` (pip), and a Linux-kernel
 ``scripts/config`` fetched as ``kconfig-tweak``; the ARM64 and RISC-V
 bare-metal cross-toolchains are downloaded and unpacked under
-``/opt``. The entrypoint is ``/usr/local/bin/testlab-entrypoint``
+``/opt``. RISC-V has two: the xPack ``riscv-none-elf`` (as in upstream
+CI, the default) and riscv-collab's ``riscv32-unknown-elf`` (built with
+``--enable-tls``). ``rv-virt-python`` uses the latter, as CPython keeps
+its thread state in ``__thread``: the defconfig sets
+``RISCV_TOOLCHAIN_GNU_RV32`` and ``SCHED_THREAD_LOCAL``, and
+``config.yaml`` hides the xPack directory from CMake
+(``dcmake: CMAKE_IGNORE_PATH``). The entrypoint is ``/usr/local/bin/testlab-entrypoint``
 (``entrypoint.sh``), working directory ``/work``.
 
 ``tools/docker/run.sh``::

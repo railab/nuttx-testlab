@@ -203,6 +203,30 @@ def test_python_thread_stack() -> None:
     assert out == "PYOK 202", out
 
 
+def test_python_thread_wakeup() -> None:
+    """The main thread wakes from ``sleep()`` while a worker thread runs.
+
+    The worker busy-loops for 1.5 s; the main thread's 0.3 s sleep ends
+    meanwhile and it takes the GIL back. Each thread needs its own
+    thread state (a ``__thread`` variable in CPython).
+    """
+    out = _run(
+        [
+            "import threading, time",
+            "def spin():",
+            "    t = time.monotonic()",
+            "    while time.monotonic() - t < 1.5: pass",
+            "th = threading.Thread(target=spin)",
+            "th.start()",
+            "time.sleep(0.3)",
+            "th.join()",
+            "print('PYOK', th.is_alive())",
+        ],
+        pattern=r"(?m)^(PY(OK|FAIL)|Fatal Python error)[^\r\n]*",
+    )
+    assert out == "PYOK False", out
+
+
 def test_python_socket_host() -> None:
     """A Python TCP client exchanges 64 KiB with a host echo server.
 

@@ -14,6 +14,7 @@ FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ARM64_TC=13.2.Rel1
 ARG RISCV_TC=14.3.0-1
+ARG RISCV_TLS_TC=2026.08.27
 ARG LINUX_TAG=v6.12
 
 RUN apt-get update \
@@ -68,6 +69,22 @@ RUN curl -fsSL "https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/rele
       | tar -xz -C /opt \
     && ln -s /opt/xpack-riscv-none-elf-gcc-${RISCV_TC} /opt/riscv-none-elf
 
+# RISC-V toolchain with native TLS (riscv-collab/riscv-gnu-toolchain,
+# riscv32-unknown-elf, newlib, rv32gc/ilp32d, --enable-tls). The xPack one
+# is built with --disable-tls, so __thread becomes libgcc's single-thread
+# emutls: one instance shared by all threads. Used by scenarios that need
+# __thread (CONFIG_SCHED_THREAD_LOCAL); unused tools are dropped and the
+# host binaries stripped to keep the image small.
+RUN curl -fsSL "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/${RISCV_TLS_TC}/riscv32-elf-ubuntu-24.04-gcc.tar.xz" \
+      | tar -xJ -C /opt \
+    && mv /opt/riscv /opt/riscv32-elf \
+    && cd /opt/riscv32-elf \
+    && rm -rf share bin/qemu-* bin/*-gdb* bin/*-gstack bin/*-lto-dump \
+       bin/dejagnu bin/runtest \
+    && strip --strip-unneeded bin/* libexec/gcc/*/*/cc1* \
+       libexec/gcc/*/*/lto1 libexec/gcc/*/*/collect2 \
+       libexec/gcc/*/*/lto-wrapper
+
 # scripts/config from the Linux kernel, used as kconfig-tweak by NTFC's
 # builder to apply each config.yaml's kv overrides. raw.githubusercontent.com
 # is occasionally rate-limited, so fall back to the GitHub contents API.
@@ -78,7 +95,7 @@ RUN (curl -fsSL --retry 3 "https://raw.githubusercontent.com/torvalds/linux/${LI
       -o /usr/local/bin/kconfig-tweak) \
     && chmod +x /usr/local/bin/kconfig-tweak
 
-ENV PATH="/opt/aarch64-none-elf/bin:/opt/riscv-none-elf/bin:${PATH}"
+ENV PATH="/opt/aarch64-none-elf/bin:/opt/riscv-none-elf/bin:/opt/riscv32-elf/bin:${PATH}"
 ENV CC=gcc-14 CXX=g++-14
 
 RUN pip install --break-system-packages --no-cache-dir kconfiglib pymodbus==3.15.0 \

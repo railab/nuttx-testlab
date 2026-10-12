@@ -19,3 +19,9 @@ product:
                  -device virtio-net-device,netdev=u0,bus=virtio-mmio-bus.1
                  -bios none -nographic'
       defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/python'
+      # CPython keeps its thread state in __thread: build with the
+      # TLS-enabled riscv32-unknown-elf toolchain (RISCV_TOOLCHAIN_GNU_RV32)
+      # instead of the xPack riscv-none-elf (--disable-tls) that NuttX's
+      # Toolchain.cmake prefers whenever it is on PATH.
+      dcmake:
+        CMAKE_IGNORE_PATH: '/opt/riscv-none-elf/bin'
