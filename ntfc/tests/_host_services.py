@@ -34,9 +34,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import TracebackType
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type, TypeVar
 
 NTP_EPOCH_OFFSET = 2208988800  # seconds from 1900-01-01 to 1970-01-01
+
+_P = TypeVar("_P", bound="_LoggedProcess")
 
 
 class _UdpServer:
@@ -603,54 +605,28 @@ class TcpEchoServer:
         self.server.server_close()
 
 
-class MosquittoBroker:
-    """Mosquitto MQTT broker process with its log kept in a file.
+class _LoggedProcess:
+    """Host process whose output or log is kept in a file.
 
-    Anonymous access, no persistence: a restart drops retained messages
-    and sessions. The log (``log_type all``) shows every packet with its
-    flags, e.g. ``Received PUBLISH from c (d0, q1, r0, m1, 't', ...``.
+    Subclasses implement :meth:`start` and set ``self._proc``.
     """
 
-    def __init__(self, addr: str, port: int = 1883) -> None:
-        """Write the broker configuration.
+    def __init__(self, prefix: str, log: str) -> None:
+        """Create the directory for the log.
 
-        :param addr: host address to listen on
-        :param port: TCP port
+        :param prefix: temporary directory prefix
+        :param log: log file name
         """
-        self.addr = addr
-        self.port = port
-        self._dir = tempfile.TemporaryDirectory(prefix="tl-mqtt-")
-        self.log = Path(self._dir.name) / "mosquitto.log"
-        self._conf = Path(self._dir.name) / "mosquitto.conf"
-        self._conf.write_text(
-            f"listener {port} {addr}\n"
-            "allow_anonymous true\n"
-            "persistence false\n"
-            "user root\n"
-            f"log_dest file {self.log}\n"
-            "log_type all\n"
-            "log_timestamp false\n"
-        )
+        self._dir = tempfile.TemporaryDirectory(prefix=prefix)
+        self.log = Path(self._dir.name) / log
         self._proc: Optional[subprocess.Popen[bytes]] = None
 
     def start(self) -> None:
-        """Start the broker and wait until it accepts connections."""
-        self._proc = subprocess.Popen(  # noqa: S603
-            ["mosquitto", "-c", str(self._conf)],  # noqa: S607
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            try:
-                socket.create_connection((self.addr, self.port), 1).close()
-                return
-            except OSError:
-                time.sleep(0.1)
-        raise RuntimeError("mosquitto did not start")
+        """Start the process."""
+        raise NotImplementedError
 
     def stop(self) -> None:
-        """Stop the broker; its clients see the connection close."""
+        """Stop the process."""
         if self._proc:
             self._proc.terminate()
             self._proc.wait(10)
@@ -692,10 +668,10 @@ class MosquittoBroker:
                 return ""
             time.sleep(0.1)
 
-    def __enter__(self) -> "MosquittoBroker":
-        """Start the broker.
+    def __enter__(self: _P) -> _P:
+        """Start the process.
 
-        :return: this broker
+        :return: this process
         """
         self.start()
         return self
@@ -706,7 +682,7 @@ class MosquittoBroker:
         exc: Optional[BaseException],
         tb: Optional[TracebackType],
     ) -> None:
-        """Stop the broker and remove its files.
+        """Stop the process and remove its files.
 
         :param exc_type: exception type, if any
         :param exc: exception, if any
@@ -714,3 +690,76 @@ class MosquittoBroker:
         """
         self.stop()
         self._dir.cleanup()
+
+
+class MosquittoBroker(_LoggedProcess):
+    """Mosquitto MQTT broker process with its log kept in a file.
+
+    Anonymous access, no persistence: a restart drops retained messages
+    and sessions. The log (``log_type all``) shows every packet with its
+    flags, e.g. ``Received PUBLISH from c (d0, q1, r0, m1, 't', ...``.
+    """
+
+    def __init__(self, addr: str, port: int = 1883) -> None:
+        """Write the broker configuration.
+
+        :param addr: host address to listen on
+        :param port: TCP port
+        """
+        super().__init__("tl-mqtt-", "mosquitto.log")
+        self.addr = addr
+        self.port = port
+        self._conf = Path(self._dir.name) / "mosquitto.conf"
+        self._conf.write_text(
+            f"listener {port} {addr}\n"
+            "allow_anonymous true\n"
+            "persistence false\n"
+            "user root\n"
+            f"log_dest file {self.log}\n"
+            "log_type all\n"
+            "log_timestamp false\n"
+        )
+
+    def start(self) -> None:
+        """Start the broker and wait until it accepts connections."""
+        self._proc = subprocess.Popen(  # noqa: S603
+            ["mosquitto", "-c", str(self._conf)],  # noqa: S607
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                socket.create_connection((self.addr, self.port), 1).close()
+                return
+            except OSError:
+                time.sleep(0.1)
+        raise RuntimeError("mosquitto did not start")
+
+
+class CoapServer(_LoggedProcess):
+    """libcoap ``coap-server`` (no TLS) with its output kept in a file.
+
+    Listens on all host addresses, IPv4 and IPv6, UDP port 5683.
+    ``-d 10`` lets clients create up to 10 resources with PUT or POST.
+    The log (``-v 7``) shows every PDU, e.g.
+    ``v:1 t:CON c:PUT i:0001 {01} [ Uri-Path:tl, Uri-Path:a ] :: 'v1'``.
+    """
+
+    def __init__(self) -> None:
+        """Prepare the log file."""
+        super().__init__("tl-coap-", "coap-server.log")
+
+    def start(self) -> None:
+        """Start the server and wait until it listens."""
+        with self.log.open("ab") as log:
+            self._proc = subprocess.Popen(  # noqa: S603
+                [  # noqa: S607
+                    *("stdbuf", "-oL", "-eL"),
+                    *("coap-server-notls", "-d", "10", "-v", "7"),
+                ],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+        if not self.wait(r"created UDP\s+endpoint", timeout=10):
+            raise RuntimeError("coap-server did not start")

@@ -38,6 +38,7 @@ RUN apt-get update \
         iputils-ping \
         unzip \
         kmod \
+        libcoap3-bin \
         linuxptp \
         make \
         mosquitto \

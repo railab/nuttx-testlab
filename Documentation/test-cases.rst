@@ -613,6 +613,71 @@ the bound after synchronization is 50 ms. Expectations cite IEEE
      - Three daemon runs on node0: ``ptpd_stop()`` returns 0, the daemon
        task exits 0, heap and IOB counters are back at their baseline.
 
+``ip`` CoAP
+-----------
+
+Source: ``ntfc/tests/ip/test_ip_coap.py``. libcoap example programs on
+the nodes (``coap_client``, ``coap_server``) against libcoap's
+``coap-client-notls`` and ``coap-server-notls`` on the host, UDP port
+5683. The host server runs with ``-d 10`` (PUT or POST creates a
+resource); node1 runs ``coap_server -d 10 -v 7`` for the whole module,
+node0 runs the clients. Response codes and types are checked in the
+PDUs logged by the client (``-v 6``) and by the server. DTLS is not
+covered: the nodes build libcoap without a TLS library. Same sessions
+as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_coap_client_get``
+     - node0 GET of host ``/time``, confirmable (CON, ACK 2.05) and
+       non-confirmable (NON, NON 2.05); the payload is a time string.
+   * - ``test_coap_client_methods``
+     - node0 PUT creates (2.01), POST creates (2.01), PUT changes (2.04),
+       GET returns the last payload, DELETE removes (2.02), then GET
+       prints ``4.04 Not Found``.
+   * - ``test_coap_client_blockwise``
+     - node0 PUT of 48 bytes with ``-b 16``: the host gets Block1 0, 1, 2
+       and answers 2.01; GET with ``-b 16`` returns Block2 0, 1, 2 and
+       the same 48 bytes.
+   * - ``test_coap_client_observe``
+     - node0 observes host ``/time`` for 4 s: at least 3 notifications
+       with different times, then a deregistration (``Observe:1``).
+   * - ``test_coap_client_no_server``
+     - node0 GET of a host port with no server and ``-B 3``: the client
+       logs ``timeout``, gets no response and returns to the prompt in
+       3 to 15 s.
+   * - ``test_coap_client_ipv6``
+     - node0 PUT (2.01) and GET of a host resource at ``fc00::1``.
+   * - ``test_coap_server_discovery``
+     - Host GET of node1 ``/.well-known/core`` lists ``/time``
+       (observable) and ``/example_data``.
+   * - ``test_coap_server_get``
+     - Host GET of node1 ``/time``, CON (ACK 2.05) and NON (NON 2.05);
+       node1 logs the request with the same type.
+   * - ``test_coap_server_put_get``
+     - Host PUT of a new node1 resource (2.01, logged by node1), GET
+       returns it, DELETE (2.02), then GET gets ``4.04 Not Found``.
+   * - ``test_coap_server_not_found``
+     - Host GET of an unknown node1 resource gets 4.04; node1 logs it.
+   * - ``test_coap_server_blockwise``
+     - Host PUT of 300 bytes to node1 ``/example_data`` with ``-b 64``:
+       node1 receives Block1 0 to 4; GET with ``-b 64`` returns Block2 0
+       to 4 and the same 300 bytes.
+   * - ``test_coap_server_observe``
+     - Host observes node1 ``/time`` for 4 s: at least 3 notifications
+       with different times; node1 receives the deregistration
+       (``Observe:1``) and answers without ``Observe``.
+   * - ``test_coap_server_ipv6``
+     - Host GET of node1 ``/time`` at ``fc00::11`` gets 2.05 and a time
+       string.
+   * - ``test_coap_node_to_node``
+     - node0 PUT (2.01, logged by node1), GET and DELETE (2.02) of a node1
+       resource.
+
 ``ip`` services
 ---------------
 

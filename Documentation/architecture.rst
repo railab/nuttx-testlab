@@ -562,7 +562,8 @@ Host network (ip-pair)
 ----------------------
 
 ``testenv/ip-pair.sh {start|stop|status}`` creates bridge ``tl-br0``
-(``10.42.0.1/24`` and ``fc00::1/112``, the host side) and TAPs
+(``10.42.0.1/24`` with broadcast ``10.42.0.255``, and ``fc00::1/112``,
+the host side) and TAPs
 ``tl-tap0``/``tl-tap1``. Node IPs come from ``CONFIG_NETINIT_IPADDR``
 and ``CONFIG_NETINIT_IPv6ADDR_8`` (gateways ``10.42.0.1``, ``fc00::1``).
 A veth pair ``tl-ptp0``/``tl-ptp1`` (``52:54:00:2a:00:02``,
@@ -866,7 +867,9 @@ the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``gcc-14``/``g++-14``), QEMU packages (``qemu-system-arm``,
 ``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``socat``,
 ``iperf`` (iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker
-and host clients), ``linuxptp`` (``ptp4l``, ``pmc``), ``kconfiglib``, ``pymodbus``, ``pyserial``,
+and host clients), ``libcoap3-bin`` (libcoap ``coap-client-notls`` and
+``coap-server-notls``), ``linuxptp`` (``ptp4l``, ``pmc``), ``kconfiglib``,
+``pymodbus``, ``pyserial``,
 ``python-can`` and ``canopen`` (pip), and a Linux-kernel
 ``scripts/config`` fetched as ``kconfig-tweak``; the ARM64 and RISC-V
 bare-metal cross-toolchains and the ARM (``arm-none-eabi``, used by the

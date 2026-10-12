@@ -49,7 +49,13 @@ start() {
   # for the host on the nodes.
 
   run ip link set "$TL_BRIDGE" address "$TL_BRIDGE_MAC"
-  run ip addr replace "$TL_BRIDGE_IP" dev "$TL_BRIDGE"
+
+  # Explicit broadcast address: without it getifaddrs() reports the host
+  # address as the broadcast address, and libcoap's coap-client and
+  # coap-server then treat unicast to the host as broadcast.
+
+  run ip -4 addr flush dev "$TL_BRIDGE"
+  run ip addr add "$TL_BRIDGE_IP" brd + dev "$TL_BRIDGE"
 
   # IPv6 may be disabled by default (e.g. in a container); no DAD, so the
   # address is usable at once.
