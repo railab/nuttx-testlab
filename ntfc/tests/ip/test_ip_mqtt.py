@@ -43,11 +43,6 @@ from _net_common import HOST_IP, wait_tcp_room
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP")]
 
-MQTTC_PUB_CMAKE_BUG = (
-    "examples/mqttc: CMakeLists.txt names the publisher "
-    "CONFIG_EXAMPLES_MQTTC_PUB_PROGNAME, which Kconfig does not define "
-    "(it is EXAMPLES_MQTTC_PROGNAME), so the CMake build has no mqttc_pub"
-)
 
 PAHO_PUB_OPTS_BUG = (
     "netutils/paho_mqtt: paho_c_pub.c keeps its options in a global "
@@ -423,7 +418,6 @@ def test_mqtt_node_to_node(broker: MosquittoBroker) -> None:
 
 
 @pytest.mark.dep_config("CONFIG_EXAMPLES_MQTTC")
-@pytest.mark.xfail(strict=True, reason=MQTTC_PUB_CMAKE_BUG)
 @pytest.mark.parametrize("qos", [0, 1])
 def test_mqttc_pub(broker: MosquittoBroker, qos: int) -> None:
     """``mqttc_pub -n 2`` delivers both messages at the given QoS.

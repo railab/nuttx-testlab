@@ -31,7 +31,6 @@ from _modbus_common import (
     ILLEGAL_DATA_ADDRESS,
     ILLEGAL_DATA_VALUE,
     REGS,
-    WRITE_COILS_BUG,
     HostSlave,
     client_lines,
     items,
@@ -275,7 +274,6 @@ def test_modbus_master_write() -> None:
     assert slave.writes == [expect for _, expect in cmds]
 
 
-@pytest.mark.xfail(strict=True, reason=WRITE_COILS_BUG)
 def test_modbus_master_write_coils() -> None:
     """``write-coils`` by the NuttX master sets each listed coil."""
     with _host_slave() as slave:

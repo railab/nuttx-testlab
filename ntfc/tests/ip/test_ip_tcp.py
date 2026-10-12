@@ -46,11 +46,6 @@ CHUNK = 1024
 POLLERR = 0x08
 POLLHUP = 0x10
 
-SOLINGER_TIME_WAIT_BUG = (
-    "net/tcp/tcp_conn.c: with CONFIG_NET_SOLINGER tcp_alloc() never "
-    "reuses TIME_WAIT connections, so a node client fails once "
-    "CONFIG_NET_TCP_PREALLOC_CONNS sockets are in TIME_WAIT"
-)
 
 KEEPALIVE_ERRNO_BUG = (
     "net/tcp/tcp_timer.c: keep-alive expiry reports TCP_ABORT instead of "
@@ -90,18 +85,6 @@ def _prealloc() -> int:
         return int(value)
     except (TypeError, ValueError):
         return 8
-
-
-@pytest.fixture
-def solinger_time_wait_xfail(request: pytest.FixtureRequest) -> None:
-    """Expect TIME_WAIT exhaustion on nodes built with SO_LINGER.
-
-    :param request: pytest request of the test using this fixture
-    """
-    if _core().conf.kv_check("CONFIG_NET_SOLINGER"):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=SOLINGER_TIME_WAIT_BUG)
-        )
 
 
 def _recv_exact(sock: socket.socket, size: int) -> bytes:
@@ -171,7 +154,6 @@ def test_tcp_half_close() -> None:
 
 
 @pytest.mark.run(order=-2)
-@pytest.mark.usefixtures("solinger_time_wait_xfail")
 def test_tcp_churn_node_client() -> None:
     """Node 0 opens and closes more connections than it preallocates.
 

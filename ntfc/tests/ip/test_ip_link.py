@@ -41,12 +41,6 @@ NEW_IP = "10.42.0.21"
 
 _DOWN_PORTS: List[str] = []
 
-SIM_TAP_EIO_BUG = (
-    "arch/sim/src/sim/posix/sim_tapdev.c: sim_tapdev_send() calls exit(1) "
-    "when write() fails; a TAP whose host link is down fails every write "
-    "with EIO, so the sim process exits instead of dropping the frame"
-)
-
 
 def _core() -> Any:
     """Return the NTFC core handler of node1.
@@ -152,13 +146,7 @@ def test_link_ifdown_ifup() -> None:
 
 
 def test_link_host_port_flap() -> None:
-    """node1 works again after its host bridge port went down and up.
-
-    Skipped on sim: the node process exits, and NTFC reports a dead
-    device as a failure even for an expected failure.
-    """
-    if _core().conf.kv_check("CONFIG_ARCH_SIM"):
-        pytest.skip(SIM_TAP_EIO_BUG)
+    """node1 works again after its host bridge port went down and up."""
     addr = NODE_IPS[NODE]
     port = _bridge_port(addr)
     _run("ip", "link", "set", port, "down")

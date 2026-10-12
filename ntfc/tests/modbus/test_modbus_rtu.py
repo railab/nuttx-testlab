@@ -36,7 +36,6 @@ from _modbus_common import (
     ILLEGAL_DATA_ADDRESS,
     ILLEGAL_DATA_VALUE,
     REGS,
-    WRITE_COILS_BUG,
     HostSlave,
     client_lines,
     items,
@@ -48,16 +47,6 @@ HOST_DEV = "/dev/ttyTL1"
 
 BAUD = 19200
 UNIT = 1
-
-MIN_FRAME_BUG = (
-    "industry/nxmodbus: the RTU receiver drops frames shorter than 5 "
-    "bytes (NXMB_RTU_MIN_FRAME_SIZE), so a 4-byte Report Server ID "
-    "(FC17) request gets no reply"
-)
-RESTART_BUG = (
-    "examples/nxmbserver: g_running is set only at load time, so after "
-    "one SIGINT every later run in the same boot exits at once"
-)
 
 
 def _core() -> Any:
@@ -239,7 +228,6 @@ def test_modbus_rtu_master_write() -> None:
 
 
 @pytest.mark.cmd_check("nxmbclient_main")
-@pytest.mark.xfail(strict=True, reason=WRITE_COILS_BUG)
 def test_modbus_rtu_master_write_coils() -> None:
     """``write-coils`` by the NuttX master sets each listed coil."""
     with _host_slave() as slave:
@@ -265,7 +253,7 @@ def test_modbus_rtu_master_exception() -> None:
 
 
 class NodeSlave:
-    """``nxmbserver`` on the node, started once per boot (``RESTART_BUG``)."""
+    """``nxmbserver`` running in the background on the node."""
 
     def __init__(self) -> None:
         """Prepare, not started."""
@@ -376,7 +364,6 @@ def test_modbus_rtu_slave_diag(node_slave: NodeSlave) -> None:
 
 
 @pytest.mark.cmd_check("nxmbserver_main")
-@pytest.mark.xfail(strict=True, reason=MIN_FRAME_BUG)
 def test_modbus_rtu_slave_id(node_slave: NodeSlave) -> None:
     """Report Server ID (FC17): byte count, unit ID, running.
 
@@ -443,7 +430,6 @@ def test_modbus_rtu_slave_framing(node_slave: NodeSlave) -> None:
 
 
 @pytest.mark.cmd_check("nxmbserver_main")
-@pytest.mark.xfail(strict=True, reason=RESTART_BUG)
 def test_modbus_rtu_slave_restart(node_slave: NodeSlave) -> None:
     """``nxmbserver`` started a second time serves requests.
 

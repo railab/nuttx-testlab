@@ -39,12 +39,6 @@ REGS = 100
 ILLEGAL_DATA_ADDRESS = 2
 ILLEGAL_DATA_VALUE = 3
 
-WRITE_COILS_BUG = (
-    "system/nxmbclient: write-coils passes one byte per coil to "
-    "nxmb_write_coils(), which expects packed bits, so only the first "
-    "(count + 7) / 8 values are sent, as bits"
-)
-
 
 class HostSlave:
     """pymodbus slave on the host with a known register map.
