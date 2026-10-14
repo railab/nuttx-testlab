@@ -1013,9 +1013,11 @@ file on 9P).
      - ``chmod`` 600, 644 and 755: the host file has that mode.
    * - ``test_v9fs_utimens``
      - ``utimens`` to 1000000000: the host mtime is that time.
-   * - ``test_v9fs_symlink_unsupported``
-     - ``symlink`` and ``readlink`` fail with ``ENOSYS``; opening a host
-       symlink fails with ``ELOOP``.
+   * - ``test_v9fs_symlink``
+     - ``symlink`` creates a host symlink with the given target;
+       ``readlink`` returns it, ``open`` and ``stat`` follow it,
+       ``symlink`` onto an existing name fails with ``EEXIST``,
+       ``unlink`` removes only the link.
    * - ``test_v9fs_errno``
      - Each failing call returns the POSIX errno and leaves the host
        directory unchanged: ``ENOENT`` (open, stat, unlink, rename of a

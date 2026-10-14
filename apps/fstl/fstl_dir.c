@@ -570,7 +570,13 @@ int fstl_err(int argc, FAR char *argv[])
     }
   else if (strcmp(op, "readlink") == 0)
     {
-      ret = readlink(path, buf, sizeof(buf)) < 0 ? -1 : 0;
+      ssize_t len = readlink(path, buf, sizeof(buf));
+
+      ret = len < 0 ? -1 : 0;
+      if (len >= 0)
+        {
+          printf("fstl: link len=%zd target=%.*s\n", len, (int)len, buf);
+        }
     }
 #endif
   else if (strcmp(op, "seekneg") == 0)

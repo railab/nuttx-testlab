@@ -560,15 +560,22 @@ def test_v9fs_utimens(work: Tuple[Path, str]) -> None:
     assert int((host / "t").stat().st_mtime) == 1000000000
 
 
-def test_v9fs_symlink_unsupported(work: Tuple[Path, str]) -> None:
-    """No symlink support: symlink/readlink fail cleanly (ENOSYS)."""
+def test_v9fs_symlink(work: Tuple[Path, str]) -> None:
+    """symlink() makes a host symlink; readlink, open and unlink use it."""
     host, node = work
-    (host / "f").write_bytes(b"target")
-    (host / "lnk").symlink_to("f")
-    fstl_pass(f"err symlink f {node}/new ENOSYS")
-    assert not (host / "new").exists()
-    fstl_pass(f"err readlink {node}/lnk ENOSYS")
-    fstl_pass(f"err open {node}/lnk ELOOP")
+    (host / "f").write_bytes(pattern(0, 1000, 9))
+    fstl_pass(f"err symlink f {node}/lnk OK")
+    assert (host / "lnk").is_symlink()
+    assert os.readlink(host / "lnk") == "f"
+    out = run(f"fstl err readlink {node}/lnk OK")
+    assert verdict_of(out).startswith("fstl: PASS"), out
+    assert re.search(r"^fstl: link len=1 target=f\s*$", out, re.M), out
+    fstl_pass(f"verify {node}/lnk 1000 -s 9")
+    assert _ino(f"{node}/lnk") == _ino(f"{node}/f")
+    fstl_pass(f"err symlink f {node}/f EEXIST")
+    fstl_pass(f"err unlink {node}/lnk OK")
+    assert not os.path.lexists(host / "lnk")
+    assert (host / "f").read_bytes() == pattern(0, 1000, 9)
 
 
 ERRNO_CASES = [
