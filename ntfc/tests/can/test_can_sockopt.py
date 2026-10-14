@@ -114,9 +114,6 @@ def test_can_so_rcvbuf() -> None:
     assert ret.startswith("canopt: PASS rcvbuf"), ret
 
 
-@pytest.mark.xfail(
-    strict=True, reason="can_recvmsg() waits forever, ignores SO_RCVTIMEO"
-)
 def test_can_so_rcvtimeo() -> None:
     """A blocking read on an idle socket times out after SO_RCVTIMEO.
 

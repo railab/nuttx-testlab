@@ -23,11 +23,6 @@ import re
 import pytest
 from _net_common import nettl_client, nettl_server
 
-NSH_TOO_MANY_ARGS_BUG = (
-    "nshlib/nsh_parse.c: nsh_parse_command() prints 'too many arguments' "
-    "when argc > CONFIG_NSH_MAXARGUMENTS but still runs the command"
-)
-
 EXIT_SIGTERM_BUG = (
     "sched/group: with GROUP_KILL_CHILDREN_TIMEOUT_MS != 0 (default -1 "
     "with SIG_DEFAULT) exit() sends SIGTERM to the other threads, which "
@@ -108,7 +103,6 @@ def test_nsh_max_args() -> None:
 
 
 @pytest.mark.cmd_check("hello_main")
-@pytest.mark.xfail(strict=True, reason=NSH_TOO_MANY_ARGS_BUG)
 def test_nsh_too_many_args() -> None:
     """A command with too many arguments fails and does not run.
 

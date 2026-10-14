@@ -75,11 +75,6 @@ APPEND_BUG = (
     "so after a seek the file offset is wrong (POSIX: each write first "
     "moves the offset to the end of the file)"
 )
-CHMOD_BUG = (
-    "fs/v9fs/client.c: v9fs_client_chstat() sends "
-    "v9fs_map_open_flags(st_mode) as the new mode, which drops the 0004, "
-    "0010, 0020 and 0040 bits"
-)
 UTIME_BUG = (
     "fs/v9fs/client.c: v9fs_map_setattr_flags() maps CH_STAT_ATIME/MTIME "
     "to ATIME_SET/MTIME_SET only, without the ATIME/MTIME bits that make "
@@ -544,16 +539,8 @@ def test_v9fs_statfs(share: Path) -> None:
     "mode",
     [
         pytest.param("600", id="600"),
-        pytest.param(
-            "644",
-            id="644",
-            marks=pytest.mark.xfail(strict=True, reason=CHMOD_BUG),
-        ),
-        pytest.param(
-            "755",
-            id="755",
-            marks=pytest.mark.xfail(strict=True, reason=CHMOD_BUG),
-        ),
+        pytest.param("644", id="644"),
+        pytest.param("755", id="755"),
     ],
 )
 def test_v9fs_chmod(work: Tuple[Path, str], mode: str) -> None:

@@ -164,10 +164,6 @@ def test_can_char_rx_overflow() -> None:
     assert ret.startswith("canopt: PASS coverflow"), ret
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="FIONREAD stores a uint8_t into the caller's int",
-)
 def test_can_char_fionread() -> None:
     """FIONREAD reports the number of queued messages as an int."""
     count = 5
