@@ -61,6 +61,7 @@ class HostSlave:
         self._loop = asyncio.new_event_loop()
         self._ready = threading.Event()
         self._server: Any = None
+        self._error: Optional[BaseException] = None
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     async def _action(
@@ -115,15 +116,25 @@ class HostSlave:
         )
 
     def _run(self) -> None:
-        """Serve in this thread's event loop."""
+        """Serve in this thread's event loop.
+
+        ``_ready`` is set only once the server listens (or failed to), so
+        a client started after :meth:`__enter__` cannot be refused.
+        """
         asyncio.set_event_loop(self._loop)
 
-        async def serve() -> None:
+        async def listen() -> None:
             self._server = self._make_server(self._device())
-            self._ready.set()
-            await self._server.serve_forever()
+            await self._server.serve_forever(background=True)
 
-        self._loop.run_until_complete(serve())
+        try:
+            self._loop.run_until_complete(listen())
+        except RuntimeError as exc:
+            self._error = exc
+            return
+        finally:
+            self._ready.set()
+        self._loop.run_forever()
 
     def __enter__(self) -> "HostSlave":
         """Start serving.
@@ -132,6 +143,7 @@ class HostSlave:
         """
         self._thread.start()
         assert self._ready.wait(10), "pymodbus slave did not start"
+        assert self._error is None, f"pymodbus slave: {self._error}"
         return self
 
     def __exit__(
@@ -150,6 +162,7 @@ class HostSlave:
         asyncio.run_coroutine_threadsafe(
             self._server.shutdown(), self._loop
         ).result(10)
+        self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(10)
 
 
