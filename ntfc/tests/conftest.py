@@ -31,6 +31,18 @@ from _net_common import nettl_cleanup  # noqa: E402
 from _netleak import net_leak  # noqa: E402, F401 - fixture
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item) -> Iterator[None]:
+    """Keep the call phase report as ``item.rep_call`` for fixtures.
+
+    :param item: test item
+    """
+    outcome = yield
+    report = outcome.get_result()  # type: ignore[attr-defined]
+    if report.when == "call":
+        item.rep_call = report  # type: ignore[attr-defined]
+
+
 @pytest.fixture(autouse=True)
 def nettl_servers() -> Iterator[None]:
     """Stop background nettl servers after each test."""

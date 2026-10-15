@@ -467,7 +467,8 @@ fewer IOBs free afterwards (30 s settle time). A node pings the host
 before the first read and, while short, before each retry, so a driver
 that reclaims sent packets lazily holds the same buffers both times.
 With ``CONFIG_NETDEV_STATISTICS`` it also prints the driver RX/TX counter
-deltas from ``/proc/net/<dev>``.
+deltas from ``/proc/net/<dev>``. After a failed test the driver tests
+reboot both nodes.
 
 Host SocketCAN bus (can-bus)
 -----------------------------

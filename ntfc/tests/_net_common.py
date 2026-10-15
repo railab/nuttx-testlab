@@ -49,6 +49,21 @@ def pattern(offset: int, length: int) -> bytes:
     return bytes(((offset + i) * 31 + 7) & 0xFF for i in range(length))
 
 
+_PAT256 = pattern(0, 256)
+
+
+def pat(offset: int, length: int) -> bytes:
+    """Return :func:`pattern` bytes quickly; the pattern repeats every 256.
+
+    :param offset: absolute stream offset of the first byte
+    :param length: number of bytes
+    :return: pattern bytes
+    """
+    start = offset % 256
+    reps = _PAT256 * (length // 256 + 2)
+    return reps[start : start + length]
+
+
 def family(addr: str) -> socket.AddressFamily:
     """Return the socket address family of an IP address.
 
@@ -169,6 +184,7 @@ def nettl_client(
     port: int,
     count: int,
     length: Optional[int] = None,
+    extra: str = "",
 ) -> str:
     """Run nettl client on a node and return its verdict line.
 
@@ -178,11 +194,13 @@ def nettl_client(
     :param port: server port
     :param count: bytes (TCP) or datagrams (UDP)
     :param length: UDP payload length (nettl default if not given)
+    :param extra: additional nettl options, e.g. "-d"
     :return: verdict line or empty string
     """
     proto = _opts(udp, family(addr) == socket.AF_INET6)
     if length is not None:
         proto += f"-l {length} "
+    proto += f"{extra} " if extra else ""
     ret = _core(node).sendCommandReadUntilPattern(
         f"nettl -c {addr} {proto}-p {port} -n {count}",
         pattern=VERDICT_RE,
@@ -268,6 +286,31 @@ def host_udp_echo_check(
         for _ in range(3):
             sock.sendto(struct.pack(">I", UDP_END), dest)
     return ok
+
+
+def host_udp_flood(addr: str, port: int, seconds: float, length: int) -> int:
+    """Send nettl datagrams as fast as possible, then the end marker.
+
+    :param addr: node address running ``nettl -s -u``
+    :param port: node port
+    :param seconds: flood duration
+    :param length: payload length
+    :return: datagrams sent
+    """
+    sent = 0
+    with socket.socket(family(addr), socket.SOCK_DGRAM) as sock:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            dgram = struct.pack(">I", sent) + pat(sent * length, length)
+            try:
+                sock.sendto(dgram, (addr, port))
+                sent += 1
+            except BlockingIOError:
+                pass
+        time.sleep(0.5)
+        for _ in range(3):
+            sock.sendto(struct.pack(">I", UDP_END), (addr, port))
+    return sent
 
 
 def _mcast_dest(

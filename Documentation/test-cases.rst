@@ -507,6 +507,38 @@ tmpfs at ``/tl`` and are checked with ``md5``.
      - Host ``ftplib`` STOR then RETR of a 40000-byte file on the node's
        ``ftpd_start`` server: identical data, node ``md5`` matches.
 
+``ip`` driver
+-------------
+
+Source: ``ntfc/tests/ip/test_ip_driver.py``. Network driver behavior:
+frame sizes, duplex, overload, backpressure. Same sessions as the
+``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_drv_frame_sizes``
+     - UDP echo from the host and from node 1 to node 0 at Ethernet
+       frame sizes minimum, minimum + 1, 70, maximum - 1 and maximum,
+       IPv4 and IPv6: 200 datagrams each echoed byte-exact, no IOB
+       leaked.
+   * - ``test_drv_rx_overload_recovery``
+     - The host (10 s) and node 1 (20000 datagrams) flood the node 0 UDP
+       server at full rate; node 0 then still answers NSH and echoes 1 MiB
+       of TCP intact, no IOB leaked.
+   * - ``test_drv_rx_exhaustion_recovery``
+     - A node 0 UDP sink (``-S``, ``SO_RCVBUF`` 16 MiB) holds every
+       datagram for 15 s while the host (5 s) or node 1 (5000 datagrams)
+       floods it: the IOB pool runs empty, the sink then reads intact
+       data, node 0 answers ping and echoes 1 MiB of TCP intact, no IOB
+       leaked.
+   * - ``test_drv_tx_backpressure``
+     - Node 0 sends 4 MiB to a host reader that pauses 200 ms per 64 KiB:
+       every byte arrives intact and in order, no IOB leaked.
+
 ``can`` module
 ---------------
 
