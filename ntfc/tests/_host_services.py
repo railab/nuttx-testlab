@@ -34,7 +34,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import TracebackType
-from typing import Dict, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type
 
 NTP_EPOCH_OFFSET = 2208988800  # seconds from 1900-01-01 to 1970-01-01
 
@@ -47,11 +47,12 @@ class _UdpServer:
     ) -> None:
         """Bind the socket.
 
-        :param addr: host address to bind
+        :param addr: host address to bind (IPv4 or IPv6)
         :param port: UDP port
         :param device: network interface to bind to (for broadcasts)
         """
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        domain = socket.AF_INET6 if ":" in addr else socket.AF_INET
+        self.sock = socket.socket(domain, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if device:
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -107,6 +108,29 @@ class _UdpServer:
         :param peer: sender address
         """
         raise NotImplementedError
+
+
+class UdpEchoServer(_UdpServer):
+    """UDP server echoing every datagram; records the senders."""
+
+    def __init__(self, addr: str, port: int) -> None:
+        """Bind the socket.
+
+        :param addr: host address to bind (IPv4 or IPv6)
+        :param port: UDP port
+        """
+        super().__init__(addr, port)
+        self.peers: List[Tuple[str, int]] = []
+
+    def handle(self, data: bytes, peer: Tuple[str, int]) -> None:
+        """Send the datagram back.
+
+        :param data: received datagram
+        :param peer: sender address
+        """
+        if peer[:2] not in self.peers:
+            self.peers.append(peer[:2])
+        self.sock.sendto(data, peer)
 
 
 class SntpServer(_UdpServer):
@@ -499,13 +523,22 @@ class HttpServer:
         self.server.server_close()
 
 
+class _TcpServer6(socketserver.ThreadingTCPServer):
+    """Threaded TCP server on an IPv6 address."""
+
+    address_family = socket.AF_INET6
+
+
 class TcpEchoServer:
-    """Threaded TCP server echoing every connection; counts connections."""
+    """Threaded TCP server echoing every connection; counts connections.
+
+    ``peers`` lists the address and port of every accepted connection.
+    """
 
     def __init__(self, addr: str, port: int) -> None:
         """Bind the server.
 
-        :param addr: host address to bind
+        :param addr: host address to bind (IPv4 or IPv6)
         :param port: TCP port
         """
         owner = self
@@ -515,6 +548,8 @@ class TcpEchoServer:
 
             def handle(self) -> None:
                 """Echo one connection."""
+                with owner.lock:
+                    owner.peers.append(self.client_address[:2])
                 owner.accepted.set()
                 while True:
                     data = self.request.recv(4096)
@@ -526,9 +561,13 @@ class TcpEchoServer:
 
         self.lock = threading.Lock()
         self.connections = 0
+        self.peers: List[Tuple[str, int]] = []
         self.accepted = threading.Event()
-        socketserver.ThreadingTCPServer.allow_reuse_address = True
-        self.server = socketserver.ThreadingTCPServer((addr, port), Handler)
+        server = (
+            _TcpServer6 if ":" in addr else socketserver.ThreadingTCPServer
+        )
+        server.allow_reuse_address = True
+        self.server = server((addr, port), Handler)
         self.server.daemon_threads = True
         self._thread = threading.Thread(
             target=self.server.serve_forever, daemon=True

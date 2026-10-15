@@ -30,3 +30,11 @@ sessions:
   - name: "qemu-intel64-v9fs"
     confpath: ntfc/configs/qemu-intel64/v9fs/config.yaml
     testpath: ntfc/tests/fs
+  - name: "qemu-intel64-router"
+    confpath: ntfc/configs/qemu-intel64/router/config.yaml
+    testpath: ntfc/tests/router
+    resources: [tl-rbr0]
+  - name: "qemu-intel64-router-hp2"
+    confpath: ntfc/configs/qemu-intel64/router-hp2/config.yaml
+    testpath: ntfc/tests/router/test_router_stress.py::test_router_duplex
+    resources: [tl-rbr0]

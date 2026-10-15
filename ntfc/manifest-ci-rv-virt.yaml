@@ -22,3 +22,11 @@ sessions:
   - name: "rv-virt-v9fs"
     confpath: ntfc/configs/rv-virt/v9fs/config.yaml
     testpath: ntfc/tests/fs
+  - name: "rv-virt-router"
+    confpath: ntfc/configs/rv-virt/router/config.yaml
+    testpath: ntfc/tests/router
+    resources: [tl-rbr0]
+  - name: "rv-virt-router-hp2"
+    confpath: ntfc/configs/rv-virt/router-hp2/config.yaml
+    testpath: ntfc/tests/router/test_router_stress.py::test_router_duplex
+    resources: [tl-rbr0]

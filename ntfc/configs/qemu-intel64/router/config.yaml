@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-intel64/router'
+
+product0:
+  name: "intel64-router"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      boot_timeout: 30
+      exec_path: 'qemu-system-x86_64'
+      exec_args: '-m 2G -smp 4 -cpu host -enable-kvm -nographic
+                  -serial mon:stdio
+                  -netdev tap,id=n0,ifname=tl-rtap0,script=no,downscript=no
+                  -device e1000,netdev=n0,mac=52:54:00:33:00:10
+                  -netdev tap,id=n1,ifname=tl-rtap1,script=no,downscript=no
+                  -device e1000e,netdev=n1,mac=52:54:00:33:00:20'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/router'

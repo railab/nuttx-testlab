@@ -1073,3 +1073,66 @@ file on 9P).
    * - ``test_v9fs_mount_wrong_tag``
      - Mounting an unknown tag fails with ``ENODEV``; the share then
        mounts and 100000 bytes written by the node match on the host.
+
+``router`` module
+-----------------
+
+Sources: ``ntfc/tests/router/test_router_*.py``, helpers
+``ntfc/tests/_router_common.py``. One node forwards between host A and
+host B (see :doc:`architecture`); ``router_ifs`` addresses both node
+interfaces once per module. Sessions: ``qemu-armv8a-router``,
+``rv-virt-router``, ``qemu-intel64-router`` (all tests);
+``qemu-armv8a-router-hp2``, ``rv-virt-router-hp2``,
+``qemu-intel64-router-hp2`` (``test_router_duplex`` only, two
+high-priority work queue threads).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_router_port_up``
+     - Each side: the NIC with the side's MAC is ``RUNNING`` and its host
+       pings the node's IPv4 and IPv6 address.
+   * - ``test_router_ping``
+     - IPv4 and IPv6: A pings B and B pings A.
+   * - ``test_router_ttl``
+     - IPv4 and IPv6: replies from B arrive with TTL 63; a request with
+       TTL 1 gets ``Time exceeded`` from the node.
+   * - ``test_router_reject``
+     - ``iptables -A FORWARD -d 10.52.0.1 -j REJECT``: A gets
+       ``Destination Net Unreachable`` from the node; A reaches B again
+       after ``-D``.
+   * - ``test_router_tcp``
+     - IPv4 and IPv6, A to B and B to A: 256 KiB echoed intact.
+   * - ``test_router_udp``
+     - IPv4 and IPv6, A to B and B to A: 200 datagrams of 1024 bytes
+       echoed intact.
+   * - ``test_router_iperf``
+     - A to B and B to A: 10 s of iperf2 TCP at 5 Mbit/s or more.
+   * - ``test_router_port_flap``
+     - The B side TAP is down for 3 s during an iperf run: A and B ping
+       each other and echo TCP afterwards.
+   * - ``test_nat_ping``
+     - MASQUERADE on the B interface, host B without a route to A: A
+       pings B.
+   * - ``test_nat_tcp``
+     - As ``test_nat_ping``: 64 KiB echoed intact; B sees the connection
+       from ``10.52.0.10``.
+   * - ``test_nat_udp``
+     - As ``test_nat_ping``: 50 datagrams echoed intact, all from
+       ``10.52.0.10``.
+   * - ``test_nat_tracking``
+     - As ``test_nat_ping``: 4 concurrent connections from A echo 64 KiB
+       each intact; B sees 4 different ports of ``10.52.0.10``.
+   * - ``test_router_duplex``
+     - With MASQUERADE, A runs an iperf2 client sending to B and one
+       receiving from B (``-R``) at the same time for 40 s. Then no
+       ``hpwork``, ``lpwork`` or ``netdev`` thread waits on a mutex in
+       two ``ps`` samples, both node addresses answer, A pings B and
+       ``ifconfig`` returns.
+   * - ``test_router_ifdown_ifup``
+     - Each side: after ``ifdown`` the side's host gets no reply from
+       the node and A cannot reach B; after ``ifup`` and readdressing
+       both work again.

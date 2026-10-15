@@ -22,3 +22,11 @@ sessions:
   - name: "qemu-armv8a-v9fs-knsh"
     confpath: ntfc/configs/qemu-armv8a/v9fs-knsh/config.yaml
     testpath: ntfc/tests/fs
+  - name: "qemu-armv8a-router"
+    confpath: ntfc/configs/qemu-armv8a/router/config.yaml
+    testpath: ntfc/tests/router
+    resources: [tl-rbr0]
+  - name: "qemu-armv8a-router-hp2"
+    confpath: ntfc/configs/qemu-armv8a/router-hp2/config.yaml
+    testpath: ntfc/tests/router/test_router_stress.py::test_router_duplex
+    resources: [tl-rbr0]

@@ -397,7 +397,11 @@ sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 (``ntfc/tests/can``, ``resources: [can0]``, see `Host SocketCAN bus
 (can-bus)`_). ``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64`` also have
 ``<target>-v9fs`` and ``qemu-armv8a`` has ``qemu-armv8a-v9fs-knsh``
-(``ntfc/tests/fs``, see `Host share (v9fs)`_).
+(``ntfc/tests/fs``, see `Host share (v9fs)`_). ``qemu-armv8a``,
+``rv-virt`` and ``qemu-intel64`` also have ``<target>-router``
+(``ntfc/tests/router``) and ``<target>-router-hp2`` (its
+``test_router_duplex``), both ``resources: [tl-rbr0]``, see
+`Routed networks (router)`_.
 
 Host network (ip-pair)
 ----------------------
@@ -565,6 +569,62 @@ QEMU in that directory for kernel builds, so the paths in its
 ``fstl`` and ``elftl`` load from it. ``PATH`` is
 ``/system/bin:/mnt/v9fs/bin``; ``TLS_LOG2_MAXSTACK=15`` allows the
 24 KiB ``elftl`` stack.
+
+Routed networks (router)
+------------------------
+
+``testenv/router.sh {start|stop|status}`` creates two host networks in
+network namespaces, so the host kernel cannot route between them: host A
+(``tl-ra``, ``10.51.0.1/24``, ``fc00::1/112``) and host B (``tl-rb``,
+``10.52.0.1/24``, ``fc00::1:1/112``). Each namespace reaches a bridge
+(``tl-rbr0``, ``tl-rbr1``) over a veth pair; the node's two NICs attach
+to the bridges through ``tl-rtap0`` and ``tl-rtap1``. A's default route
+and B's routes to ``10.51.0.0/24`` and ``fc00::/112`` point at the node.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Side
+     - Node IP
+     - Node IPv6
+     - Node MAC
+     - TAP
+   * - A
+     - ``10.51.0.10``
+     - ``fc00::10``
+     - ``52:54:00:33:00:10``
+     - ``tl-rtap0``
+   * - B
+     - ``10.52.0.10``
+     - ``fc00::1:10``
+     - ``52:54:00:33:00:20``
+     - ``tl-rtap1``
+
+The tests find each node interface by its MAC and address it from NSH.
+Defconfigs ``boards/<arch>/<chip>/<board>/configs/router`` and
+``router-hp2`` enable ``NET_IPFORWARD``, ``NET_NAT``, ``NET_IPFILTER``,
+``iptables``, ``ip6tables`` and SMP with 4 CPUs; ``router-hp2`` also
+runs two high-priority work queue threads (``SCHED_HPNTHREADS=2``), so
+the work of both NICs can run at the same time.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - ``router`` NICs (A, B)
+     - ``router-hp2`` NICs (A, B)
+   * - ``qemu-armv8a``
+     - ``e1000`` (PCI, GICv2 with ``ARM64_GICV2M`` MSI), ``virtio-net-device``
+     - ``virtio-net-device``, ``virtio-net-device``
+   * - ``rv-virt``
+     - ``virtio-net-device``, ``virtio-net-device``
+     - ``virtio-net-device``, ``virtio-net-device``
+   * - ``qemu-intel64``
+     - ``e1000``, ``e1000e``
+     - ``virtio-net-pci``, ``virtio-net-pci``
+
+The ``qemu-intel64`` ``router`` defconfig also builds ``NET_IGB``:
+``-device igb`` in its ``config.yaml`` selects that NIC.
 
 Docker image and runner
 ------------------------
