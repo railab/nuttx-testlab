@@ -57,12 +57,6 @@ UDP_TIME = 3
 #: Maximum UDP loss (fraction of the bytes the host sent).
 UDP_MAX_LOSS = 0.05
 
-E1000_RX_PANIC_BUG = (
-    "drivers/net/e1000.c: e1000_receive() calls PANIC() when "
-    "netpkt_alloc() finds no free IOB to refill the RX ring, so a bulk "
-    "TCP transfer that uses up the IOB pool crashes the node"
-)
-
 REPORT_RE = re.compile(r"(\d+\.\d+)-\s*(\d+\.\d+) sec\s+(\d+) Bytes")
 EXIT_RE = "iperf exit"
 
@@ -83,17 +77,6 @@ def _floor(name: str) -> float:
     :return: minimum throughput in Mbit/s
     """
     return FLOORS[str(_core(0).conf.kv_check("CONFIG_ARCH"))][name]
-
-
-@pytest.fixture
-def e1000_rx_panic_skip() -> None:
-    """Skip bulk TCP on e1000 nodes: the node crashes.
-
-    NTFC reports a crashed device as a failure even for an expected
-    failure, so the test is skipped instead of marked ``xfail``.
-    """
-    if _core(0).conf.kv_check("CONFIG_NET_E1000"):
-        pytest.skip(E1000_RX_PANIC_BUG)
 
 
 def _report(output: str) -> Tuple[float, int]:
@@ -203,7 +186,6 @@ def _host_iperf(args: List[str]) -> Iterator["subprocess.Popen[bytes]"]:
             proc.wait()
 
 
-@pytest.mark.usefixtures("e1000_rx_panic_skip")
 def test_iperf_tcp_node_to_host() -> None:
     """node0 client sends to a host iperf2 server for 5 s."""
     port = 5600
@@ -213,7 +195,6 @@ def test_iperf_tcp_node_to_host() -> None:
     _check("node_to_host", _mbps(output))
 
 
-@pytest.mark.usefixtures("e1000_rx_panic_skip")
 def test_iperf_tcp_host_to_node() -> None:
     """A host iperf2 client sends to a node0 server for its 5 s window."""
     port = 5601
@@ -251,7 +232,6 @@ def test_iperf_udp_host_to_node() -> None:
     assert loss <= UDP_MAX_LOSS, f"sent {sent}, received {received}"
 
 
-@pytest.mark.usefixtures("e1000_rx_panic_skip")
 def test_iperf_tcp_node_to_node() -> None:
     """node0 client sends to a node1 server for its 5 s window."""
     port = 5603
