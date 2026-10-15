@@ -106,8 +106,9 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
 :doc:`test-cases`), full CLI::
 
    nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec]
-            [-L n [-E]]
+            [-L n [-E]] [-S [-R bytes]]
    nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec] [-k idle [-P]]
+            [-r pps] [-d]
 
 - ``-k idle`` TCP client only: before the transfer, enable keep-alive
   (``idle`` s idle, 1 s interval, 3 probes) and wait idle in
@@ -116,12 +117,22 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
 - ``-P`` with ``-k``: wait in ``poll(POLLIN)`` instead of ``recv()``;
   on an event prints ``nettl: poll revents 0x<revents> so_error
   <SO_ERROR>`` and fails.
+- ``-r pps`` UDP client only: send ``-n`` datagrams at ``pps`` per
+  second (``0``: as fast as possible) without waiting for echoes, then
+  the end marker; fails only on send errors other than a full queue.
+- ``-d`` TCP client only: send and read the echo at the same time on a
+  nonblocking socket instead of chunk by chunk.
 
 - ``-w`` TCP server only: after accept(), send ``-n`` bytes of
   pattern data to the client (no echo) then close; does not combine
   with ``-u``.
-- ``-D sec`` TCP server only: sleep ``sec`` seconds after printing the
-  ``listening`` line and before calling accept().
+- ``-D sec`` TCP server or ``-S``: sleep ``sec`` seconds after printing
+  the ``listening`` line and before calling accept() or the first recv().
+- ``-S`` UDP server only: receive-only sink, no echo. Verifies the
+  datagrams until the end marker or the ``-t`` timeout; passes when at
+  least one datagram arrived and all were intact.
+- ``-R bytes`` with ``-S``: set ``SO_RCVBUF`` (ignored without
+  ``CONFIG_NET_RECV_BUFSIZE``, where the receive queue has no limit).
 - ``-L n`` UDP server only, ``1`` to ``4``: open ``n`` sockets with
   ``SO_REUSEADDR`` bound to the same port and poll all of them until
   each has received ``-n`` datagrams of ``-l`` bytes each (or the
