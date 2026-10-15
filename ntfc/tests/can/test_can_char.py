@@ -30,7 +30,6 @@ from _can_common import CAN_CHARDEV
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CAN_RTR_FLAG,
     CLASSIC_FRAMES,
-    CTUCANFD_EFF_BUG,
     FD_FRAMES,
     MARKER_ID,
     Frame,
@@ -64,38 +63,20 @@ def chardev_only() -> None:
         pytest.skip("node 0 reaches the bus over SocketCAN")
 
 
-def _xfail_on_ctucanfd(request: pytest.FixtureRequest) -> None:
-    """Expect the 29-bit CAN ID loss of the CTU CAN FD driver on node 0.
-
-    :param request: pytest request of the running test
-    """
-    if kv_value(0, "CONFIG_CAN_CTUCANFD_CHARDEV"):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=CTUCANFD_EFF_BUG)
-        )
-
-
-def test_can_char_rx_frame_types(request: pytest.FixtureRequest) -> None:
+def test_can_char_rx_frame_types() -> None:
     """``read()`` returns both tables intact.
 
     ID, EFF, RTR, DLC (CAN FD DLC 9..15 = 12..64 bytes), EDL/BRS/ESI and
     payload of every message match what the host sent.
-
-    :param request: pytest request
     """
-    _xfail_on_ctucanfd(request)
     canopt_start(0, f"crx {CAN_CHARDEV}")
     host_send(interleaved_frames() + [Frame(MARKER_ID, 1)])
     ret = canopt_verdict(0)
     assert ret.startswith("canopt: PASS crx"), ret
 
 
-def test_can_char_tx_frame_types(request: pytest.FixtureRequest) -> None:
-    """``write()`` of both tables reaches the host intact.
-
-    :param request: pytest request
-    """
-    _xfail_on_ctucanfd(request)
+def test_can_char_tx_frame_types() -> None:
+    """``write()`` of both tables reaches the host intact."""
     sock = host_socket()
     try:
         ret = canopt_run(0, f"ctx {CAN_CHARDEV}")

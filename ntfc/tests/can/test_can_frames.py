@@ -25,7 +25,6 @@ CAN FD length (0..8, 12..64 = DLC 0..15) and BRS/ESI combination.
 import pytest
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CLASSIC_FRAMES,
-    CTUCANFD_EFF_BUG,
     CTUCANFD_FD_RX_BUG,
     CTUCANFD_TX_BUG,
     FD_FRAMES,
@@ -102,9 +101,7 @@ def test_can_fd_rx(request: pytest.FixtureRequest) -> None:
     ],
     ids=["blocking", "queued"],
 )
-def test_can_fd_to_classic_socket(
-    request: pytest.FixtureRequest, queued: bool
-) -> None:
+def test_can_fd_to_classic_socket(queued: bool) -> None:
     """A classic socket on a mixed bus sees only classic frames.
 
     The host interleaves both tables. ``blocking``: the reader waits in
@@ -113,12 +110,8 @@ def test_can_fd_to_classic_socket(
     CAN_MTU bytes. The host sends wake-up frames after 3 s so a reader
     that blocks despite queued frames still returns.
 
-    :param request: pytest request
     :param queued: let all frames queue before the first read
     """
-    if not queued:
-        xfail_on_ctucanfd(request, CTUCANFD_EFF_BUG)
-
     if queued:
         canopt_start(0, "legacy can0 -q")
         host_send(interleaved_frames() + [Frame(MARKER_ID, 1)])

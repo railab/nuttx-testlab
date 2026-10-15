@@ -52,11 +52,6 @@ KICK_ID = 0x7FD
 VERDICT_RE = r"canopt: (PASS|FAIL)[^\r\n]*[\r\n]"
 READY = "canopt: ready"
 
-CTUCANFD_EFF_BUG = (
-    "drivers/can/ctucanfd_pci.c: a 29-bit CAN ID is read from and written "
-    "to only the 18-bit id_ext field of the frame ID word, the upper 11 bits "
-    "(base ID field) are lost"
-)
 CTUCANFD_TX_BUG = (
     "drivers/can/ctucanfd_pci.c: ctucanfd_sock_transmit() stores "
     "can_id & CAN_RTR_FLAG and flags & CANFD_ESI in 1-bit bitfields (RTR and "
@@ -177,17 +172,6 @@ def filter_match(can_id: int, filters: List[Tuple[int, int]]) -> bool:
         if bool(fid & CAN_INV_FILTER) != hit:
             return True
     return False
-
-
-def ctucanfd_eff_mangled(can_id: int) -> int:
-    """Return the CAN ID a CTU CAN FD node sees for a sent ID.
-
-    :param can_id: CAN ID with flags
-    :return: the ID with only the low 18 bits of a 29-bit ID kept
-    """
-    if can_id & CAN_EFF_FLAG:
-        return can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG | 0x3FFFF)
-    return can_id
 
 
 def xfail_on_ctucanfd(
