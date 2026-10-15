@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _can_common import cantl_cleanup  # noqa: E402
 from _net_common import nettl_cleanup  # noqa: E402
+from _netleak import net_leak  # noqa: E402, F401 - fixture
 
 
 @pytest.fixture(autouse=True)

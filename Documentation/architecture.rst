@@ -449,6 +449,15 @@ and ``CONFIG_NETINIT_IPv6ADDR_8`` (gateways ``10.42.0.1``, ``fc00::1``).
      - ``boards/x86_64/qemu/qemu-intel64/configs/ip-pair-node0``, ``-node1``
      - ``e1000``
 
+Driver tests check for buffer leaks: the ``net_leak`` fixture
+(``_netleak.py``) reads ``/proc/iobinfo`` on every node before a test; the
+test ends with ``net_leak.check()``, which fails when a node it used has
+fewer IOBs free afterwards (30 s settle time). A node pings the host
+before the first read and, while short, before each retry, so a driver
+that reclaims sent packets lazily holds the same buffers both times.
+With ``CONFIG_NETDEV_STATISTICS`` it also prints the driver RX/TX counter
+deltas from ``/proc/net/<dev>``.
+
 Host SocketCAN bus (can-bus)
 -----------------------------
 
