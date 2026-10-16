@@ -39,7 +39,7 @@ from _net_common import (
     pat,
     track_server,
 )
-from _netleak import IobCountLost, LeakCheck, iob_free
+from _netleak import LeakCheck, iob_free
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_TCP", "CONFIG_NET_UDP"),
@@ -66,11 +66,6 @@ UDP_READAHEAD_THROTTLE_BUG = (
     "read-ahead queue without honoring CONFIG_IOB_THROTTLE, so a flood "
     "empties the pool and blocks throttled writers such as sendto()"
 )
-IOB_WAIT_FAIL_BUG = (
-    "mm/iob/iob_alloc.c: an iob_allocwait() that fails (timeout or "
-    "cancel) keeps its g_throttle_wait++ / g_iob_count-- reservation, so "
-    "a later iob_free() commits one IOB to the gone waiter for good"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -92,24 +87,15 @@ def _expect_failure(
     request: pytest.FixtureRequest,
     applies: bool,
     reason: str,
-    leak: bool = False,
 ) -> None:
     """Mark the test as an expected failure.
 
     :param request: pytest request
     :param applies: apply the mark
     :param reason: the defect that makes the test fail
-    :param leak: the defect loses IOBs only now and then: expect only
-     :class:`IobCountLost`, not strict
     """
     if applies:
-        request.applymarker(
-            pytest.mark.xfail(
-                strict=not leak,
-                reason=reason,
-                raises=IobCountLost if leak else None,
-            )
-        )
+        request.applymarker(pytest.mark.xfail(strict=True, reason=reason))
 
 
 def _core(node: int) -> Any:
@@ -435,23 +421,19 @@ def _drain(sock: socket.socket, nbytes: int) -> None:
 
 
 @pytest.mark.parametrize("mode", ["poll", "blocking"])
-def test_drv_udp_rx_at_iob_throttle(
-    request: pytest.FixtureRequest, net_leak: LeakCheck, mode: str
-) -> None:
+def test_drv_udp_rx_at_iob_throttle(net_leak: LeakCheck, mode: str) -> None:
     """A UDP socket receives while TCP writes hold the IOB pool.
 
     TCP write buffering may use the pool down to ``CONFIG_IOB_THROTTLE``
     free IOBs. A UDP socket with an empty receive queue must still get
     each datagram, whether it waits in ``poll()`` or in ``recv()``.
 
-    :param request: pytest request
     :param net_leak: IOB leak check
     :param mode: ``poll`` (``nettl -L 1``) or ``blocking`` (``nettl -S``)
     """
     thr = _iob_conf("CONFIG_IOB_THROTTLE")
     if thr == 0:
         pytest.skip("CONFIG_IOB_THROTTLE is 0")
-    _expect_failure(request, True, IOB_WAIT_FAIL_BUG, leak=True)
     nbytes = (
         2 * _iob_conf("CONFIG_IOB_NBUFFERS") * _iob_conf("CONFIG_IOB_BUFSIZE")
     )
