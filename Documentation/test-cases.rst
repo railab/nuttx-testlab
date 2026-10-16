@@ -530,14 +530,22 @@ frame sizes, duplex, overload, backpressure. Same sessions as the
        server at full rate; node 0 then still answers NSH and echoes 1 MiB
        of TCP intact, no IOB leaked.
    * - ``test_drv_rx_exhaustion_recovery``
-     - A node 0 UDP sink (``-S``, ``SO_RCVBUF`` 16 MiB) holds every
-       datagram for 15 s while the host (5 s) or node 1 (5000 datagrams)
-       floods it: the IOB pool runs empty, the sink then reads intact
-       data, node 0 answers ping and echoes 1 MiB of TCP intact, no IOB
-       leaked.
+     - A node 0 UDP sink (``-S``, ``SO_RCVBUF`` 16 MiB or 8 datagrams)
+       does not read for 15 s while the host (20000 datagrams) or node 1
+       (5000) floods it: its queue stays within ``SO_RCVBUF`` (+ one
+       datagram), at least ``CONFIG_IOB_THROTTLE`` IOBs stay free, every
+       datagram not queued is counted as a UDP drop, node 0 answers ping
+       meanwhile; the sink then reads intact data, node 0 echoes 1 MiB of
+       TCP intact, no IOB leaked.
    * - ``test_drv_tx_backpressure``
      - Node 0 sends 4 MiB to a host reader that pauses 200 ms per 64 KiB:
        every byte arrives intact and in order, no IOB leaked.
+   * - ``test_drv_udp_rx_at_iob_throttle``
+     - A node 0 TCP writer to a host peer that does not read holds the
+       IOB pool at ``CONFIG_IOB_THROTTLE`` free; a node 0 UDP socket in
+       ``poll()`` (``-L 1``) or blocking ``recv()`` (``-S``) still gets
+       all 50 datagrams sent 20 ms apart, intact; the host then reads the
+       whole TCP stream intact, no IOB leaked.
 
 ``can`` module
 ---------------
