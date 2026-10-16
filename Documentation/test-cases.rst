@@ -337,6 +337,46 @@ each test. Same sessions as the ``ip`` module.
        on the new address, not on the old one, and echoes 16 KiB over
        TCP on the new address.
 
+``ip`` ARP
+----------
+
+Source: ``ntfc/tests/ip/test_ip_arp.py``. ARP resolution on node1 (RFC
+1122, 2.3.2.1: at most one request per second per destination). The
+host captures node1's requests on ``tl-br0`` and, where noted, drops its
+own ARP replies to node1 with a ``tc`` filter on ``tl-br0`` egress,
+removed after the test. 10.42.0.250-252 and fc00::252 have no host.
+Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_arp_lost_reply_send``
+     - node1 pings the host without an ARP entry; the host drops its
+       replies to the first 1 or 3 requests. The ping is answered by the
+       next request; requests are 0.8-2 s apart.
+   * - ``test_arp_lost_reply_forward``
+     - Same reply drop while the host pings node1 every 0.1 s (node1's
+       echo replies need ARP): an echo reply arrives within 2 s of
+       node1's first request.
+   * - ``test_arp_request_rate``
+     - node1 pings 10.42.0.250; after its first request the host
+       floods node1 with echo requests from 10.42.0.250: at most
+       ``CONFIG_ARP_SEND_MAXTRIES`` requests, at least 0.8 s apart.
+   * - ``test_arp_unreachable``
+     - A ping to 10.42.0.251 fails with ``EHOSTUNREACH`` after
+       ``CONFIG_ARP_SEND_MAXTRIES`` requests 0.8 s or more apart; a
+       second ping fails without a request; after
+       ``CONFIG_NET_ARP_MAXAGE_UNREACHABLE`` x 10 s requests are sent
+       again.
+   * - ``test_arp_unreachable_connect``
+     - A TCP connect to 10.42.0.252 fails with ``EHOSTUNREACH``.
+   * - ``test_nd_unreachable``
+     - A ping6 to fc00::252 fails with ``EHOSTUNREACH`` (RFC 4861,
+       7.2.2).
+
 ``ip`` Modbus TCP
 -----------------
 
