@@ -51,28 +51,25 @@ DUPLEX_TIME = 40
 #: ``Mutex:<holder pid>``.
 STUCK_RE = re.compile(r"^.*Mutex:\d+.*(?:hpwork|lpwork|netdev).*$", re.M)
 
-NETDEV_ABBA_BUG = (
-    "drivers/net/netdev_upperhalf.c: netdev_upper_txavail() polls the "
-    "egress device synchronously and takes its netdev_lock() while the "
-    "forwarding RX worker holds the ingress device's lock; with two "
-    "workers forwarding in opposite directions both wait for each "
-    "other (ABBA). net/ipforward/ipfwd_forward.c: ipfwd_forward() also "
-    "links the forwarding callback into the egress device's devif "
-    "callback lists without that device's lock, so a concurrent egress "
-    "worker loses forwarding callbacks and forwarding stops"
+IPFWD_LOCK_BUG = (
+    "net/ipforward/ipfwd_forward.c: ipfwd_forward() runs in the ingress "
+    "worker and links its callback into the egress device's devif "
+    "callback lists, then reads the forward state again, without the "
+    "egress device's lock; with a concurrent egress worker callbacks are "
+    "lost (forwarding stops, IOBs held) or freed state is used"
 )
 
 
 @pytest.fixture
 def concurrent_workers_xfail(request: Any) -> None:
-    """Expect the duplex test to fail with more than one HP worker.
+    """Expect the duplex test to fail now and then with two HP workers.
 
     :param request: pytest request of the test
     """
     nthreads = core().conf.kv_check("CONFIG_SCHED_HPNTHREADS")
     if int(nthreads or 1) > 1:
         request.applymarker(
-            pytest.mark.xfail(strict=True, reason=NETDEV_ABBA_BUG)
+            pytest.mark.xfail(strict=False, reason=IPFWD_LOCK_BUG)
         )
 
 
