@@ -32,6 +32,9 @@ SETTLE_S = 30.0
 #: A leak this small (per node) is reported as :class:`IobCountLost`
 COUNT_LOST_MAX = 2
 
+#: Kicked samples per free count snapshot
+SNAPSHOT_ROUNDS = 3
+
 
 def _core(node: int) -> Any:
     """Return the NTFC core handler for a product.
@@ -76,8 +79,9 @@ def dev_stats(node: int, dev: str) -> Dict[str, List[int]]:
 def _kick(node: int, peer: str) -> None:
     """Send one ping so the driver reclaims buffers it frees lazily.
 
-    A driver may hold its last transmitted packet until the next
-    transmission (e.g. virtio-net), which moves the free count by one.
+    A driver may hold transmitted packets until a later transmission
+    (e.g. virtio-net): after a kick it holds the ping's own or, now and
+    then, none, so the free count after a kick varies by one.
 
     :param node: product index
     :param peer: address to ping
@@ -96,6 +100,21 @@ def _free_all(nodes: List[int]) -> Dict[int, int]:
     return {node: iob_free(node) for node in nodes}
 
 
+def _snapshot(nodes: List[int], peer: str) -> Dict[int, int]:
+    """Return the lowest free IOB count of each node after a kick.
+
+    :param nodes: product indexes
+    :param peer: address to ping
+    :return: lowest free IOBs per node over ``SNAPSHOT_ROUNDS`` kicks
+    """
+    rounds = []
+    for _ in range(SNAPSHOT_ROUNDS):
+        for node in nodes:
+            _kick(node, peer)
+        rounds.append(_free_all(nodes))
+    return {node: min(r[node] for r in rounds) for node in nodes}
+
+
 class IobCountLost(AssertionError):
     """At most ``COUNT_LOST_MAX`` IOBs per node are missing."""
 
@@ -112,9 +131,7 @@ class LeakCheck:
         self.dev = dev
         self.peer = peer
         self.nodes = list(range(len(pytest.products)))
-        for node in self.nodes:
-            _kick(node, peer)
-        self.before = _free_all(self.nodes)
+        self.before = _snapshot(self.nodes, peer)
         self.stats = {node: dev_stats(node, dev) for node in self.nodes}
 
     def _print_stats(self) -> None:
@@ -133,8 +150,8 @@ class LeakCheck:
     def check(self, nodes: Optional[List[int]] = None) -> None:
         """Fail when a node has fewer free IOBs than before the test.
 
-        Waits up to ``SETTLE_S`` for buffers still in flight, pinging
-        ``peer`` from a node that misses buffers. Raises
+        Both counts are :func:`_snapshot` values. Waits up to
+        ``SETTLE_S`` for buffers still in flight. Raises
         :class:`IobCountLost` when no node misses more than
         ``COUNT_LOST_MAX`` IOBs, so an expected failure can name that
         case alone.
@@ -143,16 +160,13 @@ class LeakCheck:
         """
         nodes = self.nodes if nodes is None else nodes
         deadline = time.monotonic() + SETTLE_S
-        after = _free_all(nodes)
+        after = _snapshot(nodes, self.peer)
         while (
             any(after[n] < self.before[n] for n in nodes)
             and time.monotonic() < deadline
         ):
             time.sleep(2)
-            for node in nodes:
-                if after[node] < self.before[node]:
-                    _kick(node, self.peer)
-            after = _free_all(nodes)
+            after = _snapshot(nodes, self.peer)
         self._print_stats()
         leaked = {
             n: self.before[n] - after[n]
