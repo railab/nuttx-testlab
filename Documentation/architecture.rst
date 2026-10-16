@@ -364,6 +364,14 @@ that differ get one defconfig each, e.g. ``ip-pair-node0`` and
 ``ip-pair-node1`` for the two `Host network (ip-pair)`_ nodes (IPv4,
 IPv6 and, on ``sim``, MAC address).
 
+Every flat-build defconfig enables stack overflow detection
+(``CONFIG_STACK_COLORATION``, ``CONFIG_DEBUG_ASSERTIONS``,
+``CONFIG_STACKCHECK_MARGIN``): a thread that writes into the last
+margin bytes of its stack asserts at its next context switch. The
+margin (256 on ``rv-virt``, 512 elsewhere) is at least the stack frame
+of 99% of the functions in the image (``gcc -fstack-usage``), so a
+thread cannot step over it without writing into it.
+
 .. list-table::
    :header-rows: 1
 
