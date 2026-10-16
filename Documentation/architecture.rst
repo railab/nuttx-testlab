@@ -514,12 +514,12 @@ and role come from the ``conode`` command line.
      - as ``qemu-intel64``, ``ctucan_pci`` on both nodes; GICv2
        (``ARM64_GIC_VERSION=2``, ``gic-version=2``) for PCI INTx
 
-The ``qemu-intel64`` CAN nodes run
+The ``qemu-intel64`` CAN and ip-pair nodes run
 ``-cpu host,+invtsc,vmware-cpuid-freq=on`` with
 ``ARCH_INTEL64_CORE_FREQ_KHZ=0`` and ``ARCH_INTEL64_TSC_FREQ_VMWARE``:
 NuttX reads the TSC frequency from CPUID ``0x40000010`` instead of
 assuming one, so its clock keeps real time (CANopen heartbeat and SYNC
-periods).
+periods, ARP request intervals).
 
 Host serial line (modbus-rtu)
 -----------------------------
