@@ -66,6 +66,12 @@ UDP_READAHEAD_THROTTLE_BUG = (
     "read-ahead queue without honoring CONFIG_IOB_THROTTLE, so a flood "
     "empties the pool and blocks throttled writers such as sendto()"
 )
+TCP_SEND_RETRY_BUG = (
+    "net/tcp/tcp_send_buffered.c: when devif_iob_send() finds no free IOB "
+    "for a segment the window allows and nothing is in flight, no timer "
+    "or poll is armed again (the window update cleared the zero window "
+    "probe), so the writer stalls for good"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -421,19 +427,27 @@ def _drain(sock: socket.socket, nbytes: int) -> None:
 
 
 @pytest.mark.parametrize("mode", ["poll", "blocking"])
-def test_drv_udp_rx_at_iob_throttle(net_leak: LeakCheck, mode: str) -> None:
+def test_drv_udp_rx_at_iob_throttle(
+    request: pytest.FixtureRequest, net_leak: LeakCheck, mode: str
+) -> None:
     """A UDP socket receives while TCP writes hold the IOB pool.
 
     TCP write buffering may use the pool down to ``CONFIG_IOB_THROTTLE``
     free IOBs. A UDP socket with an empty receive queue must still get
     each datagram, whether it waits in ``poll()`` or in ``recv()``.
 
+    :param request: pytest request
     :param net_leak: IOB leak check
     :param mode: ``poll`` (``nettl -L 1``) or ``blocking`` (``nettl -S``)
     """
     thr = _iob_conf("CONFIG_IOB_THROTTLE")
     if thr == 0:
         pytest.skip("CONFIG_IOB_THROTTLE is 0")
+    request.applymarker(
+        pytest.mark.xfail(
+            strict=False, raises=TimeoutError, reason=TCP_SEND_RETRY_BUG
+        )
+    )
     nbytes = (
         2 * _iob_conf("CONFIG_IOB_NBUFFERS") * _iob_conf("CONFIG_IOB_BUFSIZE")
     )
