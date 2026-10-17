@@ -1,0 +1,35 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_TLSTL
+	tristate "tlstl: TLS interoperability test tool"
+	default n
+	depends on NET_TCP && CRYPTO_MBEDTLS && MBEDTLS_SSL_TLS_C
+	depends on MBEDTLS_X509_CRT_PARSE_C && MBEDTLS_CTR_DRBG_C
+	depends on MBEDTLS_ENTROPY_C && MBEDTLS_PEM_PARSE_C
+	---help---
+		Mbed TLS client/server that echoes a deterministic data
+		pattern over TLS, reports how the peer ended the stream and
+		prints a PASS/FAIL verdict line.
+
+if TESTLAB_TLSTL
+
+config TESTLAB_TLSTL_PROGNAME
+	string "Program name"
+	default "tlstl"
+
+config TESTLAB_TLSTL_PRIORITY
+	int "tlstl task priority"
+	default 100
+
+config TESTLAB_TLSTL_STACKSIZE
+	int "tlstl stack size (main task and session threads)"
+	default 16384
+
+config TESTLAB_TLSTL_BUFSIZE
+	int "tlstl I/O buffer size per session"
+	default 4096
+
+endif
