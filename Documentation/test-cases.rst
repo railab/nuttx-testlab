@@ -1216,3 +1216,72 @@ high-priority work queue threads).
      - Each side: after ``ifdown`` the side's host gets no reply from
        the node and A cannot reach B; after ``ifup`` and readdressing
        both work again.
+
+``tls`` module
+--------------
+
+Source: ``ntfc/tests/tls/test_tls.py``, helpers
+``ntfc/tests/_tls_common.py``. ``tlstl`` (Mbed TLS) on node 0 against
+OpenSSL peers on the host (Python ``ssl``). Each session the host
+creates a P-256 test PKI with ``openssl ca``: CA, server certificates
+for ``tls.testlab`` (valid, expired 1 day ago, valid from tomorrow,
+wrong name, signed by an unknown CA) and ``node.testlab`` for the node
+server; files go to a tmpfs at ``/tl`` over TFTP. Before each test the
+node clock is set from a host SNTP server, unless it is within 60 s,
+and the node has at least 6 free TCP connections (TIME_WAIT of earlier
+tests expired).
+Sessions: ``sim-tls``, ``qemu-armv8a-tls``, ``rv-virt-tls``,
+``qemu-intel64-tls``. "Heap freed": ``free`` reports no more used
+bytes than before the test (10 s settle time); "no IOB leaked": the
+``net_leak`` check of the ``ip`` driver tests.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_tls_client_interop``
+     - TLS 1.2 and 1.3 (host allows one): node client echoes 256 KiB
+       intact through the host server; both sides send ``close_notify``.
+   * - ``test_tls_server_interop``
+     - TLS 1.2 and 1.3: the host client verifies the node certificate
+       and echoes 256 KiB intact through the node server; the node
+       answers ``close_notify`` and reports PASS.
+   * - ``test_tls_cert_clock_unset``
+     - After a reboot, before NTP, the node client rejects the valid
+       certificate as not yet valid (``MBEDTLS_X509_BADCERT_FUTURE``
+       only, ``MBEDTLS_ERR_X509_CERT_VERIFY_FAILED``).
+   * - ``test_tls_cert_reject``
+     - TLS 1.2 and 1.3, expired / not yet valid / wrong name / unknown
+       CA: the handshake fails with
+       ``MBEDTLS_ERR_X509_CERT_VERIFY_FAILED``, the verification flags
+       are exactly ``EXPIRED`` / ``FUTURE`` / ``CN_MISMATCH`` /
+       ``NOT_TRUSTED``, no application data is exchanged, heap freed.
+   * - ``test_tls_cert_alert``
+     - The host server receives the alert RFC 8446 6.2 names:
+       ``certificate_expired`` for the expired and the not yet valid
+       certificate, ``unknown_ca`` for the unknown CA.
+   * - ``test_tls_peer_reset``
+     - Node client (receiving) or server (echoing): the host sends
+       128 KiB, then a TCP RST. The node reports the end as a reset
+       with ``ECONNRESET``; heap freed, no IOB leaked.
+   * - ``test_tls_truncation``
+     - Node client or server: the host sends 128 KiB, then a TCP FIN
+       without ``close_notify``. The node receives the 128 KiB intact
+       and reports the end of stream as truncation (FAIL ``end=eof``),
+       not as a clean close; heap freed.
+   * - ``test_tls_handshake_lossy``
+     - netem on ``tl-br0`` in both directions (20 ms +- 10 ms delay, 5%
+       loss, 25% reordering), TLS 1.2 and 1.3, node client and server:
+       5 sessions of 16 KiB echo all pass, each read within 30 s.
+   * - ``test_tls_concurrent_sessions``
+     - Node client or server: 16 sessions, 4 at a time, 32 KiB echo
+       each, all end with ``close_notify``; heap freed, no IOB leaked.
+   * - ``test_tls_server_restart``
+     - The node closes a finished server session first (TIME_WAIT); a
+       new server on the same port (``SO_REUSEADDR``) binds and serves
+       another session.
+   * - ``test_tls_session_churn``
+     - 40 back-to-back node client sessions of 1 KiB all pass; heap
+       freed, no IOB leaked, NSH answers.

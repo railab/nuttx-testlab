@@ -332,6 +332,41 @@ PASS. It uses only POSIX calls, so it works on any file system::
   ``gettid`` and ``putchar``.
 - Verdict: ``elftl: PASS|FAIL ...`` / ``elfsym: PASS|FAIL ...``.
 
+``apps/tlstl``
+~~~~~~~~~~~~~~
+
+``tlstl`` (``CONFIG_TESTLAB_TLSTL``, needs ``CRYPTO_MBEDTLS`` with TLS,
+X.509 and PEM parsing) is an Mbed TLS client/server::
+
+   tlstl -c addr -A ca [-H host] [-R] [-p port] [-V 12|13] [-n bytes]
+         [-r n] [-N n] [-t sec]
+   tlstl -s -C cert -K key [-p port] [-V 12|13] [-n bytes] [-r n]
+         [-N n] [-t sec]
+
+- Client: verifies the server against ``-A`` (PEM) and ``-H`` (SNI and
+  name check, default ``addr``), echoes ``-n`` bytes (default 65536)
+  of the ``nettl`` pattern chunk by chunk, then sends ``close_notify``
+  and waits for the peer's. ``-R``: receive only, until the peer ends
+  the stream.
+- Server: certificate ``-C`` and key ``-K`` (PEM), port ``-p`` (default
+  5101), no client authentication; echoes until the peer's
+  ``close_notify`` and answers it. Prints ``tlstl: listening on
+  <port>`` when ready.
+- ``-V`` allows only TLS 1.2 or 1.3 (default both); ``-r`` sessions in
+  total (default 1), ``-N`` at a time (threads, default 1, max 8);
+  ``-t`` read timeout (default 10 s); ``-n`` with ``-R`` or ``-s``:
+  bytes each session must receive (default any).
+- A session passes when the handshake succeeds, the data is intact,
+  all ``-n`` bytes arrive and the peer ends with ``close_notify``.
+  How the peer ended the stream: ``notify``, ``eof`` (TCP FIN without
+  ``close_notify``), ``reset`` (``ECONNRESET``), ``timeout``,
+  ``error``.
+- Verdict: ``tlstl: PASS|FAIL ver=<TLS version> sessions=<ok>/<n>
+  tx=<n> rx=<n> end=<end> ret=-0x<mbedtls error> verify=0x<X.509
+  flags> errno=<n>``, fields of the first failed session (else the
+  last); a failed session also prints ``tlstl: session <i> ...``. Exit
+  0 on PASS.
+
 NTFC configs
 ------------
 
@@ -420,7 +455,8 @@ sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 ``rv-virt`` and ``qemu-intel64`` also have ``<target>-router``
 (``ntfc/tests/router``) and ``<target>-router-hp2`` (its
 ``test_router_duplex``), both ``resources: [tl-rbr0]``, see
-`Routed networks (router)`_.
+`Routed networks (router)`_. Every manifest also has ``<target>-tls``
+(``ntfc/tests/tls``, ``resources: [tl-br0]``), see `TLS (tls)`_.
 
 Host network (ip-pair)
 ----------------------
@@ -654,6 +690,35 @@ the work of both NICs can run at the same time.
 
 The ``qemu-intel64`` ``router`` defconfig also builds ``NET_IGB``:
 ``-device igb`` in its ``config.yaml`` selects that NIC.
+
+TLS (tls)
+---------
+
+One node on ``tl-br0`` with node0's addresses (``tl-tap0``). Defconfigs
+``boards/<arch>/<chip>/<board>/configs/tls``: ``CRYPTO_MBEDTLS`` (TLS
+1.2 and 1.3, ``MBEDTLS_HAVE_TIME_DATE``), ``MBEDTLS_THREADING_PTHREAD``,
+``tlstl``, ``DEV_URANDOM``, NTP and TFTP clients, no RTC (the clock
+starts at ``CONFIG_START_YEAR`` until NTP sets it).
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - Entropy (``/dev/urandom``)
+   * - ``sim``
+     - ``DEV_URANDOM_XORSHIFT128``
+   * - ``qemu-armv8a``, ``rv-virt``
+     - ``virtio-rng-device`` (``DRIVERS_VIRTIO_RNG``)
+   * - ``qemu-intel64``
+     - RDRAND (``DEV_URANDOM_ARCH``)
+
+``qemu-intel64`` is SMP: the tests pin the shell, and so tlstl, to CPU
+0 (``taskset``, ``SYSTEM_TASKSET``), so that ``free`` (run on that CPU)
+sees the stacks of exited programs released.
+
+``test_tls_handshake_lossy`` adds a netem qdisc to ``tl-br0`` (host to
+node) and redirects the bridge's ingress (node to host) to ``ifb``
+device ``tl-ifb0`` with the same netem qdisc.
 
 Docker image and runner
 ------------------------

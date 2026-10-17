@@ -28,3 +28,7 @@ sessions:
     confpath: ntfc/configs/sim/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus
     resources: [ttyTL0]
+  - name: "sim-tls"
+    confpath: ntfc/configs/sim/tls/config.yaml
+    testpath: ntfc/tests/tls
+    resources: [tl-br0]

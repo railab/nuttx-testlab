@@ -38,3 +38,7 @@ sessions:
     confpath: ntfc/configs/qemu-intel64/router-hp2/config.yaml
     testpath: ntfc/tests/router/test_router_stress.py::test_router_duplex
     resources: [tl-rbr0]
+  - name: "qemu-intel64-tls"
+    confpath: ntfc/configs/qemu-intel64/tls/config.yaml
+    testpath: ntfc/tests/tls
+    resources: [tl-br0]

@@ -30,3 +30,7 @@ sessions:
     confpath: ntfc/configs/rv-virt/router-hp2/config.yaml
     testpath: ntfc/tests/router/test_router_stress.py::test_router_duplex
     resources: [tl-rbr0]
+  - name: "rv-virt-tls"
+    confpath: ntfc/configs/rv-virt/tls/config.yaml
+    testpath: ntfc/tests/tls
+    resources: [tl-br0]
