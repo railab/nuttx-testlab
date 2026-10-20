@@ -90,10 +90,6 @@ def test_can_sockopt_roundtrip() -> None:
     assert ret.startswith("canopt: PASS sockopt"), ret
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CAN_RAW_FD_FRAMES and SO_TIMESTAMPNS share one s_options bit",
-)
 def test_can_sockopt_no_alias() -> None:
     """SO_TIMESTAMPNS and CAN_RAW_FD_FRAMES are independent options."""
     ret = canopt_run(0, "optbits can0")

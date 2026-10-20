@@ -66,20 +66,7 @@ def test_can_rx_timestamp(mode: str) -> None:
     assert ret.startswith("canopt: PASS ts"), ret
 
 
-@pytest.mark.parametrize(
-    "fd",
-    [
-        False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="CAN_RAW_FD_FRAMES sets the SO_TIMESTAMPNS bit",
-            ),
-        ),
-    ],
-    ids=["classic", "fd"],
-)
+@pytest.mark.parametrize("fd", [False, True], ids=["classic", "fd"])
 def test_can_rx_no_timestamp(fd: bool) -> None:
     """Without a timestamp option recvmsg() returns no control message."""
     ret = _run_ts("-m none -f" if fd else "-m none")
