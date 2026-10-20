@@ -731,7 +731,10 @@ CI workflows
   inputs ``targets`` (``all`` or one of ``sim``, ``qemu-armv8a``,
   ``rv-virt``, ``qemu-intel64``), ``session``, ``testpath``, ``image``,
   ``build_image``, ``nuttx_repo``/``nuttx_ref``/``apps_repo``/
-  ``apps_ref``. For each target in the matrix it pulls
+  ``apps_ref``. For each target in the matrix it loads the host
+  ``can``, ``can_raw`` and ``vcan`` modules with
+  ``tools/ci/load-can-modules.sh`` (installing
+  ``linux-modules-extra-$(uname -r)`` only if one is missing), pulls
   ``ghcr.io/<repo>/testlab:latest`` (or ``image``), building
   ``tools/docker`` locally instead if ``build_image`` is set or the
   pull fails; runs
