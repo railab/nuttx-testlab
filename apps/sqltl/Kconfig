@@ -1,0 +1,31 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_SQLTL
+	tristate "sqltl: SQLite integration test tool"
+	default n
+	depends on LIB_SQLITE && !DISABLE_PTHREAD
+	---help---
+		SQLite checks on a mounted file system: crash consistency of
+		committed transactions, concurrent writers, disk full and
+		several databases at once, plus the POSIX record locks the
+		SQLite unix VFS relies on.  Each run prints one PASS/FAIL
+		verdict line.
+
+if TESTLAB_SQLTL
+
+config TESTLAB_SQLTL_PROGNAME
+	string "Program name"
+	default "sqltl"
+
+config TESTLAB_SQLTL_PRIORITY
+	int "sqltl task priority"
+	default 100
+
+config TESTLAB_SQLTL_STACKSIZE
+	int "sqltl stack size (also used by its threads)"
+	default 32768
+
+endif
