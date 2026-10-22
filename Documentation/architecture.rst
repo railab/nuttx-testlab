@@ -478,6 +478,46 @@ sessions (:doc:`hardware`)::
   below ``hwtl``; counts read after 500 ms. PASS: A ran, B did not.
   Needs one CPU (no ``CONFIG_SMP``).
 
+``apps/sqltl``
+~~~~~~~~~~~~~~
+
+``sqltl`` (``CONFIG_TESTLAB_SQLTL``, needs ``LIB_SQLITE``) runs one SQLite
+check per call on a mounted file system::
+
+   sqltl write <db> <txns> [-j mode] [-s sync] [-c pages] [-r rows] [-l len] [-k before|after]
+   sqltl verify <db> [-a rows] [-n rows] [-u rows] [-r rows]
+   sqltl big <db> <rows> [-j mode] [-s sync] [-c pages] [-l len] [-x|-w]
+   sqltl shrink <db> [-j mode] [-s sync]
+   sqltl conc <db> <workers> <txns> [-j mode] [-s sync] [-d] [-p] [-t sec]
+   sqltl handoff|visible <db> [-j mode]
+   sqltl lock|shm <file>
+   sqltl full <db> <dir> [-j mode] [-s sync]
+   sqltl multi <dir> [-j mode] [-s sync]
+
+- Table ``t(id, len, data)``: ids ``1..n`` without gaps, ``data`` is ``len``
+  bytes, byte ``i`` is byte ``i & 3`` of ``(i & ~3) ^ (id * 0x9e3779b9)``
+  (little-endian); ``len`` is ``-l`` or ``16 + id * 977 mod 6000``.
+- ``-j`` journal_mode, ``-s`` synchronous, ``-c`` cache_size in pages,
+  ``-r`` rows per transaction (default 3).
+- ``write`` prints ``sqltl: commit <rows>`` after each ``COMMIT`` returned.
+  ``-k``: the last ``COMMIT`` prints ``sqltl: wait point=...`` and waits to
+  be killed just before or just after its commit point (deletion or
+  truncation of the rollback journal, sync of the WAL after the commit
+  frame), hooked in a VFS wrapping the default one.
+- ``big`` runs one transaction and prints ``sqltl: row <id>`` every 32
+  rows; ``-x`` rolls it back and checks the table, ``-w`` prints
+  ``sqltl: wait`` before the ``COMMIT`` and waits to be killed.
+- ``verify``: ``PRAGMA integrity_check`` is ``ok``, every row intact, the
+  row count ``>= -a``, ``<= -u``, a multiple of ``-r`` and ``== -n``.
+- ``conc``: workers with own connections, threads or with ``-p`` tasks
+  (``sqltl concw``), run read-modify-write transactions on a counter
+  (``BEGIN IMMEDIATE``, ``-d``: ``BEGIN``), retrying ``SQLITE_BUSY`` for up
+  to ``-t`` seconds.
+- ``lock`` and ``shm`` start ``sqltl lockprobe`` / ``sqltl shmprobe`` as
+  the other task.
+- SQLite's error log goes to the console as ``sqltl: log <rc> <msg>``.
+- Verdict: ``sqltl: PASS|FAIL <check> ...``; exit 0 on PASS.
+
 NTFC configs
 ------------
 
@@ -578,7 +618,10 @@ sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 (``ntfc/tests/can``, ``resources: [can0]``, see `Host SocketCAN bus
 (can-bus)`_). All QEMU targets also have ``<target>-v9fs``, and all but
 ``rv-virt`` have ``<target>-v9fs-knsh`` (``ntfc/tests/fs``, see `Host
-share (v9fs)`_). All QEMU targets also have ``<target>-router``
+share (v9fs)`_). ``qemu-armv8a`` and ``qemu-intel64`` also have
+``<target>-sqlite`` and ``qemu-armv8a`` has ``qemu-armv8a-sqlite-knsh``
+(``ntfc/tests/sqlite``, see `Host share and disks (sqlite)`_). All QEMU
+targets also have ``<target>-router``
 (``ntfc/tests/router``) and ``<target>-router-hp2`` (its
 ``test_router_duplex``), both ``resources: [tl-rbr0]``, see
 `Routed networks (router)`_. Every manifest also has ``<target>-tls``
@@ -811,6 +854,42 @@ counters in ``/proc/net``), ``IOB_NBUFFERS=96`` for 1280-byte
 datagrams and ``SIM_WALLTIME_SIGNAL``. No host network is involved:
 the frames loop back inside the node. Sessions ``sim-sixlowpan`` and
 ``sim-pktradio`` run ``ntfc/tests/sixlowpan``.
+
+Host share and disks (sqlite)
+-----------------------------
+
+``testenv/sqlite.sh {start|stop|status}`` creates
+``build/sqlite/<target>-<scenario>/`` for each
+``ntfc/configs/<target>/sqlite*``: ``share/`` (virtio 9P, tag ``tlshare``)
+and sparse raw images ``disk0.img`` (128 MiB) and ``disk1.img`` (8 MiB) for
+two virtio-blk disks. The tests format both disks with ``mkfatfs`` and
+tell them apart by size. QEMU also writes the console to ``console.log``
+there (``-chardev stdio,...,logfile=``); a power-off is ``SIGKILL`` to
+QEMU.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Target
+     - Devices
+   * - ``qemu-armv8a``
+     - ``virtio-9p-device``, ``virtio-blk-device`` (virtio-mmio)
+   * - ``qemu-intel64``
+     - ``virtio-9p-pci``, ``virtio-blk-pci``
+
+Defconfigs ``boards/<arch>/<chip>/<board>/configs/sqlite``: ``LIB_SQLITE``
+(the amalgamation is generated from the SQLite release at build time,
+with the host ``tclsh``), ``sqltl``, ``FS_V9FS``, ``FS_FAT`` with
+``FAT_LFN``, ``DRIVERS_VIRTIO_BLK``, ``FS_LOCK_BUCKET_SIZE`` (``fcntl``
+record locks), ``FS_RAMMAP`` (``mmap`` of the WAL index), ``LIBC_DLFCN``,
+``PTHREAD_MUTEX_TYPES`` (recursive mutexes) and ``FS_LARGEFILE``.
+
+``boards/arm64/qemu/qemu-armv8a/configs/sqlite-knsh`` is the same on the
+``v9fs-knsh`` kernel build, so that ``conc -p`` workers are processes,
+without the disks and FAT:
+``ARCH_HEAP_NPAGES=2048`` (8 MiB heap per process),
+``ARCH_PGPOOL_SIZE`` 128 MiB (QEMU ``-m 256M``) and
+``TLS_LOG2_MAXSTACK=16`` for the 32 KiB ``sqltl`` stack.
 
 Routed networks (router)
 ------------------------

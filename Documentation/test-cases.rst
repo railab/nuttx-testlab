@@ -1846,6 +1846,76 @@ address, 127-byte frames) and ``sim-pktradio``
      - ``ping6 -c 2 -s`` 16, 300 and 1200 to the node's own address:
        2 replies, at least ceil(size / 127) frames per packet.
 
+``sqlite`` module
+-----------------
+
+Source: ``ntfc/tests/sqlite/test_sqlite.py``. One node, databases on the
+v9fs share (``/mnt/v9fs``), FAT on the 128 MiB disk (``/mnt/fat``) and
+FAT on the 8 MiB disk (``/mnt/full``), see :doc:`architecture`. Each test
+gets an empty directory; a power-off is ``SIGKILL`` to QEMU, the commits
+reported before it are read from the QEMU console log. Sessions:
+``qemu-armv8a-sqlite``, ``qemu-armv8a-sqlite-knsh`` (kernel build),
+``qemu-intel64-sqlite``. ``[fs]`` is ``v9fs`` or
+``fat``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_sqlite_crash``
+     - ``[delete|truncate|wal-fs]``, ``synchronous=EXTRA`` for ``DELETE``,
+       ``FULL`` else. Five power-offs: at a random time during 3-row
+       transactions, and with a transaction stopped just before and just
+       after its commit point. After each boot ``integrity_check`` ``ok``,
+       whole transactions only, every row reported committed present and
+       intact; the transaction stopped before the commit point absent
+       (``WAL``: absent or present), the one stopped after it present.
+   * - ``test_sqlite_large``
+     - 8 MiB in 256 transactions with a 16-page cache survives a
+       power-off; a 512-row transaction that spilled pages is rolled back
+       by a power-off before its ``COMMIT``; committed, it survives one.
+   * - ``test_sqlite_shrink``
+     - ``[delete|wal-fs]``: with ``auto_vacuum`` ``FULL`` a commit deleting
+       half of 60 rows truncates the file, then ``VACUUM`` does; each time
+       the rows are inserted again and all are intact after reopen.
+   * - ``test_sqlite_rollback``
+     - ``[full|off-fs]``: ``ROLLBACK`` of a transaction that spilled pages
+       leaves the 30 committed rows intact, with ``synchronous`` ``FULL``
+       and ``OFF``.
+   * - ``test_sqlite_conc``
+     - ``[threads|tasks-immediate|deferred-delete|wal-fs]``: 8 connections
+       (threads of one task, or tasks: kernel build only) start together,
+       50 read-modify-write transactions each, ``SQLITE_BUSY`` retried:
+       counter 400, every row once, ``integrity_check`` ``ok``.
+   * - ``test_sqlite_visible``
+     - ``[delete|wal-v9fs|fat|fat-root]``: five times, a connection sees
+       the row another connection of the process committed, in ``WAL``
+       mode five more times after a WAL restart (``fat-root``: database in
+       the volume root directory).
+   * - ``test_sqlite_handoff``
+     - ``[delete|wal-fs]``: a writer connection commits once the reader
+       connection of the process ended its read, in one thread and from
+       other threads.
+   * - ``test_sqlite_fcntl_lock``
+     - POSIX record locks: a second descriptor and another thread of the
+       process replace the process lock, another task sees it with the
+       process ID and cannot take it, ``close()`` of one descriptor drops
+       all of them.
+   * - ``test_sqlite_shm_map``
+     - A byte stored through a ``MAP_SHARED`` mapping of a file is seen
+       through the mapping of another task, and the other way round.
+   * - ``test_sqlite_multi``
+     - One transaction over two attached databases commits; a connection
+       opened while another reads keeps to its own file.
+   * - ``test_sqlite_full``
+     - ``[delete|wal]`` on a freshly formatted ``/mnt/full`` filled with
+       one-block files: with 0, 1, 4 and 16 blocks free a 2 MB transaction
+       fails with ``SQLITE_FULL`` (``write()``: ``ENOSPC``), the rows stay
+       intact; with the space freed transactions commit again, also after
+       reopen.
+
 ``router`` module
 -----------------
 

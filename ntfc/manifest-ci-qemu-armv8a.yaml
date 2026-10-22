@@ -25,6 +25,12 @@ sessions:
   - name: "qemu-armv8a-v9fs-knsh"
     confpath: ntfc/configs/qemu-armv8a/v9fs-knsh/config.yaml
     testpath: ntfc/tests/fs
+  - name: "qemu-armv8a-sqlite"
+    confpath: ntfc/configs/qemu-armv8a/sqlite/config.yaml
+    testpath: ntfc/tests/sqlite
+  - name: "qemu-armv8a-sqlite-knsh"
+    confpath: ntfc/configs/qemu-armv8a/sqlite-knsh/config.yaml
+    testpath: ntfc/tests/sqlite
   - name: "qemu-armv8a-router"
     confpath: ntfc/configs/qemu-armv8a/router/config.yaml
     testpath: ntfc/tests/router

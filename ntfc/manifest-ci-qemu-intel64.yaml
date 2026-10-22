@@ -56,6 +56,9 @@ sessions:
   - name: "qemu-intel64-v9fs-knsh"
     confpath: ntfc/configs/qemu-intel64/v9fs-knsh/config.yaml
     testpath: ntfc/tests/fs
+  - name: "qemu-intel64-sqlite"
+    confpath: ntfc/configs/qemu-intel64/sqlite/config.yaml
+    testpath: ntfc/tests/sqlite
   - name: "qemu-intel64-router"
     confpath: ntfc/configs/qemu-intel64/router/config.yaml
     testpath: ntfc/tests/router
