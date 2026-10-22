@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Kernel build: NTFC starts QEMU in the build directory, so tlbin (path=.)
+# exports the build with the programs in bin/ and the other paths are
+# relative to it (build/sqlite/qemu-armv8a-sqlite-knsh).  No virtio-blk
+# disks: the FAT tests are skipped in kernel builds.
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-armv8a/sqlite-knsh'
+
+product:
+  name: "qemu-armv8a-sqlite-knsh"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      boot_timeout: 30
+      line_buffered: true
+      exec_path: 'qemu-system-aarch64'
+      exec_args: '-cpu cortex-a53 -m 256M -nographic
+                  -machine virt,virtualization=on,gic-version=3
+                  -net none -chardev stdio,id=con,mux=on,logfile=../../../sqlite/qemu-armv8a-sqlite-knsh/console.log
+                  -serial chardev:con -mon chardev=con,mode=readline
+                  -global virtio-mmio.force-legacy=false
+                  -fsdev local,id=tlbin,security_model=none,readonly=on,path=.
+                  -device virtio-9p-device,fsdev=tlbin,mount_tag=tlbin
+                  -fsdev local,id=tlfs,path=../../../sqlite/qemu-armv8a-sqlite-knsh/share,security_model=none
+                  -device virtio-9p-device,fsdev=tlfs,mount_tag=tlshare'
+      defconfig: '../../boards/arm64/qemu/qemu-armv8a/configs/sqlite-knsh'
