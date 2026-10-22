@@ -54,6 +54,7 @@ RUN apt-get update \
         qemu-system-x86 \
         rsync \
         socat \
+        tcl \
         xxd \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*

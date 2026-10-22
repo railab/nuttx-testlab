@@ -916,9 +916,9 @@ the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``socat``,
 ``iperf`` (iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker
 and host clients), ``libcoap3-bin`` (libcoap ``coap-client-notls`` and
-``coap-server-notls``), ``linuxptp`` (``ptp4l``, ``pmc``), ``kconfiglib``,
-``pymodbus``, ``pyserial``,
-``python-can`` and ``canopen`` (pip), and a Linux-kernel
+``coap-server-notls``), ``linuxptp`` (``ptp4l``, ``pmc``), ``tcl``
+(``tclsh`` for the SQLite build), ``kconfiglib``, ``pymodbus``,
+``pyserial``, ``python-can`` and ``canopen`` (pip), and a Linux-kernel
 ``scripts/config`` fetched as ``kconfig-tweak``; the ARM64 and RISC-V
 bare-metal cross-toolchains and the ARM (``arm-none-eabi``, used by the
 hardware build check) toolchain are downloaded and unpacked under
