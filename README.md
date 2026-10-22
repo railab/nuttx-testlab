@@ -1,5 +1,8 @@
 # nuttx-testlab
 
+[![nightly](https://img.shields.io/github/actions/workflow/status/railab/nuttx-testlab/nightly.yml?branch=master&label=nightly)](https://github.com/railab/nuttx-testlab/actions/workflows/nightly.yml)
+[![master](https://img.shields.io/github/actions/workflow/status/railab/nuttx-testlab/pr.yml?branch=master&event=push&label=master)](https://github.com/railab/nuttx-testlab/actions/workflows/pr.yml?query=branch%3Amaster+event%3Apush)
+
 Runtime tests for [Apache NuttX](https://github.com/apache/nuttx) master
 that upstream CI does not run. NuttX is built and booted on sim and QEMU
 targets and driven with [NTFC](https://github.com/apache/nuttx-ntfc).
