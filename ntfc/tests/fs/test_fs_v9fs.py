@@ -81,11 +81,6 @@ LSTAT_BUG = (
     "then sees two files and removes the old name (passes only by chance, "
     "e.g. with CONFIG_STACK_COLORATION)"
 )
-UTIME_BUG = (
-    "fs/v9fs/client.c: v9fs_map_setattr_flags() maps CH_STAT_ATIME/MTIME "
-    "to ATIME_SET/MTIME_SET only, without the ATIME/MTIME bits that make "
-    "the server change the times"
-)
 WALK_BUG = (
     "fs/v9fs/client.c: v9fs_client_walk() sends all path elements in one "
     "Twalk; 9P allows at most 16 (MAXWELEM), so paths with more than 16 "
@@ -558,7 +553,6 @@ def test_v9fs_chmod(work: Tuple[Path, str], mode: str) -> None:
     assert stat.S_IMODE((host / "m").stat().st_mode) == int(mode, 8)
 
 
-@pytest.mark.xfail(strict=True, reason=UTIME_BUG)
 def test_v9fs_utimens(work: Tuple[Path, str]) -> None:
     """utimens() sets atime and mtime on the host."""
     host, node = work

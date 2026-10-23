@@ -47,15 +47,6 @@ POLLERR = 0x08
 POLLHUP = 0x10
 
 
-KEEPALIVE_ERRNO_BUG = (
-    "net/tcp/tcp_timer.c: keep-alive expiry reports TCP_ABORT instead of "
-    "TCP_TIMEDOUT and tcp_recvhandler() (net/tcp/tcp_recvfrom.c) maps "
-    "every TCP_DISCONN_EVENTS flag to -ENOTCONN, so recv() fails with "
-    "ENOTCONN and poll() sets SO_ERROR to ECONNREFUSED instead of "
-    "ETIMEDOUT"
-)
-
-
 def _core() -> Any:
     """Return the NTFC core handler of node 0.
 
@@ -308,7 +299,6 @@ def _keepalive_dead_peer(port: int, opts: str) -> str:
 
 
 @pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
-@pytest.mark.xfail(strict=True, reason=KEEPALIVE_ERRNO_BUG)
 def test_tcp_keepalive_dead_peer() -> None:
     """Unanswered keep-alive probes end the connection with ETIMEDOUT.
 
@@ -323,7 +313,6 @@ def test_tcp_keepalive_dead_peer() -> None:
 
 
 @pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
-@pytest.mark.xfail(strict=True, reason=KEEPALIVE_ERRNO_BUG)
 def test_tcp_keepalive_dead_peer_poll() -> None:
     """Unanswered keep-alive probes wake poll() with a pending ETIMEDOUT.
 
