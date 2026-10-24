@@ -86,6 +86,7 @@ struct nettl_args_s
   bool        keeppoll;
   bool        flood;
   bool        duplex;
+  bool        nbconnect;
   bool        sink;
   int         rate;
   int         rcvbuf;
@@ -599,6 +600,50 @@ static int nettl_keepalive_idle(int sd, FAR const struct nettl_args_s *args)
 }
 
 static int nettl_tcp_duplex(int sd, FAR const struct nettl_args_s *args);
+
+/* Connect on a nonblocking socket and report the connect() result and,
+ * after poll(POLLOUT), the SO_ERROR of the connection attempt.
+ */
+
+static int nettl_tcp_nbconnect(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_storage sa;
+  struct pollfd pfd;
+  socklen_t salen;
+  socklen_t len;
+  int soerr = 0;
+  int ret;
+  int sd;
+
+  sd = nettl_socket(args, &sa, &salen);
+  if (sd < 0)
+    {
+      printf("nettl: connect failed %d\n", errno);
+      printf("nettl: FAIL tx=0 rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  fcntl(sd, F_SETFL, fcntl(sd, F_GETFL, 0) | O_NONBLOCK);
+  ret = connect(sd, (FAR struct sockaddr *)&sa, salen);
+  printf("nettl: connect returned %d errno %d\n", ret, ret < 0 ? errno : 0);
+
+  if (ret < 0 && errno == EINPROGRESS)
+    {
+      pfd.fd     = sd;
+      pfd.events = POLLOUT;
+      ret = poll(&pfd, 1, args->timeout * 1000);
+      len = sizeof(soerr);
+      getsockopt(sd, SOL_SOCKET, SO_ERROR, &soerr, &len);
+      printf("nettl: connect poll %d revents 0x%x so_error %d\n", ret,
+             ret > 0 ? pfd.revents : 0, soerr);
+      ret = (ret > 0 && soerr == 0) ? 0 : -1;
+    }
+
+  close(sd);
+  printf("nettl: %s tx=0 rx=0 err=%d\n", ret == 0 ? "PASS" : "FAIL",
+         ret == 0 ? 0 : 1);
+  return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
 static int nettl_tcp_client(FAR const struct nettl_args_s *args)
 {
@@ -1252,7 +1297,7 @@ static void nettl_usage(FAR const char *progname)
          "[-l len] [-t sec] [-w] [-D sec] [-L n [-E]] [-C n] "
          "[-S [-R bytes]]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
-         "[-t sec] [-k idle [-P]] [-r pps] [-d]\n", progname);
+         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N]\n", progname);
 }
 
 /****************************************************************************
@@ -1269,7 +1314,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dSR:"))
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNSR:"))
          != ERROR)
     {
       unsigned long val;
@@ -1330,6 +1375,9 @@ int main(int argc, FAR char *argv[])
             break;
           case 'd':
             args.duplex = true;
+            break;
+          case 'N':
+            args.nbconnect = true;
             break;
           case 'S':
             args.sink = true;
@@ -1447,6 +1495,7 @@ int main(int argc, FAR char *argv[])
 
   if ((args.flood && (args.server || !args.udp)) ||
       (args.duplex && (args.server || args.udp)) ||
+      (args.nbconnect && (args.server || args.udp)) ||
       (args.sink && (!args.server || !args.udp || args.reuse > 0)) ||
       (args.rcvbuf > 0 && !args.sink))
     {
@@ -1481,5 +1530,6 @@ int main(int argc, FAR char *argv[])
       return args.flood ? nettl_udp_flood(&args) : nettl_udp_client(&args);
     }
 
-  return nettl_tcp_client(&args);
+  return args.nbconnect ? nettl_tcp_nbconnect(&args) :
+                          nettl_tcp_client(&args);
 }

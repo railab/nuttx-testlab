@@ -108,7 +108,7 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
    nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec]
             [-L n [-E]] [-S [-R bytes]]
    nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec] [-k idle [-P]]
-            [-r pps] [-d]
+            [-r pps] [-d] [-N]
 
 - ``-k idle`` TCP client only: before the transfer, enable keep-alive
   (``idle`` s idle, 1 s interval, 3 probes) and wait idle in
@@ -122,6 +122,11 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
   the end marker; fails only on send errors other than a full queue.
 - ``-d`` TCP client only: send and read the echo at the same time on a
   nonblocking socket instead of chunk by chunk.
+- ``-N`` TCP client only: only connect, on a nonblocking socket. Prints
+  ``nettl: connect returned <ret> errno <errno>`` and, if connect()
+  returned ``EINPROGRESS``, ``nettl: connect poll <ret> revents
+  0x<revents> so_error <SO_ERROR>`` after ``poll(POLLOUT)`` with the
+  ``-t`` timeout; passes if the connection was established.
 
 - ``-w`` TCP server only: after accept(), send ``-n`` bytes of
   pattern data to the client (no echo) then close; does not combine
