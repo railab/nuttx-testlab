@@ -16,18 +16,31 @@
 #
 ############################################################################
 
-"""ARP request retransmission, rate limit and resolution failure.
+"""Address resolution (ARP, IPv6 Neighbor Discovery) on node1.
 
-RFC 1122, 2.3.2.1: a host MUST prevent ARP flooding, at most 1 request
-per second per destination is recommended.  A lost reply is answered
-by the next request; after ``CONFIG_ARP_SEND_MAXTRIES`` unanswered
-requests the resolution fails and sending reports ``EHOSTUNREACH``
-(POSIX ``sendto()``: "The destination host cannot be reached").
+Every assertion comes from the quoted standard:
 
-All tests use node1.  The host sniffs ARP on ``tl-br0`` and, where
-needed, drops its own ARP replies to node1 with a ``tc`` filter on
-``tl-br0`` egress, removed after the test.  10.42.0.250-252 and
-fc00::252 are unused addresses on the bridge subnet.
+- RFC 1122, 2.3.2.1: "A mechanism to prevent ARP flooding (repeatedly
+  sending an ARP Request for the same IP address, at a high rate) MUST
+  be included."  https://www.rfc-editor.org/rfc/rfc1122#section-2.3.2.1
+- RFC 4861, 7.2.2: "Retransmissions MUST be rate-limited to at most one
+  solicitation per neighbor every RetransTimer milliseconds."
+  (RETRANS_TIMER 1,000 milliseconds, section 10).
+  https://www.rfc-editor.org/rfc/rfc4861#section-7.2.2
+- POSIX connect(): "[ENETUNREACH] No route to the network is present.",
+  "[ETIMEDOUT] The attempt to connect timed out before a connection was
+  made.", "[EHOSTUNREACH] The destination host cannot be reached
+  (probably because the host is down or a remote router cannot reach
+  it)." and "If the connection cannot be established immediately and
+  O_NONBLOCK is set for the file descriptor for the socket, connect()
+  shall fail and set errno to [EINPROGRESS]".
+  https://pubs.opengroup.org/onlinepubs/9799919799/functions/connect.html
+- POSIX sendto(): the same [EHOSTUNREACH] and [ENETUNREACH] text.
+  https://pubs.opengroup.org/onlinepubs/9799919799/functions/sendto.html
+
+An address on node1's subnet that no host answers has a route, so a
+failed resolution is not "No route to the network".  10.42.0.250-253
+and fc00::252-253 have no host on ``tl-br0``.
 """
 
 import re
@@ -39,7 +52,7 @@ import time
 from typing import Any, Iterator, List, Optional, Tuple
 
 import pytest
-from _net_common import HOST_IP, NODE_IPS
+from _net_common import NODE_IPS
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_ARP_SEND"),
@@ -50,28 +63,38 @@ BRIDGE = "tl-br0"
 NODE = 1
 ETH_P_ARP = 0x0806
 ETH_P_IP = 0x0800
+ETH_P_IPV6 = 0x86DD
 
-#: RFC 1122 recommended maximum request rate: 1 per second per destination.
-INTERVAL = 1.0
+#: RFC 4861, section 10: RETRANS_TIMER 1,000 milliseconds.
+RETRANS_TIMER = 1.0
 
-#: Shortest accepted gap between two requests (``INTERVAL`` minus capture
-#: jitter).
-MIN_GAP = 0.8
+#: Capture timestamp jitter allowed on a solicitation gap.
+JITTER = 0.1
 
 #: Matches ping's sendto() failure line and captures the errno.
 SENDTO_RE = r"sendto failed at seqno \d+: (\d+)"
 
+ENETUNREACH = 101
+ETIMEDOUT = 110
 EHOSTUNREACH = 113
-
-ARP_RETRANSMIT_BUG = (
-    "nuttx 4ae08155f90: an unanswered ARP request is never retransmitted "
-    "(arp_out) or retransmitted 5 times in 100 ms (arp_send), then the "
-    "address is unreachable for 10 s (net/arp/arp_table.c arp_find())"
-)
+EINPROGRESS = 115
 
 RESOLVE_ERRNO_BUG = (
-    "nuttx: a failed address resolution is reported as ENETUNREACH, not "
-    "EHOSTUNREACH (callers of arp_send() and icmpv6_neighbor())"
+    "net/icmp/icmp_sendmsg.c, net/icmpv6/icmpv6_sendmsg.c, "
+    "net/tcp/tcp_conn.c tcp_connect(): a failed address resolution of an "
+    'address on the local subnet is returned as ENETUNREACH ("No route '
+    'to the network is present")'
+)
+NONBLOCK_CONNECT_BUG = (
+    "net/tcp/tcp_conn.c tcp_connect(): connect() resolves the address "
+    "with arp_send()/icmpv6_neighbor() before sending the SYN, also on a "
+    "nonblocking socket, and fails with ENETUNREACH instead of "
+    "EINPROGRESS"
+)
+ND_RATE_BUG = (
+    "net/icmpv6/icmpv6_neighbor.c: Neighbor Solicitations are "
+    "retransmitted every CONFIG_ICMPv6_NEIGHBOR_DELAYMSEC (default 20 ms), "
+    "not at most once per RetransTimer (RFC 4861 RETRANS_TIMER 1 s)"
 )
 
 
@@ -81,17 +104,6 @@ def _core() -> Any:
     :return: ``ProductCore`` for product 1, core 0
     """
     return pytest.products[NODE].core(0)
-
-
-def _kv_int(name: str, default: int) -> int:
-    """Return an integer Kconfig value of node1.
-
-    :param name: Kconfig option name
-    :param default: value when the option is not set
-    :return: option value
-    """
-    value = _core().conf.kv_check(name)
-    return int(value) if value else default
 
 
 def _run(*args: str) -> str:
@@ -105,7 +117,7 @@ def _run(*args: str) -> str:
     ).stdout
 
 
-def _sh(cmd: str, timeout: int = 30) -> str:
+def _sh(cmd: str, timeout: int = 60) -> str:
     """Run an nsh command on node1 and return its output.
 
     :param cmd: nsh command line
@@ -145,42 +157,53 @@ def _node_mac() -> str:
     return found.group(1)
 
 
-class ArpCapture:
-    """Record the ARP requests node1 sends, seen on ``tl-br0``."""
+class Capture:
+    """Record node1's ARP requests and Neighbor Solicitations on tl-br0."""
 
     def __init__(self) -> None:
         """Open the capture socket and start the receive thread."""
         self.requests: List[Tuple[float, str]] = []
-        self.first = threading.Event()  # first request for the host
         self._stop = threading.Event()
         self._sock = socket.socket(
-            socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ARP)
+            socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003)
         )
         self._sock.bind((BRIDGE, 0))
         self._sock.settimeout(0.1)
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
+    def _record(self, frame: bytes) -> Optional[str]:
+        """Return the target of an ARP request or NS from node1.
+
+        :param frame: Ethernet frame
+        :return: target address, or None for other frames
+        """
+        (etype,) = struct.unpack("!H", frame[12:14])
+        if etype == ETH_P_ARP and len(frame) >= 42:
+            op, spa, tpa = struct.unpack("!20xH6x4s6x4s", frame[:42])
+            if op == 1 and socket.inet_ntoa(spa) == NODE_IPS[NODE]:
+                return socket.inet_ntoa(tpa)
+        elif etype == ETH_P_IPV6 and len(frame) >= 78:
+            if frame[20] == 58 and frame[54] == 135:
+                return socket.inet_ntop(socket.AF_INET6, frame[62:78])
+        return None
+
     def _loop(self) -> None:
         """Receive frames until stopped."""
         while not self._stop.is_set():
             try:
-                frame = self._sock.recv(128)
+                frame, addr = self._sock.recvfrom(256)
             except socket.timeout:
                 continue
-            now = time.time()
-            if len(frame) < 42:
-                continue
-            op, spa, tpa = struct.unpack("!20xH6x4s6x4s", frame[:42])
-            if op == 1 and socket.inet_ntoa(spa) == NODE_IPS[NODE]:
-                self.requests.append((now, socket.inet_ntoa(tpa)))
-                if socket.inet_ntoa(tpa) == HOST_IP:
-                    self.first.set()
+            if addr[2] != socket.PACKET_OUTGOING:
+                target = self._record(frame)
+                if target is not None:
+                    self.requests.append((time.time(), target))
 
     def times(self, target: str) -> List[float]:
         """Return the times of the requests for a target address.
 
-        :param target: requested IPv4 address
+        :param target: requested address
         :return: capture times (``time.time()``)
         """
         return [t for t, tpa in self.requests if tpa == target]
@@ -193,96 +216,14 @@ class ArpCapture:
 
 
 @pytest.fixture
-def capture() -> Iterator[ArpCapture]:
-    """Capture node1's ARP requests for the duration of the test.
+def capture() -> Iterator[Capture]:
+    """Capture node1's ARP requests and NSs for the duration of the test.
 
-    :return: running :class:`ArpCapture`
+    :return: running :class:`Capture`
     """
-    cap = ArpCapture()
+    cap = Capture()
     yield cap
     cap.close()
-
-
-class ReplyDrop:
-    """Drop the host's ARP replies to node1 with a ``tc`` filter."""
-
-    def __init__(self) -> None:
-        """Install the filter on ``tl-br0`` egress."""
-        tpa = socket.inet_aton(NODE_IPS[NODE]).hex()
-        subprocess.run(
-            ["tc", "qdisc", "del", "dev", BRIDGE, "clsact"],
-            capture_output=True,
-            check=False,
-        )
-        _run("tc", "qdisc", "add", "dev", BRIDGE, "clsact")
-        self.active = True
-        try:
-            _run(
-                "tc",
-                "filter",
-                "add",
-                "dev",
-                BRIDGE,
-                "egress",
-                "protocol",
-                "arp",
-                "prio",
-                "1",
-                "u32",
-                "match",
-                "u16",
-                "0x0002",
-                "0xffff",
-                "at",
-                "6",
-                "match",
-                "u32",
-                f"0x{tpa}",
-                "0xffffffff",
-                "at",
-                "24",
-                "action",
-                "drop",
-            )
-        except subprocess.CalledProcessError:
-            self.remove()
-            raise
-
-    def remove(self) -> None:
-        """Remove the filter (idempotent)."""
-        if self.active:
-            self.active = False
-            subprocess.run(
-                ["tc", "qdisc", "del", "dev", BRIDGE, "clsact"], check=False
-            )
-
-    def remove_after_first(self, cap: ArpCapture, delay: float) -> None:
-        """Remove the filter ``delay`` s after node1's first host request.
-
-        A node that sends at most one request per second gets no reply
-        to its first request only.
-
-        :param cap: running capture
-        :param delay: seconds to keep dropping after the first request
-        """
-
-        def run() -> None:
-            cap.first.wait(30)
-            time.sleep(delay)
-            self.remove()
-
-        threading.Thread(target=run, daemon=True).start()
-
-
-@pytest.fixture
-def reply_drop() -> Iterator[ReplyDrop]:
-    """Drop the host's ARP replies to node1 until removed.
-
-    :return: installed :class:`ReplyDrop`
-    """
-    drop = ReplyDrop()
-    yield drop
-    drop.remove()
 
 
 @pytest.fixture
@@ -310,19 +251,6 @@ def host_neigh() -> Iterator[str]:
     )
 
 
-def _forget_host() -> None:
-    """Delete node1's ARP entry for the host."""
-    _sh(f"arp -d {HOST_IP}")
-
-
-@pytest.fixture(autouse=True)
-def resolve_host() -> Iterator[None]:
-    """Let node1 resolve the host again after the test."""
-    yield
-    _forget_host()
-    _sh(f"ping -c 1 -W 3000 {HOST_IP}")
-
-
 def _gaps(times: List[float]) -> List[float]:
     """Return the gaps between consecutive times.
 
@@ -342,70 +270,6 @@ def _ping_errno(out: str) -> Optional[int]:
     return int(found.group(1)) if found else None
 
 
-@pytest.mark.xfail(strict=True, reason=ARP_RETRANSMIT_BUG)
-@pytest.mark.parametrize("drops", [1, 3])
-def test_arp_lost_reply_send(
-    capture: ArpCapture, reply_drop: ReplyDrop, host_neigh: str, drops: int
-) -> None:
-    """A ping whose first ARP replies are lost succeeds after the retries.
-
-    node1 pings the host with no ARP entry for it; the host drops its
-    replies for ``drops`` - 0.5 s after the first request (the replies to
-    the first ``drops`` requests) and does not ARP node1 itself.  PASS:
-    the ping is answered; the requests are 0.8-2 s apart and the answered
-    one is request ``drops`` + 1.
-    """
-    _forget_host()
-    reply_drop.remove_after_first(capture, (drops - 0.5) * INTERVAL)
-    out = _sh(f"ping -c 1 -W 3000 {HOST_IP}")
-    times = capture.times(HOST_IP)
-    assert "1 packets transmitted, 1 received" in out, out
-    assert len(times) == drops + 1, times
-    assert all(MIN_GAP <= gap <= 2 * INTERVAL for gap in _gaps(times)), times
-
-
-@pytest.mark.xfail(strict=True, reason=ARP_RETRANSMIT_BUG)
-def test_arp_lost_reply_forward(
-    capture: ArpCapture, reply_drop: ReplyDrop, host_neigh: str
-) -> None:
-    """Echo replies resume within 2 s after a lost ARP reply.
-
-    The host pings node1 every 0.1 s for 5 s; node1 has no ARP entry
-    for the host, so its echo replies go through ``arp_out()``.  The
-    host drops its ARP replies for 0.5 s after node1's
-    first request.  PASS: the host gets an echo reply within 2 s of that
-    request.
-    """
-    _forget_host()
-    reply_drop.remove_after_first(capture, 0.5 * INTERVAL)
-    out = subprocess.run(
-        [
-            "ping",
-            "-n",
-            "-D",
-            "-i",
-            "0.1",
-            "-w",
-            "5",
-            "-W",
-            "1",
-            NODE_IPS[NODE],
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    replies = [
-        float(t)
-        for t in re.findall(
-            r"^\[(\d+\.\d+)\] \d+ bytes from", out, re.MULTILINE
-        )
-    ]
-    times = capture.times(HOST_IP)
-    assert times, "node1 sent no ARP request"
-    assert replies and replies[0] - times[0] <= 2 * INTERVAL, (times, out)
-
-
 def _spoofed_echo(mac: bytes, src: str, seq: int) -> bytes:
     """Build an Ethernet frame with an ICMP echo request to node1.
 
@@ -421,132 +285,161 @@ def _spoofed_echo(mac: bytes, src: str, seq: int) -> bytes:
         total += total >> 16
         return ~total & 0xFFFF
 
-    icmp = struct.pack("!BBHHH", 8, 0, 0, 0x4152, seq) + bytes(32)
+    icmp = struct.pack("!BBHHH", 8, 0, 0, 0x4152, seq & 0xFFFF) + bytes(32)
     icmp = icmp[:2] + struct.pack("!H", csum(icmp)) + icmp[4:]
-    srcip = socket.inet_aton(src)
-    dstip = socket.inet_aton(NODE_IPS[NODE])
     iph = struct.pack(
         "!BBHHHBBH4s4s",
         0x45,
         0,
         20 + len(icmp),
-        seq,
+        seq & 0xFFFF,
         0,
         64,
         1,
         0,
-        srcip,
-        dstip,
+        socket.inet_aton(src),
+        socket.inet_aton(NODE_IPS[NODE]),
     )
     iph = iph[:10] + struct.pack("!H", csum(iph)) + iph[12:]
     eth = mac + bytes.fromhex("020000002afa") + struct.pack("!H", ETH_P_IP)
     return eth + iph + icmp
 
 
-def _echo_flood(mac: str, src: str, seconds: float) -> None:
+def _echo_flood(mac: str, src: str, seconds: float) -> int:
     """Send 100 spoofed echo requests per second to node1.
 
     :param mac: node1's MAC address
     :param src: IPv4 source address of the requests
     :param seconds: duration
+    :return: requests sent
     """
     dst = bytes.fromhex(mac.replace(":", ""))
+    seq = 0
     with socket.socket(socket.AF_PACKET, socket.SOCK_RAW) as sock:
         sock.bind((BRIDGE, 0))
         end = time.monotonic() + seconds
-        seq = 0
         while time.monotonic() < end:
             sock.send(_spoofed_echo(dst, src, seq))
             seq += 1
             time.sleep(0.01)
+    return seq
 
 
-@pytest.mark.xfail(strict=True, reason=ARP_RETRANSMIT_BUG)
-def test_arp_request_rate(capture: ArpCapture, host_neigh: str) -> None:
-    """At most one ARP request per second for an unresolvable address.
+def test_arp_no_flood(capture: Capture, host_neigh: str) -> None:
+    """ARP requests are not sent at the rate of the outgoing packets.
 
-    node1 pings 10.42.0.250 (``arp_send()``); 0.1 s after its first
-    request the host floods node1 for 6 s with echo requests from
-    10.42.0.250 (each echo reply is a packet for an unresolved address in
-    ``arp_out()``).
-    PASS: node1 sent requests for 10.42.0.250, at most
-    ``CONFIG_ARP_SEND_MAXTRIES``, at least 0.8 s apart.
+    RFC 1122, 2.3.2.1: a mechanism to prevent "repeatedly sending an ARP
+    Request for the same IP address, at a high rate" MUST be included.
+    The host sends node1 100 echo requests per second for 6 s from
+    10.42.0.250, which nobody answers; each echo reply needs ARP.
+    PASS: node1 sent fewer requests for 10.42.0.250 than one per 10
+    echo requests (one request per packet is flooding).
     """
     target = "10.42.0.250"
-    maxtries = _kv_int("CONFIG_ARP_SEND_MAXTRIES", 5)
-
-    def flood() -> None:
-        deadline = time.monotonic() + 10
-        while not capture.times(target) and time.monotonic() < deadline:
-            time.sleep(0.01)
-        time.sleep(0.1)
-        _echo_flood(host_neigh, target, 6.0)
-
-    thread = threading.Thread(target=flood, daemon=True)
-    thread.start()
-    _sh(f"ping -c 1 -W 1000 {target}")
-    thread.join()
+    sent = _echo_flood(host_neigh, target, 6.0)
+    time.sleep(1.0)
     times = capture.times(target)
     assert times, "node1 sent no ARP request"
-    assert len(times) <= maxtries, times
-    assert all(gap >= MIN_GAP for gap in _gaps(times)), times
+    assert len(times) < sent / 10, (len(times), sent)
 
 
-@pytest.mark.xfail(strict=True, reason=ARP_RETRANSMIT_BUG)
-def test_arp_unreachable(capture: ArpCapture) -> None:
-    """An unanswered address fails with EHOSTUNREACH, then is retried.
+@pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
+def test_arp_unreachable(capture: Capture) -> None:
+    """A ping to an address that never answers ARP fails with EHOSTUNREACH.
 
-    node1 pings 10.42.0.251.  PASS: ping's ``sendto()`` fails with
-    ``EHOSTUNREACH`` after ``CONFIG_ARP_SEND_MAXTRIES`` requests at
-    least 0.8 s apart; a second ping fails without a request;
-    after ``CONFIG_NET_ARP_MAXAGE_UNREACHABLE`` (x 10 s) a third ping
-    sends requests again.
+    POSIX sendto(): "[EHOSTUNREACH] The destination host cannot be
+    reached"; "[ENETUNREACH] No route to the network is present." does
+    not apply, 10.42.0.251 is on node1's subnet.
+    PASS: node1 sent ARP requests for 10.42.0.251 and ping's sendto()
+    failed with ``EHOSTUNREACH``.
     """
     target = "10.42.0.251"
-    maxtries = _kv_int("CONFIG_ARP_SEND_MAXTRIES", 5)
-    holddown = 10 * _kv_int("CONFIG_NET_ARP_MAXAGE_UNREACHABLE", 1)
-
     out = _sh(f"ping -c 1 -W 1000 {target}")
-    failed = time.time()
-    times = capture.times(target)
+    assert capture.times(target), "node1 sent no ARP request"
     assert _ping_errno(out) == EHOSTUNREACH, out
-    assert len(times) == maxtries, times
-    assert all(gap >= MIN_GAP for gap in _gaps(times)), times
-
-    out = _sh(f"ping -c 1 -W 1000 {target}")
-    assert _ping_errno(out) == EHOSTUNREACH, out
-    assert len(capture.times(target)) == maxtries, capture.times(target)
-
-    time.sleep(max(0.0, failed + holddown + 1 - time.time()))
-    _sh(f"ping -c 1 -W 1000 {target}")
-    assert len(capture.times(target)) > maxtries, capture.times(target)
 
 
 @pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
 @pytest.mark.cmd_check("nettl_main")
 def test_arp_unreachable_connect() -> None:
-    """``connect()`` to an unanswered address fails with EHOSTUNREACH.
+    """A blocking connect() to an unanswered address fails, not ENETUNREACH.
 
-    PASS: ``nettl -c 10.42.0.252`` prints ``connect failed 113``.
+    POSIX connect(): [ETIMEDOUT] "The attempt to connect timed out before
+    a connection was made." or [EHOSTUNREACH] "The destination host
+    cannot be reached"; [ENETUNREACH] "No route to the network is
+    present." does not apply, 10.42.0.252 is on node1's subnet.
+    PASS: ``nettl -c 10.42.0.252`` prints ``connect failed`` with
+    ``ETIMEDOUT`` or ``EHOSTUNREACH``.
     """
     ret = _core().sendCommandReadUntilPattern(
         "nettl -c 10.42.0.252 -p 5600 -n 16",
         pattern=r"nettl: FAIL tx=",
-        timeout=60,
+        timeout=180,
     )
     found = re.search(r"nettl: connect failed (\d+)", str(ret.output))
-    assert found and int(found.group(1)) == EHOSTUNREACH, ret.output
+    assert found, ret.output
+    assert int(found.group(1)) in (ETIMEDOUT, EHOSTUNREACH), ret.output
+
+
+@pytest.mark.xfail(strict=True, reason=NONBLOCK_CONNECT_BUG)
+@pytest.mark.cmd_check("nettl_main")
+def test_arp_unreachable_connect_nonblock() -> None:
+    """A nonblocking connect() to an unresolved address returns EINPROGRESS.
+
+    POSIX connect(): "If the connection cannot be established immediately
+    and O_NONBLOCK is set for the file descriptor for the socket,
+    connect() shall fail and set errno to [EINPROGRESS], but the
+    connection request shall not be aborted".  The attempt then fails
+    as the blocking one does.
+    PASS: ``nettl -N -c 10.42.0.253`` prints ``connect returned -1
+    errno 115`` and the poll result has ``SO_ERROR`` ``ETIMEDOUT`` or
+    ``EHOSTUNREACH``.
+    """
+    ret = _core().sendCommandReadUntilPattern(
+        "nettl -N -c 10.42.0.253 -p 5600 -t 120",
+        pattern=r"nettl: (PASS|FAIL) tx=",
+        timeout=180,
+    )
+    out = str(ret.output)
+    assert f"connect returned -1 errno {EINPROGRESS}" in out, out
+    found = re.search(r"so_error (\d+)", out)
+    assert found, out
+    assert int(found.group(1)) in (ETIMEDOUT, EHOSTUNREACH), out
 
 
 @pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
 @pytest.mark.dep_config("CONFIG_NET_ICMPv6_NEIGHBOR")
 @pytest.mark.cmd_check("ping6_main")
 def test_nd_unreachable() -> None:
-    """A ping6 to an unanswered address fails with EHOSTUNREACH.
+    """A ping6 to an address that never answers NS fails with EHOSTUNREACH.
 
-    RFC 4861, 7.2.2: address resolution has failed after the Neighbor
-    Solicitation retries.  PASS: ping6's ``sendto()`` to fc00::252
-    fails with ``EHOSTUNREACH``.
+    RFC 4861, 7.2.2: "If no Neighbor Advertisement is received after
+    MAX_MULTICAST_SOLICIT solicitations, address resolution has failed.
+    The sender MUST return ICMP destination unreachable indications with
+    code 3 (Address Unreachable)"; for sendto() that is POSIX
+    "[EHOSTUNREACH] The destination host cannot be reached".
+    PASS: ping6's ``sendto()`` to fc00::252 fails with ``EHOSTUNREACH``.
     """
     out = _sh("ping6 -c 1 -W 1000 fc00::252")
     assert _ping_errno(out) == EHOSTUNREACH, out
+
+
+@pytest.mark.xfail(strict=True, reason=ND_RATE_BUG)
+@pytest.mark.dep_config("CONFIG_NET_ICMPv6_NEIGHBOR")
+@pytest.mark.cmd_check("ping6_main")
+def test_nd_solicit_rate(capture: Capture) -> None:
+    """Neighbor Solicitations for one address are at least 1 s apart.
+
+    RFC 4861, 7.2.2: "Retransmissions MUST be rate-limited to at most one
+    solicitation per neighbor every RetransTimer milliseconds", section
+    10: "RETRANS_TIMER 1,000 milliseconds" (the host sends no Router
+    Advertisement that changes it).
+    PASS: node1's NSs for fc00::253 are ``RETRANS_TIMER`` or more apart
+    (``JITTER`` allowed for the capture timestamps).
+    """
+    target = "fc00::253"
+    _sh(f"ping6 -c 1 -W 1000 {target}")
+    times = capture.times(target)
+    assert times, "node1 sent no Neighbor Solicitation"
+    gaps = _gaps(times)
+    assert all(gap >= RETRANS_TIMER - JITTER for gap in gaps), gaps

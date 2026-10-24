@@ -102,7 +102,15 @@ def test_can_sockopt_no_alias() -> None:
     reason="can_setsockopt() handles SO_RCVBUF only at level SOL_CAN_RAW",
 )
 def test_can_so_rcvbuf() -> None:
-    """SO_RCVBUF at level SOL_SOCKET round trips on a CAN socket."""
+    """SO_RCVBUF at level SOL_SOCKET can be set and read on a CAN socket.
+
+    POSIX XSH 2.10.16, socket-level options: "Unless otherwise noted,
+    each may be examined with getsockopt() and set with setsockopt() on
+    all types of socket."; "The SO_RCVBUF option requests that the
+    buffer space allocated for receive operations on this socket be set
+    to the value, in bytes, of the option value."  PASS: both calls
+    succeed and a positive size is read back.
+    """
     ret = canopt_run(0, "rcvbuf can0")
     assert ret.startswith("canopt: PASS rcvbuf"), ret
 
@@ -209,7 +217,15 @@ def test_can_nonblock_poll() -> None:
 
 
 def test_can_poll_hup() -> None:
-    """poll() on a CAN socket reports POLLHUP when ``can0`` goes down."""
+    """poll() on a CAN socket reports POLLERR when ``can0`` goes down.
+
+    POSIX poll(): "All error
+    conditions that arise solely from the state of the object underlying
+    the open file description and would be diagnosed by a return of -1
+    from a read() or write() call on the file descriptor shall be
+    reported as a POLLERR event."  A read() on a socket
+    whose interface went down fails (Linux SocketCAN: ENETDOWN).
+    """
     core = pytest.products[0].core(0)
     canopt_start(0, "hup can0")
     try:

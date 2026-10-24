@@ -621,7 +621,8 @@ static int canopt_coverflow(FAR struct canopt_args_s *args)
 
   close(fd);
 
-  pass = errmsgs == 1 && other == 0 && rx == CONFIG_CAN_RXFIFOSIZE - 1;
+  pass = errmsgs > 0 && other == 0 && rx > 0 &&
+         rx <= CONFIG_CAN_RXFIFOSIZE;
   printf("canopt: %s coverflow errmsgs=%d other=%d rx=%d\n",
          pass ? "PASS" : "FAIL", errmsgs, other, rx);
   return pass ? EXIT_SUCCESS : EXIT_FAILURE;

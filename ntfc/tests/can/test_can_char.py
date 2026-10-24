@@ -132,11 +132,13 @@ def test_can_char_nonblock_poll() -> None:
 
 @pytest.mark.dep_config("CONFIG_CAN_ERRORS")
 def test_can_char_rx_overflow() -> None:
-    """RX FIFO overflow is reported as one CAN_ERROR5_RXOVERFLOW message.
+    """RX FIFO overflow is reported with a CAN_ERROR5_RXOVERFLOW message.
 
-    The host sends ``CONFIG_CAN_RXFIFOSIZE + 16`` frames while nobody
-    reads; the reader then gets the error message and the
-    ``CONFIG_CAN_RXFIFOSIZE - 1`` frames the FIFO holds.
+    include/nuttx/can/can.h: ``CAN_ERROR5_RXOVERFLOW`` "RX buffer
+    overflow".  The host sends ``CONFIG_CAN_RXFIFOSIZE + 16`` frames
+    while nobody reads; the reader then gets at least one RX overflow
+    error message, no other error, and at most
+    ``CONFIG_CAN_RXFIFOSIZE`` frames.
     """
     fifo = int(kv_value(0, "CONFIG_CAN_RXFIFOSIZE"))
     canopt_start(0, f"coverflow {CAN_CHARDEV}")

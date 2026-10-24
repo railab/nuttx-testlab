@@ -435,8 +435,14 @@ def test_tls_concurrent_sessions(
 def test_tls_server_restart(node: Pki) -> None:
     """A TLS server restarted at once binds its port again.
 
-    The node closes its finished session first, leaving it in TIME_WAIT;
-    a new server with ``SO_REUSEADDR`` must still bind the port.
+    POSIX XSH 2.10.16: SO_REUSEADDR "indicates that the rules used in
+    validating addresses supplied in a bind() should allow reuse of
+    local addresses. Operation of this option is protocol-specific."
+    For TCP the Linux interface applies (socket(7)): "For AF_INET
+    sockets this means that a socket may bind, except when there is an
+    active listening socket bound to the address."  The node closes its
+    finished session first, leaving it in TIME_WAIT; a new server with
+    ``SO_REUSEADDR`` must still bind the port.
     """
     port = 5151
     for _ in range(2):

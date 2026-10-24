@@ -44,7 +44,6 @@ pytestmark = [
 SERVER_VERDICT_RE = r"nettl: (PASS|FAIL) rx=\d+ err=\d+[\r\n]"
 CHUNK = 1024
 POLLERR = 0x08
-POLLHUP = 0x10
 
 
 def _core() -> Any:
@@ -146,14 +145,16 @@ def test_tcp_half_close() -> None:
 
 @pytest.mark.run(order=-2)
 def test_tcp_churn_node_client() -> None:
-    """Node 0 opens and closes more connections than it preallocates.
+    """Node 0 opens more connections than it preallocates, one by one.
 
-    The node closes first, so each socket ends in TIME_WAIT on the node.
-    Runs second to last in the session (``order=-2``): a failure leaves
-    the node without TCP resources for the TIME_WAIT period.
+    The host closes first, so the node does not keep the connections in
+    TIME-WAIT: RFC 9293, 3.6: "When a connection is closed actively, it
+    MUST linger in the TIME-WAIT state for a time 2xMSL", which would
+    hold every preallocated connection.  Runs second to last in the
+    session (``order=-2``).
     """
     count, port = 3 * _prealloc(), 5252
-    with TcpEchoServer(HOST_IP, port) as srv:
+    with TcpEchoServer(HOST_IP, port, close_after=CHUNK) as srv:
         for i in range(count):
             ret = (
                 _core()
@@ -317,8 +318,13 @@ def test_tcp_keepalive_dead_peer_poll() -> None:
     """Unanswered keep-alive probes wake poll() with a pending ETIMEDOUT.
 
     Same as ``test_tcp_keepalive_dead_peer`` with the client waiting in
-    poll(POLLIN): poll() must report POLLERR and POLLHUP within 10 s and
-    getsockopt(SO_ERROR) must return ETIMEDOUT (110).
+    poll(POLLIN).  POSIX poll(): "All error
+    conditions that arise solely from the state of the object underlying
+    the open file description and would be diagnosed by a return of -1
+    from a read() or write() call on the file descriptor shall be
+    reported as a POLLERR event."
+    getsockopt(SO_ERROR) must return ETIMEDOUT (110), the error recv()
+    reports.
     """
     out = _keepalive_dead_peer(5258, " -P")
     found = re.search(
@@ -326,5 +332,5 @@ def test_tcp_keepalive_dead_peer_poll() -> None:
     )
     assert found, out
     revents = int(found.group(1), 16)
-    assert revents & POLLERR and revents & POLLHUP, out
+    assert revents & POLLERR, out
     assert found.group(2) == "110", out

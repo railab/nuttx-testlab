@@ -34,7 +34,7 @@ import datetime
 import re
 import struct
 import time
-from typing import Iterator, List
+from typing import Iterator, List, Tuple
 
 import canopen
 import pytest
@@ -83,6 +83,7 @@ HOST_DEVICE_TYPE = 0x00020192
 ABORT_READ_ONLY = 0x06010002
 ABORT_NO_OBJECT = 0x06020000
 ABORT_NO_SUBINDEX = 0x06090011
+ABORT_LEN_MISMATCH = 0x06070010
 ABORT_LEN_LOW = 0x06070013
 
 CHARDEV_EDL_BUG = (
@@ -285,31 +286,47 @@ def test_canopen_slave_sdo_write(slave: canopen.RemoteNode) -> None:
 
 
 @pytest.mark.parametrize(
-    "index, sub, data, code",
+    "index, sub, data, codes",
     [
-        pytest.param(0x2001, 0, b"\1\0\0\0", ABORT_READ_ONLY, id="read-only"),
-        pytest.param(0x3000, 0, None, ABORT_NO_OBJECT, id="no-object"),
-        pytest.param(0x1018, 9, None, ABORT_NO_SUBINDEX, id="no-subindex"),
-        pytest.param(0x2000, 0, b"\1\2", ABORT_LEN_LOW, id="short-data"),
+        pytest.param(
+            0x2001, 0, b"\1\0\0\0", (ABORT_READ_ONLY,), id="read-only"
+        ),
+        pytest.param(0x3000, 0, None, (ABORT_NO_OBJECT,), id="no-object"),
+        pytest.param(0x1018, 9, None, (ABORT_NO_SUBINDEX,), id="no-subindex"),
+        pytest.param(
+            0x2000,
+            0,
+            b"\1\2",
+            (ABORT_LEN_MISMATCH, ABORT_LEN_LOW),
+            id="short-data",
+        ),
     ],
 )
 def test_canopen_slave_sdo_abort(
-    slave: canopen.RemoteNode, index: int, sub: int, data: bytes, code: int
+    slave: canopen.RemoteNode,
+    index: int,
+    sub: int,
+    data: bytes,
+    codes: Tuple[int, ...],
 ) -> None:
-    """Invalid SDO requests get the CiA 301 abort code.
+    """Invalid SDO requests get a CiA 301 abort code for the error.
+
+    A too short download may be answered with "data type does not match,
+    length of service parameter does not match" (0x06070010) or "...
+    too low" (0x06070013).
 
     :param slave: node 0 slave
     :param index: object index
     :param sub: sub-index
     :param data: data to download, None for an upload
-    :param code: expected abort code
+    :param codes: accepted abort codes
     """
     with pytest.raises(canopen.SdoAbortedError) as err:
         if data is None:
             slave.sdo.upload(index, sub)
         else:
             slave.sdo.download(index, sub, data)
-    assert err.value.code == code, hex(err.value.code)
+    assert err.value.code in codes, hex(err.value.code)
 
 
 def test_canopen_slave_stopped(

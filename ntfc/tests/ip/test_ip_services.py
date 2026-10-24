@@ -133,11 +133,16 @@ def test_ntpc_from_host() -> None:
 
 @pytest.mark.cmd_check("ntpcstart_main")
 def test_ntpc_stop_no_server() -> None:
-    """The ntpcstop command returns promptly while the server is silent."""
+    """The ntpcstop command stops the client while the server is silent.
+
+    apps include/netutils/ntpclient.h, ntpc_stop(): "Stop the NTP daemon",
+    "Zero on success".  PASS: ``ntpcstop`` returns to the prompt (the
+    30 s bound only detects a hang).
+    """
     _core().sendCommand("ntpcstop", timeout=30)
     assert _core().sendCommand("ntpcstart", timeout=10) == 0
     time.sleep(3)
-    assert _core().sendCommand("ntpcstop", timeout=3) == 0
+    assert _core().sendCommand("ntpcstop", timeout=30) == 0
 
 
 @pytest.mark.cmd_check("cmd_nslookup")

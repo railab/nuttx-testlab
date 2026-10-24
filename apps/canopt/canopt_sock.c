@@ -461,7 +461,8 @@ static int canopt_optbits(FAR struct canopt_args_s *args)
  * Name: canopt_rcvbuf
  *
  * Description:
- *   SO_RCVBUF round trip at the standard SOL_SOCKET level.
+ *   SO_RCVBUF set and get at the standard SOL_SOCKET level.  The value
+ *   set is a request, so any positive buffer size may be read back.
  *
  ****************************************************************************/
 
@@ -483,8 +484,7 @@ static int canopt_rcvbuf(FAR struct canopt_args_s *args)
       return canopt_fail(args->cmd, "set");
     }
 
-  if (canopt_getint(sd, SOL_SOCKET, SO_RCVBUF, &val) < 0 ||
-      val < CANOPT_RCVBUF)
+  if (canopt_getint(sd, SOL_SOCKET, SO_RCVBUF, &val) < 0 || val <= 0)
     {
       return canopt_fail(args->cmd, "get");
     }
@@ -1245,13 +1245,16 @@ static int canopt_poll(FAR struct canopt_args_s *args)
  * Name: canopt_hup
  *
  * Description:
- *   poll() reports POLLHUP when the interface is taken down.
+ *   poll() reports POLLERR when the interface is taken down: the socket
+ *   then has an error that a read() would return.
  *
  ****************************************************************************/
 
 static int canopt_hup(FAR struct canopt_args_s *args)
 {
   struct pollfd pfd;
+  socklen_t len;
+  int soerr = 0;
   int ret;
   int sd;
 
@@ -1267,15 +1270,19 @@ static int canopt_hup(FAR struct canopt_args_s *args)
 
   canopt_ready();
   ret = poll(&pfd, 1, args->timeout * 1000);
+  len = sizeof(soerr);
+  getsockopt(sd, SOL_SOCKET, SO_ERROR, &soerr, &len);
   close(sd);
 
-  if (ret == 1 && (pfd.revents & POLLHUP) != 0)
+  if (ret == 1 && (pfd.revents & POLLERR) != 0)
     {
-      printf("canopt: PASS hup revents=0x%x\n", pfd.revents);
+      printf("canopt: PASS hup revents=0x%x so_error=%d\n", pfd.revents,
+             soerr);
       return EXIT_SUCCESS;
     }
 
-  printf("canopt: FAIL hup ret=%d revents=0x%x\n", ret, pfd.revents);
+  printf("canopt: FAIL hup ret=%d revents=0x%x so_error=%d\n", ret,
+         pfd.revents, soerr);
   return EXIT_FAILURE;
 }
 

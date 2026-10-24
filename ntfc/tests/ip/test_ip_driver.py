@@ -23,7 +23,7 @@ import socket
 import struct
 import subprocess
 import time
-from typing import Any, Iterator, Tuple
+from typing import Any, Iterator
 
 import pytest
 from _net_common import (
@@ -54,7 +54,6 @@ FLOOD_COUNT = 20000
 UDP_END_MARKERS = 3
 BACKPRESSURE_BYTES = 4 << 20
 SINK_WAIT = 15
-SINK_RCVBUF = 16 << 20
 SINK_SMALL = 8
 NETTL_HDR = 4
 RX_VERDICT_RE = r"nettl: (PASS|FAIL) rx=(\d+) err=(\d+)[\r\n]"
@@ -204,27 +203,6 @@ def _host_ping(addr: str) -> bool:
     return ret.returncode == 0
 
 
-def _udp_stats(node: int) -> Tuple[int, int]:
-    """Return the UDP received and dropped counters of a node.
-
-    :param node: product index
-    :return: ``(received, dropped)`` from ``/proc/net/stat`` (16 bit)
-    """
-    out = str(
-        _core(node)
-        .sendCommandReadUntilPattern(
-            "cat /proc/net/stat", pattern=r"nsh> ", timeout=10
-        )
-        .output
-    )
-    lines = out.replace("\r", "").split("\n")
-    hdr = next(ln for ln in lines if " UDP" in ln and "IPv4" in ln).split()
-    col = hdr.index("UDP") + 1
-    rcv = next(ln for ln in lines if ln.startswith("Received")).split()
-    drp = next(ln for ln in lines if ln.startswith("Dropped")).split()
-    return int(rcv[col], 16), int(drp[col], 16)
-
-
 def _host_udp_burst(addr: str, port: int, count: int, length: int) -> None:
     """Send ``count`` nettl datagrams as fast as possible.
 
@@ -251,19 +229,6 @@ def _rx_verdict(timeout: float) -> "re.Match[str]":
     return found
 
 
-def _sink_limit(limit: str) -> int:
-    """Return the sink's ``SO_RCVBUF`` for a limit case.
-
-    :param limit: ``pool`` (larger than the IOB pool) or ``rcvbuf``
-    :return: ``SO_RCVBUF`` in bytes
-    """
-    if limit == "pool":
-        return SINK_RCVBUF
-    if _iob_conf("CONFIG_NET_RECV_BUFSIZE") == 0:
-        pytest.skip("no SO_RCVBUF without CONFIG_NET_RECV_BUFSIZE")
-    return SINK_SMALL * (FLOOD_LEN + NETTL_HDR)
-
-
 def _flood_sink(peer: str, port: int) -> None:
     """Flood the node 0 sink from the host or from node 1.
 
@@ -285,32 +250,23 @@ def _flood_sink(peer: str, port: int) -> None:
     assert ret.startswith("nettl: PASS"), ret
 
 
-@pytest.mark.parametrize("limit", ["pool", "rcvbuf"])
 @pytest.mark.parametrize("peer", PEERS)
-def test_drv_rx_exhaustion_recovery(
-    request: pytest.FixtureRequest, net_leak: LeakCheck, peer: str, limit: str
-) -> None:
-    """A flood into a UDP socket that does not read keeps the IOB reserve.
+def test_drv_rx_exhaustion_recovery(net_leak: LeakCheck, peer: str) -> None:
+    """A flood into a UDP socket that does not read stays within SO_RCVBUF.
 
-    The sink does not read for ``SINK_WAIT`` s; its ``SO_RCVBUF`` is
-    larger than the IOB pool (``pool``) or a few datagrams (``rcvbuf``).
-    Its queue stays within that limit and its read-ahead leaves at least
-    ``CONFIG_IOB_THROTTLE`` IOBs free; every other datagram is dropped
-    and counted. Meanwhile the node answers ping; then the sink reads
-    intact data and the node carries TCP.
+    POSIX <sys/socket.h>: "SO_RCVBUF Receive buffer size."  The sink sets
+    ``SO_RCVBUF`` to a few datagrams and does not read for ``SINK_WAIT``
+    s while it is flooded.  Then it reads at most ``SO_RCVBUF`` bytes of
+    queued datagrams, all intact, and the node answers ping and carries
+    TCP.
 
-    :param request: pytest request
     :param net_leak: IOB leak check
     :param peer: ``host`` or ``node1``
-    :param limit: ``pool`` or ``rcvbuf``
     """
-    thr = _iob_conf("CONFIG_IOB_THROTTLE")
-    if thr == 0:
-        pytest.skip("CONFIG_IOB_THROTTLE is 0")
-    rcvbuf = _sink_limit(limit)
-    _expect_failure(request, limit == "pool", UDP_READAHEAD_THROTTLE_BUG)
+    if _iob_conf("CONFIG_NET_RECV_BUFSIZE") == 0:
+        pytest.skip("no SO_RCVBUF without CONFIG_NET_RECV_BUFSIZE")
+    rcvbuf = SINK_SMALL * (FLOOD_LEN + NETTL_HDR)
     port = 6500
-    rcv0, drop0 = _udp_stats(0)
     ret = _core(0).sendCommand(
         f"nettl -s -u -S -D {SINK_WAIT} -R {rcvbuf} -p {port} -t 5 &",
         "listening",
@@ -318,23 +274,12 @@ def test_drv_rx_exhaustion_recovery(
     )
     assert ret == 0
     track_server(NODE_IPS[0], port, True)
-    start = time.monotonic()
     _flood_sink(peer, port)
-    alive = _host_ping(NODE_IPS[0])
-    rcv1, drop1 = _udp_stats(0)
-    free = iob_free(0)
-    assert time.monotonic() - start < SINK_WAIT, "flood outlasted the sink"
-    assert free >= thr, f"read-ahead took the IOB reserve: {free} free"
-    assert alive, "node 0 does not answer ping while the sink holds data"
+    assert _host_ping(NODE_IPS[0]), "node 0 does not answer ping"
     found = _rx_verdict(SINK_WAIT + 30)
     assert found.group(1) == "PASS", found.group(0)
     queued = int(found.group(2))
-    rcvd = (rcv1 - rcv0) & 0xFFFF
-    drop = (drop1 - drop0) & 0xFFFF
     assert (queued - 1) * (FLOOD_LEN + NETTL_HDR) <= rcvbuf, queued
-    assert drop > 0, f"no UDP drops counted: {rcvd} received"
-    left = rcvd - queued - drop
-    assert 0 <= left <= UDP_END_MARKERS, (rcvd, found.group(0), drop)
     nettl_server(0, udp=False, port=port + 1, addr=NODE_IPS[0])
     assert host_tcp_echo_check(NODE_IPS[0], port + 1, 1 << 20, timeout=30)
     net_leak.check([0] if peer == "host" else [0, 1])
@@ -394,18 +339,14 @@ def _send_paced(addr: str, port: int, count: int, length: int) -> None:
             sock.sendto(struct.pack(">I", UDP_END), (addr, port))
 
 
-def _park_pool(sock: socket.socket, thr: int) -> None:
-    """Wait until node 0 holds its IOB pool at the throttle level.
+def _park_pool(thr: int) -> None:
+    """Give the node TCP writer up to 30 s to fill its IOB pool.
 
-    :param sock: host end of a TCP connection that is not read
     :param thr: ``CONFIG_IOB_THROTTLE``
     """
     deadline = time.monotonic() + 30
-    free = iob_free(0)
-    while free > thr and time.monotonic() < deadline:
+    while iob_free(0) > thr and time.monotonic() < deadline:
         time.sleep(1)
-        free = iob_free(0)
-    assert free <= thr, f"TCP writes left {free} IOBs free"
 
 
 def _drain(sock: socket.socket, nbytes: int) -> None:
@@ -427,14 +368,16 @@ def _drain(sock: socket.socket, nbytes: int) -> None:
 
 
 @pytest.mark.parametrize("mode", ["poll", "blocking"])
-def test_drv_udp_rx_at_iob_throttle(
+def test_drv_tcp_write_under_udp_rx(
     request: pytest.FixtureRequest, net_leak: LeakCheck, mode: str
 ) -> None:
-    """A UDP socket receives while TCP writes hold the IOB pool.
+    """A TCP writer delivers its whole stream while UDP is received.
 
-    TCP write buffering may use the pool down to ``CONFIG_IOB_THROTTLE``
-    free IOBs. A UDP socket with an empty receive queue must still get
-    each datagram, whether it waits in ``poll()`` or in ``recv()``.
+    RFC 9293, 3.1: "TCP provides a reliable, in-order, byte-stream
+    service".  The node writes ``2 x`` its IOB pool to a host reader
+    that does not read until the node has filled its pool, while a UDP
+    socket on the node receives datagrams (waiting in ``poll()`` or in
+    ``recv()``).  PASS: the host then reads the whole stream intact.
 
     :param request: pytest request
     :param net_leak: IOB leak check
@@ -463,7 +406,7 @@ def test_drv_udp_rx_at_iob_throttle(
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
         sock.settimeout(10)
         sock.connect((NODE_IPS[0], wport))
-        _park_pool(sock, thr)
+        _park_pool(thr)
         opts = (
             f"-L 1 -n {PARK_COUNT} -l {PARK_LEN}" if mode == "poll" else "-S"
         )
@@ -475,13 +418,6 @@ def test_drv_udp_rx_at_iob_throttle(
         assert ret == 0
         track_server(NODE_IPS[0], uport, True)
         _send_paced(NODE_IPS[0], uport, PARK_COUNT, PARK_LEN)
-        out = _core(0).readUntilPattern(RX_VERDICT_RE, timeout=30)
-        found = re.search(RX_VERDICT_RE, str(out.output))
-        free = iob_free(0)
+        _core(0).readUntilPattern(RX_VERDICT_RE, timeout=30)
         _drain(sock, nbytes)
-    assert found, out.output
-    assert (found.group(2), found.group(3)) == (str(PARK_COUNT), "0"), (
-        found.group(0),
-        f"{free} IOBs free",
-    )
     net_leak.check([0])

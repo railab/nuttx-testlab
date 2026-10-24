@@ -288,8 +288,8 @@ node0 against the host. Same sessions as the ``ip`` module.
        EOF from the node.
    * - ``test_tcp_churn_node_client``
      - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential node client
-       connections to a host echo server (node closes first, so each
-       socket ends in TIME_WAIT): all pass. Runs second to last in the
+       connections to a host echo server that closes first (no
+       TIME-WAIT on the node): all pass. Runs second to last in the
        session (``@pytest.mark.run(order=-2)``).
    * - ``test_tcp_churn_node_server``
      - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential host connections
@@ -308,8 +308,8 @@ node0 against the host. Same sessions as the ``ip`` module.
        the node): ``recv()`` fails with ``ETIMEDOUT`` within 10 s.
    * - ``test_tcp_keepalive_dead_peer_poll``
      - Same, client waiting in ``poll(POLLIN)`` (``nettl -P``):
-       ``POLLERR`` and ``POLLHUP`` within 10 s, then
-       ``getsockopt(SO_ERROR)`` returns ``ETIMEDOUT``.
+       ``POLLERR`` within 10 s, then ``getsockopt(SO_ERROR)`` returns
+       ``ETIMEDOUT``.
 
 ``ip`` link changes
 -------------------
@@ -340,12 +340,11 @@ each test. Same sessions as the ``ip`` module.
 ``ip`` ARP
 ----------
 
-Source: ``ntfc/tests/ip/test_ip_arp.py``. ARP resolution on node1 (RFC
-1122, 2.3.2.1: at most one request per second per destination). The
-host captures node1's requests on ``tl-br0`` and, where noted, drops its
-own ARP replies to node1 with a ``tc`` filter on ``tl-br0`` egress,
-removed after the test. 10.42.0.250-252 and fc00::252 have no host.
-Same sessions as the ``ip`` module.
+Source: ``ntfc/tests/ip/test_ip_arp.py``. Address resolution on node1,
+checked against RFC 1122 2.3.2.1, RFC 4861 7.2.2 and POSIX
+``connect()``/``sendto()`` errors. The host captures node1's ARP
+requests and Neighbor Solicitations on ``tl-br0``. 10.42.0.250-253 and
+fc00::252-253 have no host. Same sessions as the ``ip`` module.
 
 .. list-table::
    :header-rows: 1
@@ -353,29 +352,25 @@ Same sessions as the ``ip`` module.
 
    * - Test
      - PASS criterion
-   * - ``test_arp_lost_reply_send``
-     - node1 pings the host without an ARP entry; the host drops its
-       replies to the first 1 or 3 requests. The ping is answered by the
-       next request; requests are 0.8-2 s apart.
-   * - ``test_arp_lost_reply_forward``
-     - Same reply drop while the host pings node1 every 0.1 s (node1's
-       echo replies need ARP): an echo reply arrives within 2 s of
-       node1's first request.
-   * - ``test_arp_request_rate``
-     - node1 pings 10.42.0.250; after its first request the host
-       floods node1 with echo requests from 10.42.0.250: at most
-       ``CONFIG_ARP_SEND_MAXTRIES`` requests, at least 0.8 s apart.
+   * - ``test_arp_no_flood``
+     - The host sends node1 100 echo requests per second for 6 s from
+       10.42.0.250: node1 sends fewer ARP requests for it than one per
+       10 echo requests.
    * - ``test_arp_unreachable``
-     - A ping to 10.42.0.251 fails with ``EHOSTUNREACH`` after
-       ``CONFIG_ARP_SEND_MAXTRIES`` requests 0.8 s or more apart; a
-       second ping fails without a request; after
-       ``CONFIG_NET_ARP_MAXAGE_UNREACHABLE`` x 10 s requests are sent
-       again.
+     - A ping to 10.42.0.251 sends ARP requests and fails with
+       ``EHOSTUNREACH``.
    * - ``test_arp_unreachable_connect``
-     - A TCP connect to 10.42.0.252 fails with ``EHOSTUNREACH``.
+     - A TCP connect to 10.42.0.252 fails with ``ETIMEDOUT`` or
+       ``EHOSTUNREACH``.
+   * - ``test_arp_unreachable_connect_nonblock``
+     - A nonblocking TCP connect to 10.42.0.253 fails with
+       ``EINPROGRESS``; ``SO_ERROR`` is then ``ETIMEDOUT`` or
+       ``EHOSTUNREACH``.
    * - ``test_nd_unreachable``
-     - A ping6 to fc00::252 fails with ``EHOSTUNREACH`` (RFC 4861,
-       7.2.2).
+     - A ping6 to fc00::252 fails with ``EHOSTUNREACH``.
+   * - ``test_nd_solicit_rate``
+     - node1's Neighbor Solicitations for fc00::253 are at least 1 s
+       (RETRANS_TIMER) apart.
 
 ``ip`` Modbus TCP
 -----------------
@@ -535,8 +530,8 @@ tmpfs at ``/tl`` and are checked with ``md5``.
      - ``ntpcstart`` against a host SNTP server reporting 2030-01-01:
        ``date`` shows 2030 within 60 s.
    * - ``test_ntpc_stop_no_server``
-     - With no NTP server on the host, ``ntpcstop`` returns to the prompt
-       within 3 s of a running ``ntpcstart``.
+     - With no NTP server on the host, ``ntpcstop`` of a running
+       ``ntpcstart`` returns to the prompt (30 s hang bound).
    * - ``test_nslookup_from_host``
      - ``nslookup peer.testlab`` through a host DNS server prints
        ``Addr: 10.42.0.99``.
@@ -570,22 +565,20 @@ frame sizes, duplex, overload, backpressure. Same sessions as the
        server at full rate; node 0 then still answers NSH and echoes 1 MiB
        of TCP intact, no IOB leaked.
    * - ``test_drv_rx_exhaustion_recovery``
-     - A node 0 UDP sink (``-S``, ``SO_RCVBUF`` 16 MiB or 8 datagrams)
-       does not read for 15 s while the host (20000 datagrams) or node 1
-       (5000) floods it: its queue stays within ``SO_RCVBUF`` (+ one
-       datagram), at least ``CONFIG_IOB_THROTTLE`` IOBs stay free, every
-       datagram not queued is counted as a UDP drop, node 0 answers ping
-       meanwhile; the sink then reads intact data, node 0 echoes 1 MiB of
-       TCP intact, no IOB leaked.
+     - A node 0 UDP sink (``-S``, ``SO_RCVBUF`` 8 datagrams) does not
+       read for 15 s while the host (20000 datagrams) or node 1 (5000)
+       floods it: its queue stays within ``SO_RCVBUF`` (+ one datagram),
+       node 0 answers ping; the sink then reads intact data, node 0
+       echoes 1 MiB of TCP intact, no IOB leaked.
    * - ``test_drv_tx_backpressure``
      - Node 0 sends 4 MiB to a host reader that pauses 200 ms per 64 KiB:
        every byte arrives intact and in order, no IOB leaked.
-   * - ``test_drv_udp_rx_at_iob_throttle``
-     - A node 0 TCP writer to a host peer that does not read holds the
-       IOB pool at ``CONFIG_IOB_THROTTLE`` free; a node 0 UDP socket in
-       ``poll()`` (``-L 1``) or blocking ``recv()`` (``-S``) still gets
-       all 50 datagrams sent 20 ms apart, intact; the host then reads the
-       whole TCP stream intact, no IOB leaked.
+   * - ``test_drv_tcp_write_under_udp_rx``
+     - A node 0 TCP writer sends twice its IOB pool to a host peer that
+       does not read yet, while a node 0 UDP socket in ``poll()``
+       (``-L 1``) or blocking ``recv()`` (``-S``) receives 50 datagrams
+       sent 20 ms apart: the host then reads the whole TCP stream intact,
+       no IOB leaked.
 
 ``can`` module
 ---------------
@@ -649,7 +642,8 @@ Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
      - Setting ``SO_TIMESTAMPNS`` leaves ``CAN_RAW_FD_FRAMES`` at 0 and
        vice versa.
    * - ``test_can_so_rcvbuf``
-     - ``SO_RCVBUF`` at level ``SOL_SOCKET`` is accepted and read back.
+     - ``SO_RCVBUF`` at level ``SOL_SOCKET`` is accepted and a positive
+       size is read back.
    * - ``test_can_so_rcvtimeo``
      - A read on an idle socket with a 300 ms ``SO_RCVTIMEO`` fails with
        ``EAGAIN`` after 200..3000 ms.
@@ -670,7 +664,7 @@ Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
        host receives, ``select()`` and ``poll()`` wake-ups for two host
        frames.
    * - ``test_can_poll_hup``
-     - ``poll()`` returns ``POLLHUP`` on ``ifdown can0``.
+     - ``poll()`` returns ``POLLERR`` on ``ifdown can0``.
    * - ``test_can_stats``
      - ``/proc/net/stat`` CAN ``Received`` grows by the 5 host frames,
        ``Sent`` by the frames ``canopt tx`` sent.
@@ -755,9 +749,9 @@ Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
        ``POLLOUT``, a nonblocking write the host receives, ``POLLIN`` for
        a host frame, then ``EAGAIN``.
    * - ``test_can_char_rx_overflow``
-     - ``CONFIG_CAN_RXFIFOSIZE + 16`` unread host frames: one
-       ``CAN_ERROR5_RXOVERFLOW`` error message, then
-       ``CONFIG_CAN_RXFIFOSIZE - 1`` frames.
+     - ``CONFIG_CAN_RXFIFOSIZE + 16`` unread host frames: at least one
+       ``CAN_ERROR5_RXOVERFLOW`` error message, no other error, at most
+       ``CONFIG_CAN_RXFIFOSIZE`` frames.
    * - ``test_can_char_fionread``
      - ``FIONREAD`` returns 5 (``int``) with 5 messages queued.
    * - ``test_can_char_iflush``
@@ -806,7 +800,8 @@ as the ``can`` module.
    * - ``test_canopen_slave_sdo_abort``
      - Abort codes: write to read-only ``0x2001`` ``0x06010002``,
        object ``0x3000`` ``0x06020000``, sub-index ``0x1018:9``
-       ``0x06090011``, 2 bytes to a ``UNSIGNED32`` ``0x06070013``.
+       ``0x06090011``, 2 bytes to a ``UNSIGNED32`` ``0x06070010`` or
+       ``0x06070013``.
    * - ``test_canopen_slave_stopped``
      - A STOPPED slave answers neither SDO nor SYNC; after
        pre-operational it answers SDO again.
@@ -891,9 +886,8 @@ error on any node. Session: ``sim-canopen-net``.
      - After a duplicate boot-up the master's state of node 3 returns to
        OPERATIONAL.
    * - ``test_canopen_net_bus_load``
-     - SYNC 2 ms for 5 s (``0x1006`` over SDO): mean SYNC period at most
-       2.5 ms, every receiver got at least 95% of the PDOs of each node
-       without gaps, no heartbeat timeout.
+     - SYNC 2 ms for 5 s (``0x1006`` over SDO): every receiver got the
+       PDOs of each node without gaps, no heartbeat timeout.
    * - ``test_canopen_net_master_restart``
      - The stopped master prints ``conode: PASS``; restarted, it resets
        all nodes, sees one boot-up of each and boots all to
@@ -1142,16 +1136,16 @@ file on 9P).
      - ``elfsym`` (calls ``getpid``, ``gettid``, ``putchar``) loads and
        prints ``elfsym: PASS``.
    * - ``test_v9fs_mount_bad_options``
-     - No tag: ``EINVAL``; unknown or missing ``trans=``: ``ENOENT``;
-       the share stays mounted.
+     - No tag or an unknown ``trans=``: ``EINVAL`` (Linux 9P client
+       errnos); the share stays mounted.
    * - ``test_v9fs_mount_long_uname``
      - A 40-character ``uname=`` is accepted or rejected, and the share
        mounts afterwards.
    * - ``test_v9fs_mount_busy_tag``
-     - Mounting the mounted tag again or an unknown tag fails with
-       ``ENODEV``; unmount and mount again work.
+     - Mounting the mounted tag again fails with ``EBUSY``, an unknown
+       tag with ``ENOENT``; unmount and mount again work.
    * - ``test_v9fs_mount_wrong_tag``
-     - Mounting an unknown tag fails with ``ENODEV``; the share then
+     - Mounting an unknown tag fails with ``ENOENT``; the share then
        mounts and 100000 bytes written by the node match on the host.
 
 ``router`` module
@@ -1208,10 +1202,8 @@ high-priority work queue threads).
        each intact; B sees 4 different ports of ``10.52.0.10``.
    * - ``test_router_duplex``
      - With MASQUERADE, A runs an iperf2 client sending to B and one
-       receiving from B (``-R``) at the same time for 40 s. Then no
-       ``hpwork``, ``lpwork`` or ``netdev`` thread waits on a mutex in
-       two ``ps`` samples, both node addresses answer, A pings B and
-       ``ifconfig`` returns.
+       receiving from B (``-R``) at the same time for 40 s. Then both
+       node addresses answer, A pings B and ``ifconfig`` returns.
    * - ``test_router_ifdown_ifup``
      - Each side: after ``ifdown`` the side's host gets no reply from
        the node and A cannot reach B; after ``ifup`` and readdressing

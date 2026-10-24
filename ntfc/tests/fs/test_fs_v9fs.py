@@ -579,6 +579,18 @@ def test_v9fs_symlink(work: Tuple[Path, str]) -> None:
     assert (host / "f").read_bytes() == pattern(0, 1000, 9)
 
 
+UNLINK_DIR_BUG = (
+    "fs/v9fs: unlink() of a directory sends Tunlinkat and returns the "
+    "server's error EISDIR; POSIX unlink() fails with [EPERM] for a "
+    "directory"
+)
+
+MOUNT_ERRNO_BUG = (
+    "fs/v9fs/transport.c returns ENOENT for an unknown trans= and "
+    "fs/v9fs/virtio_9p.c ENODEV for a tag no device has; the Linux 9P "
+    "client returns EINVAL and ENOENT"
+)
+
 ERRNO_CASES = [
     ("open-missing", "open", "nope", None, "ENOENT", None),
     ("stat-missing", "stat", "nope", None, "ENOENT", None),
@@ -587,11 +599,11 @@ ERRNO_CASES = [
     ("creat-no-parent", "creat", "nodir/x", None, "ENOENT", None),
     ("mkdir-exists-dir", "mkdir", "d", None, "EEXIST", None),
     ("mkdir-exists-file", "mkdir", "f", None, "EEXIST", None),
-    ("rmdir-not-empty", "rmdir", "d", None, "ENOTEMPTY", None),
+    ("rmdir-not-empty", "rmdir", "d", None, "ENOTEMPTY|EEXIST", None),
     ("rmdir-file", "rmdir", "f", None, "ENOTDIR", None),
     ("rename-dir-to-file", "rename", "d", "f", "ENOTDIR", None),
     ("mkdir-below-file", "mkdir", "f/x", None, "ENOTDIR", None),
-    ("unlink-dir", "unlink", "d", None, "EISDIR|EPERM", None),
+    ("unlink-dir", "unlink", "d", None, "EPERM", UNLINK_DIR_BUG),
     ("rename-file-to-dir", "rename", "f", "d", "EISDIR", None),
     ("rename-into-self", "rename", "d", "d/sub", "EINVAL", None),
     ("excl-exists", "excl", "f", None, "EEXIST", EXCL_BUG),
@@ -754,11 +766,16 @@ def test_v9fs_elf_symbols(request: pytest.FixtureRequest, share: Path) -> None:
 # Mount errors, last: a failed virtio probe leaves the bus list damaged
 
 
+@pytest.mark.xfail(strict=True, reason=MOUNT_ERRNO_BUG)
 def test_v9fs_mount_bad_options() -> None:
-    """Mount without a tag, without or with an unknown transport."""
+    """Mount without a tag or with an unknown transport fails with EINVAL.
+
+    No standard covers 9P mount options; the errnos are those of the
+    Linux 9P client: no device name (tag) and an unknown ``trans=``
+    both give EINVAL.
+    """
     fstl_pass("mount v9fs /mnt/bad trans=virtio EINVAL")
-    fstl_pass(f"mount v9fs /mnt/bad trans=nosuch,tag={TAG} ENOENT")
-    fstl_pass(f"mount v9fs /mnt/bad tag={TAG} ENOENT")
+    fstl_pass(f"mount v9fs /mnt/bad trans=nosuch,tag={TAG} EINVAL")
     assert _mounted()
 
 
@@ -775,23 +792,32 @@ def test_v9fs_mount_long_uname(work: Tuple[Path, str]) -> None:
 
 @pytest.mark.skip(reason=PROBE_UAF_BUG)
 def test_v9fs_mount_busy_tag(work: Tuple[Path, str]) -> None:
-    """A second mount of the mounted tag fails; unmount and remount."""
+    """A second mount of the mounted tag fails; unmount and remount.
+
+    Errnos of the Linux 9P virtio transport (no standard covers them):
+    a tag in use gives EBUSY, a tag no device has ENOENT.
+    """
     host, node = work
     (host / "probe.txt").write_text("busy\n")
-    fstl_pass(f"mount v9fs /mnt/again {OPTS} ENODEV")
-    fstl_pass("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENODEV")
+    fstl_pass(f"mount v9fs /mnt/again {OPTS} EBUSY")
+    fstl_pass("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENOENT")
     run(f"umount {MNT}")
     _mount()
     assert "busy" in run(f"cat {node}/probe.txt")
 
 
+@pytest.mark.xfail(strict=True, reason=MOUNT_ERRNO_BUG)
 def test_v9fs_mount_wrong_tag(work: Tuple[Path, str]) -> None:
-    """A tag no device has fails with ENODEV; the share still mounts."""
+    """A tag no device has fails with ENOENT; the share still mounts.
+
+    ENOENT is the errno of the Linux 9P virtio transport for a tag no
+    device has (no standard covers it).
+    """
     _skip_remount()
     host, node = work
     (host / "probe.txt").write_text("after wrong tag\n")
     run(f"umount {MNT}")
-    fstl_pass("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENODEV")
+    fstl_pass("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENOENT")
     _mount()
     assert "after wrong tag" in run(f"cat {node}/probe.txt")
     fstl_pass(f"write {node}/after.bin 100000 -s 9")

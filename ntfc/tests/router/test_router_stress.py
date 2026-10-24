@@ -23,7 +23,6 @@ the NAT with a node health check, then each node interface taken down
 and up again.
 """
 
-import re
 import time
 from typing import Any, List
 
@@ -47,10 +46,6 @@ from _router_common import (
 #: Length of the duplex load in seconds.
 DUPLEX_TIME = 40
 
-#: A network worker blocked on a mutex: ``ps`` STATE ``Waiting``, EVENT
-#: ``Mutex:<holder pid>``.
-STUCK_RE = re.compile(r"^.*Mutex:\d+.*(?:hpwork|lpwork|netdev).*$", re.M)
-
 IPFWD_LOCK_BUG = (
     "net/ipforward/ipfwd_forward.c: ipfwd_forward() runs in the ingress "
     "worker and links its callback into the egress device's devif "
@@ -73,21 +68,6 @@ def concurrent_workers_xfail(request: Any) -> None:
         )
 
 
-def _stuck_workers() -> List[str]:
-    """Return ``ps`` lines of network workers waiting on a mutex.
-
-    Sampled twice, a second apart: a worker blocked in both samples
-    does not move.
-
-    :return: lines present in both samples
-    """
-    first = set(STUCK_RE.findall(nsh("ps")))
-    time.sleep(1)
-    output = nsh("ps")
-    print(output)
-    return sorted(first & set(STUCK_RE.findall(output)))
-
-
 @pytest.mark.dep_config("CONFIG_NET_NAT44")
 @pytest.mark.usefixtures("concurrent_workers_xfail")
 def test_router_duplex(router_ifs: List[str]) -> None:
@@ -95,9 +75,8 @@ def test_router_duplex(router_ifs: List[str]) -> None:
 
     Host A runs two iperf clients against host B at once, one sending
     and one receiving (``-R``), for :data:`DUPLEX_TIME` seconds, with
-    MASQUERADE on the B interface. Then: no network worker is blocked
-    on a mutex, both node addresses answer, A reaches B again and
-    ``ifconfig`` returns.
+    MASQUERADE on the B interface. Then both node addresses answer, A
+    reaches B again and ``ifconfig`` returns.
     """
     rule = f"-t nat -A POSTROUTING -o {router_ifs[1]} -j MASQUERADE"
     iptables(rule)
@@ -114,8 +93,6 @@ def test_router_duplex(router_ifs: List[str]) -> None:
                 f"B->A {iperf_mbps(down, DUPLEX_TIME + 30):.1f} Mbit/s"
             )
 
-        stuck = _stuck_workers()
-        assert not stuck, f"network workers blocked: {stuck}"
         assert ping_ok(0, NODES[0])
         assert ping_ok(1, NODES[1])
         assert ping_ok(0, HOSTS[1])

@@ -535,11 +535,15 @@ class TcpEchoServer:
     ``peers`` lists the address and port of every accepted connection.
     """
 
-    def __init__(self, addr: str, port: int) -> None:
+    def __init__(
+        self, addr: str, port: int, close_after: Optional[int] = None
+    ) -> None:
         """Bind the server.
 
         :param addr: host address to bind (IPv4 or IPv6)
         :param port: TCP port
+        :param close_after: close the connection first once this many
+            bytes were echoed (default: echo until the peer closes)
         """
         owner = self
 
@@ -551,11 +555,13 @@ class TcpEchoServer:
                 with owner.lock:
                     owner.peers.append(self.client_address[:2])
                 owner.accepted.set()
-                while True:
+                echoed = 0
+                while close_after is None or echoed < close_after:
                     data = self.request.recv(4096)
                     if not data:
                         break
                     self.request.sendall(data)
+                    echoed += len(data)
                 with owner.lock:
                     owner.connections += 1
 
