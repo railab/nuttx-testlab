@@ -366,6 +366,9 @@ fc00::252-253 have no host. Same sessions as the ``ip`` module.
      - A nonblocking TCP connect to 10.42.0.253 fails with
        ``EINPROGRESS``; ``SO_ERROR`` is then ``ETIMEDOUT`` or
        ``EHOSTUNREACH``.
+   * - ``test_arp_connect_nonblock``
+     - ``cached`` and ``unresolved`` (host's ARP entry deleted first): a
+       nonblocking TCP connect to the host is established.
    * - ``test_nd_unreachable``
      - A ping6 to fc00::252 fails with ``EHOSTUNREACH``.
    * - ``test_nd_solicit_rate``

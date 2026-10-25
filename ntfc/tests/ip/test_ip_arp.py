@@ -52,7 +52,8 @@ import time
 from typing import Any, Iterator, List, Optional, Tuple
 
 import pytest
-from _net_common import NODE_IPS
+from _host_services import TcpEchoServer
+from _net_common import HOST_IP, NODE_IPS
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_ARP_SEND"),
@@ -405,6 +406,35 @@ def test_arp_unreachable_connect_nonblock() -> None:
     found = re.search(r"so_error (\d+)", out)
     assert found, out
     assert int(found.group(1)) in (ETIMEDOUT, EHOSTUNREACH), out
+
+
+@pytest.mark.cmd_check("nettl_main")
+@pytest.mark.parametrize("cached", [True, False], ids=["cached", "unresolved"])
+def test_arp_connect_nonblock(cached: bool) -> None:
+    """A nonblocking connect() to the host is established asynchronously.
+
+    POSIX connect(): "If the connection cannot be established immediately
+    and O_NONBLOCK is set for the file descriptor for the socket,
+    connect() shall fail and set errno to [EINPROGRESS], but the
+    connection request shall not be aborted, and the connection shall be
+    established asynchronously."  With the host in node1's ARP table and
+    after its entry was deleted.
+    PASS: ``nettl -N -c <host>`` connects (``SO_ERROR`` 0).
+
+    :param cached: keep node1's ARP entry for the host
+    """
+    port = 5601 if cached else 5602
+    _sh(f"ping -c 1 -W 3000 {HOST_IP}")
+    if not cached:
+        _sh(f"arp -d {HOST_IP}")
+    with TcpEchoServer(HOST_IP, port):
+        ret = _core().sendCommandReadUntilPattern(
+            f"nettl -N -c {HOST_IP} -p {port} -t 60",
+            pattern=r"nettl: (PASS|FAIL) tx=",
+            timeout=90,
+        )
+    out = str(ret.output)
+    assert "nettl: PASS" in out, out
 
 
 @pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
