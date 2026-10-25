@@ -16,6 +16,18 @@ sessions:
     confpath: ntfc/configs/qemu-intel64/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus
     resources: [ttyTL0]
+  - name: "qemu-intel64-pci-serial"
+    confpath: ntfc/configs/qemu-intel64/pci-serial/config.yaml
+    testpath: ntfc/tests/serial
+  - name: "qemu-intel64-pci-serial-2x"
+    confpath: ntfc/configs/qemu-intel64/pci-serial-2x/config.yaml
+    testpath: ntfc/tests/serial
+  - name: "qemu-intel64-pci-serial-2x-late"
+    confpath: ntfc/configs/qemu-intel64/pci-serial-2x-late/config.yaml
+    testpath: ntfc/tests/serial
+  - name: "qemu-intel64-pci-serial-4x-late"
+    confpath: ntfc/configs/qemu-intel64/pci-serial-4x-late/config.yaml
+    testpath: ntfc/tests/serial
   - name: "qemu-intel64-can-bus"
     confpath: ntfc/configs/qemu-intel64/can-bus/config.yaml
     testpath: ntfc/tests/can

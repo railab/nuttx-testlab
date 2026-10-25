@@ -372,6 +372,18 @@ X.509 and PEM parsing) is an Mbed TLS client/server::
   last); a failed session also prints ``tlstl: session <i> ...``. Exit
   0 on PASS.
 
+``apps/sertl``
+~~~~~~~~~~~~~~
+
+``sertl`` (``CONFIG_TESTLAB_SERTL``) echoes a serial device::
+
+   sertl [-n bytes] [-t sec] <dev>
+
+- Opens ``<dev>``, sets raw mode (with ``SERIAL_TERMIOS``), prints
+  ``sertl: ready dev=<dev>`` and writes back every byte read until
+  ``-n`` bytes (default 256) arrived or ``-t`` s (default 10) passed.
+- Verdict: ``sertl: PASS|FAIL dev=<dev> rx=<n>``; exit 0 on PASS.
+
 NTFC configs
 ------------
 

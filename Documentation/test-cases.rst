@@ -947,6 +947,48 @@ register maps as in `ip Modbus TCP`_. Sessions: ``sim-modbus-rtu``,
      - ``nxmbserver`` started a second time in the same boot serves
        requests.
 
+``serial`` module
+-----------------
+
+Source: ``ntfc/tests/serial/test_pci_serial.py``. QEMU PCI serial cards
+(``docs/specs/pci-serial.rst``) with the NuttX PCI 16550 driver on
+qemu-intel64; ``/dev/ttyS0`` stays the ISA console. Each card port is a
+QEMU socket chardev the host connects to.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Manifest session
+     - Card
+     - Configured card ports
+   * - ``qemu-intel64-pci-serial``
+     - ``pci-serial``
+     - 0 as ``/dev/ttyS1``
+   * - ``qemu-intel64-pci-serial-2x``
+     - ``pci-serial-2x``
+     - 0 and 1 as ``/dev/ttyS1``, ``/dev/ttyS2``
+   * - ``qemu-intel64-pci-serial-2x-late``
+     - ``pci-serial-2x``
+     - only 1, as ``/dev/ttyS1``
+   * - ``qemu-intel64-pci-serial-4x-late``
+     - ``pci-serial-4x``
+     - 1, 2 and 3 as ``/dev/ttyS1`` to ``/dev/ttyS3``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_pci_serial_registration``
+     - ``/dev`` has ``ttyS0`` and the ``ttySn`` of every enabled
+       ``16550_PCI_UARTn``, no other ``ttyS`` node.
+   * - ``test_pci_serial_echo``
+     - ``sertl`` echoes 512 bytes on every configured port while the
+       host sends a different pattern on every card port at the same
+       time, 64 bytes per echo: each configured card port gets its own
+       pattern back, an unconfigured one nothing.
+
 ``python`` module
 -----------------
 

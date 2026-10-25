@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-intel64/pci-serial'
+
+product:
+  name: "qemu-intel64-pci-serial"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      exec_path: 'qemu-system-x86_64'
+      exec_args: '-m 1G -cpu host -enable-kvm -nographic -serial mon:stdio
+                  -device pci-serial,chardev=ps0
+                  -chardev socket,id=ps0,path=/tmp/tl-ps0.sock,server=on,wait=off'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/pci-serial'

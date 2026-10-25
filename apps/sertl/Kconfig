@@ -1,0 +1,27 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_SERTL
+	tristate "sertl: serial port echo test tool"
+	default n
+	---help---
+		Echoes the bytes received on a serial device back to it and
+		prints a PASS/FAIL verdict line.
+
+if TESTLAB_SERTL
+
+config TESTLAB_SERTL_PROGNAME
+	string "Program name"
+	default "sertl"
+
+config TESTLAB_SERTL_PRIORITY
+	int "sertl task priority"
+	default 100
+
+config TESTLAB_SERTL_STACKSIZE
+	int "sertl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
