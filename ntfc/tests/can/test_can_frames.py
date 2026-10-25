@@ -42,6 +42,11 @@ from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     xfail_on_ctucanfd,
 )
 
+#: Classic frames the ``queued`` case sends.  SO_RCVBUF only requests
+#: the receive buffer size, and the smallest test configuration queues 8
+#: frames: the classic frames and the marker must fit.
+QUEUED_CLASSIC = 6
+
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_CAN"),
     pytest.mark.dep_config("CONFIG_NET_CAN_CANFD"),
@@ -90,14 +95,7 @@ def test_can_fd_rx(request: pytest.FixtureRequest) -> None:
     "queued",
     [
         False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="can_readahead() hands queued CAN FD frames to "
-                "classic sockets",
-            ),
-        ),
+        True,
     ],
     ids=["blocking", "queued"],
 )
@@ -106,15 +104,16 @@ def test_can_fd_to_classic_socket(queued: bool) -> None:
 
     The host interleaves both tables. ``blocking``: the reader waits in
     read() for each frame. ``queued``: all frames queue on the socket
-    before the first read. Every read must return one classic frame of
+    before the first read; the host sends the first ``QUEUED_CLASSIC``
+    classic frames only. Every read must return one classic frame of
     CAN_MTU bytes. The host sends wake-up frames after 3 s so a reader
     that blocks despite queued frames still returns.
 
     :param queued: let all frames queue before the first read
     """
     if queued:
-        canopt_start(0, "legacy can0 -q")
-        host_send(interleaved_frames() + [Frame(MARKER_ID, 1)])
+        canopt_start(0, f"legacy can0 -q -n {QUEUED_CLASSIC}")
+        host_send(interleaved_frames(QUEUED_CLASSIC) + [Frame(MARKER_ID, 1)])
     else:
         canopt_start(0, "legacy can0")
         host_send(interleaved_frames() + [Frame(MARKER_ID, 1)], gap_s=0.02)

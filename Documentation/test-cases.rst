@@ -691,9 +691,9 @@ options`_.
        frames as ``CAN_MTU``.
    * - ``test_can_fd_to_classic_socket``
      - Variants ``blocking`` (reader waits in ``read()``) and ``queued``
-       (frames queue before the first read): a classic socket on a bus
-       carrying both tables reads only the 18 classic frames, each
-       ``CAN_MTU`` bytes.
+       (frames queue before the first read, the host sends 6 of the
+       classic frames): a classic socket on a bus carrying both tables
+       reads only the classic frames, each ``CAN_MTU`` bytes.
 
 ``can`` timestamps
 ------------------

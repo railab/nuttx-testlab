@@ -851,8 +851,12 @@ static int canopt_legacy(FAR struct canopt_args_s *args)
 
   close(sd);
 
-  pass = marker && classic == (int)g_canopt_nclassic && fdseen == 0 &&
-         bad == 0;
+  /* Queued frames must fit the receive buffer: with -q the host sends
+   * only the first -n classic frames.
+   */
+
+  pass = marker && fdseen == 0 && bad == 0 &&
+         classic == (args->queued ? args->count : (int)g_canopt_nclassic);
   printf("canopt: %s legacy classic=%d fd=%d bad=%d\n",
          pass ? "PASS" : "FAIL", classic, fdseen, bad);
   return pass ? EXIT_SUCCESS : EXIT_FAILURE;

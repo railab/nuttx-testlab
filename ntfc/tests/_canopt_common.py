@@ -31,7 +31,7 @@ import socket
 import struct
 import threading
 import time
-from typing import Any, Iterator, List, NamedTuple, Tuple
+from typing import Any, Iterator, List, NamedTuple, Optional, Tuple
 
 import pytest
 from _can_common import CAN_CHARDEV, CAN_IFNAME, can_endpoint, ctucanfd_node
@@ -145,18 +145,19 @@ def frame_data(can_id: int, length: int) -> bytes:
     )
 
 
-def interleaved_frames() -> List[Frame]:
+def interleaved_frames(nclassic: Optional[int] = None) -> List[Frame]:
     """Return both tables interleaved, CAN FD frame first.
 
-    :return: ``FD[0], C[0], FD[1], C[1], ...`` then the remaining classic
-     frames
+    :param nclassic: number of classic frames, default all
+    :return: ``FD[0], C[0], FD[1], C[1], ...`` then the remaining frames
     """
+    classic = CLASSIC_FRAMES[:nclassic]
     out: List[Frame] = []
-    for i in range(max(len(FD_FRAMES), len(CLASSIC_FRAMES))):
+    for i in range(max(len(FD_FRAMES), len(classic))):
         if i < len(FD_FRAMES):
             out.append(FD_FRAMES[i])
-        if i < len(CLASSIC_FRAMES):
-            out.append(CLASSIC_FRAMES[i])
+        if i < len(classic):
+            out.append(classic[i])
     return out
 
 
