@@ -42,3 +42,7 @@ sessions:
   - name: "sim-pktradio"
     confpath: ntfc/configs/sim/pktradio/config.yaml
     testpath: ntfc/tests/sixlowpan
+  - name: "sim-isotp"
+    confpath: ntfc/configs/sim/isotp/config.yaml
+    testpath: ntfc/tests/can/test_isotp_sockets.py
+    resources: [can0]

@@ -901,6 +901,50 @@ Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
      - ``CANIOC_RTR`` returns the 8-byte reply a host responder sends to
        the remote request.
 
+``can`` ISO-TP
+--------------
+
+Source: ``ntfc/tests/can/test_isotp_sockets.py``. Node 0 runs one
+``isotptl`` phase (``apps/isotptl``) on ``can0``; the host is the peer,
+with kernel ISO-TP or raw SocketCAN sockets. Classic peers use 8-byte
+frames, CAN FD peers 64-byte frames. Every test passes on
+``isotptl: PASS mode=<phase>``. Session: ``sim-isotp``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_isotp_exchange``
+     - Classic (255 bytes) and CAN FD (384 bytes), with and without
+       ``CAN_ISOTP_WAIT_TX_DONE``: 3 request/reply PDUs arrive intact
+       both ways.
+   * - ``test_isotp_wait_dontwait``
+     - A ``CAN_ISOTP_WAIT_TX_DONE`` send with ``MSG_DONTWAIT`` is
+       rejected; the received PDU is intact.
+   * - ``test_isotp_back_to_back``
+     - Two sends issued while a transfer is active arrive in order and
+       intact.
+   * - ``test_isotp_concurrent_sessions``
+     - Three address pairs exchange 3 PDUs each; every reply matches its
+       own session.
+   * - ``test_isotp_completion_order``
+     - With flow control delayed by the host: without
+       ``CAN_ISOTP_WAIT_TX_DONE`` the node's marker frame follows the
+       first frame; with it, the marker follows the last consecutive
+       frame. Sequence numbers and payload are correct.
+   * - ``test_isotp_error_recovery``
+     - Empty and partial receive, wrong sequence number and missing flow
+       control each fail the transfer; the same socket then exchanges a
+       single-frame PDU.
+   * - ``test_isotp_large_pdu``
+     - A 4095-byte PDU (8192 bytes with
+       ``LIBC_CAN_ISOTP_LONG_PDU``) arrives intact both ways.
+   * - ``test_isotp_socket_api``
+     - Invalid options and binds are rejected; ``getsockname()`` returns
+       the bound address.
+
 ``can`` CANopen
 ----------------
 

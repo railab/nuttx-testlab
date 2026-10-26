@@ -1,0 +1,28 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_ISOTPTL
+	tristate "isotptl: ISO-TP socket regressions"
+	default n
+	depends on NET_CAN_ISOTP && NET_CAN_SOCK_OPTS && NETDEV_IFINDEX
+	---help---
+		ISO-TP socket checks: segmented exchange, send completion,
+		concurrent sessions, error recovery, socket API and codec bounds.
+
+if TESTLAB_ISOTPTL
+
+config TESTLAB_ISOTPTL_PROGNAME
+	string "Program name"
+	default "isotptl"
+
+config TESTLAB_ISOTPTL_PRIORITY
+	int "isotptl task priority"
+	default 100
+
+config TESTLAB_ISOTPTL_STACKSIZE
+	int "isotptl stack size"
+	default 16384
+
+endif
