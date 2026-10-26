@@ -944,6 +944,9 @@ frames, CAN FD peers 64-byte frames. Every test passes on
    * - ``test_isotp_socket_api``
      - Invalid options and binds are rejected; ``getsockname()`` returns
        the bound address.
+   * - ``test_isotp_codec_bounds``
+     - Truncated frames, lengths above the output capacity and invalid
+       encoder state are rejected without writing past the buffer.
 
 ``can`` CANopen
 ----------------

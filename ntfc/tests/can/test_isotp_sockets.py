@@ -275,3 +275,15 @@ def test_isotp_socket_api() -> None:
         )
         == 0
     )
+
+
+def test_isotp_codec_bounds() -> None:
+    """Reject truncated frames and lengths that exceed output capacity."""
+    assert (
+        pytest.products[0]
+        .core(0)
+        .sendCommand(
+            "isotptl codec can0 1 0 0", "isotptl: PASS mode=codec", timeout=10
+        )
+        == 0
+    )

@@ -1161,6 +1161,61 @@ out:
 }
 
 /****************************************************************************
+ * Name: run_isotp_codec_test
+ ****************************************************************************/
+
+static int run_isotp_codec_test(void)
+{
+  static const uint8_t frames[][8] =
+    {
+      {0x10},
+      {0x10},
+      {0x10, 0x01, 1, 2, 3, 4, 5, 6},
+      {0x21, 1},
+      {0x07, 1}
+    };
+
+  static const uint8_t lengths[] =
+    {
+      0, 1, 8, 2, 2
+    };
+
+  struct isotp_decode_s dec;
+  struct isotp_encode_s enc;
+  uint8_t output[8];
+  uint8_t encoded[8];
+  uint8_t dlen = 1;
+  unsigned int i;
+  unsigned int j;
+
+  for (i = 0; i < sizeof(lengths); i++)
+    {
+      memset(output, 0xa5, sizeof(output));
+      isotp_decode_init(&dec, output, 1);
+      if (isotp_decode_frame(&dec, frames[i], lengths[i]) >= 0)
+        {
+          return -1;
+        }
+
+      for (j = 0; j < sizeof(output); j++)
+        {
+          if (output[j] != 0xa5)
+            {
+              return -1;
+            }
+        }
+    }
+
+  if (isotp_encode_init(&enc, output, sizeof(output)) < 0 ||
+      isotp_encode_frame(&enc, encoded, &dlen) != -EINVAL)
+    {
+      return -1;
+    }
+
+  return 0;
+}
+
+/****************************************************************************
  * Name: run_isotp_api_test
  ****************************************************************************/
 
@@ -1170,6 +1225,7 @@ static int run_isotp_api_test(FAR const char *ifname)
   struct sockaddr_can actual;
   struct can_isotp_ll_options ll;
   struct can_isotp_options opts;
+  struct can_isotp_fc_options fc;
   socklen_t addrlen = sizeof(actual);
   int ret = -1;
   int fd;
@@ -1193,6 +1249,30 @@ static int run_isotp_api_test(FAR const char *ifname)
   opts.flags = CAN_ISOTP_EXTEND_ADDR;
   if (setsockopt(fd, SOL_CAN_ISOTP, CAN_ISOTP_OPTS,
                  &opts, sizeof(opts)) == 0 || errno != EINVAL)
+    {
+      goto out;
+    }
+
+  opts.flags = 0;
+  opts.frame_txtime = 1;
+  if (setsockopt(fd, SOL_CAN_ISOTP, CAN_ISOTP_OPTS,
+                 &opts, sizeof(opts)) == 0 || errno != EINVAL)
+    {
+      goto out;
+    }
+
+  memset(&fc, 0, sizeof(fc));
+  fc.wftmax = 1;
+  if (setsockopt(fd, SOL_CAN_ISOTP, CAN_ISOTP_RECV_FC,
+                 &fc, sizeof(fc)) == 0 || errno != EINVAL)
+    {
+      goto out;
+    }
+
+  ll.tx_dl = CAN_MAX_DLEN;
+  ll.tx_flags = CANFD_BRS;
+  if (setsockopt(fd, SOL_CAN_ISOTP, CAN_ISOTP_LL_OPTS,
+                 &ll, sizeof(ll)) == 0 || errno != EINVAL)
     {
       goto out;
     }
@@ -1266,6 +1346,10 @@ int main(int argc, FAR char *argv[])
 #else
       ret = run_isotp_test(ifname, canfd, waittx, 1, 4095);
 #endif
+    }
+  else if (strcmp(mode, "codec") == 0)
+    {
+      ret = run_isotp_codec_test();
     }
   else if (strcmp(mode, "api") == 0)
     {
