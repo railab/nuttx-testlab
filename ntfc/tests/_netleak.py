@@ -101,18 +101,22 @@ def _free_all(nodes: List[int]) -> Dict[int, int]:
 
 
 def _snapshot(nodes: List[int], peer: str) -> Dict[int, int]:
-    """Return the lowest free IOB count of each node after a kick.
+    """Return the highest free IOB count of each node after a kick.
+
+    After a kick a driver that reclaims lazily may still hold the kick's
+    own packet, so a sample can be one lower; the highest of the samples
+    is the count with nothing in flight.  A lost IOB lowers every sample.
 
     :param nodes: product indexes
     :param peer: address to ping
-    :return: lowest free IOBs per node over ``SNAPSHOT_ROUNDS`` kicks
+    :return: highest free IOBs per node over ``SNAPSHOT_ROUNDS`` kicks
     """
     rounds = []
     for _ in range(SNAPSHOT_ROUNDS):
         for node in nodes:
             _kick(node, peer)
         rounds.append(_free_all(nodes))
-    return {node: min(r[node] for r in rounds) for node in nodes}
+    return {node: max(r[node] for r in rounds) for node in nodes}
 
 
 class IobCountLost(AssertionError):

@@ -524,9 +524,9 @@ and ``CONFIG_NETINIT_IPv6ADDR_8`` (gateways ``10.42.0.1``, ``fc00::1``).
 Driver tests check for buffer leaks: the ``net_leak`` fixture
 (``_netleak.py``) reads ``/proc/iobinfo`` on every node before a test; the
 test ends with ``net_leak.check()``, which fails when a node it used has
-fewer IOBs free afterwards (30 s settle time). A node pings the host
-before the first read and, while short, before each retry, so a driver
-that reclaims sent packets lazily holds the same buffers both times.
+fewer IOBs free afterwards (30 s settle time). Each count is the highest
+of three reads, each after a ping to the host: a driver that reclaims sent
+packets lazily may still hold the ping's own packet at one read.
 With ``CONFIG_NETDEV_STATISTICS`` it also prints the driver RX/TX counter
 deltas from ``/proc/net/<dev>``. After a failed test the driver tests
 reboot both nodes.
