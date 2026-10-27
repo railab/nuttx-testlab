@@ -97,10 +97,6 @@ def test_can_sockopt_no_alias() -> None:
 
 
 @pytest.mark.dep_config("CONFIG_NET_RECV_BUFSIZE")
-@pytest.mark.xfail(
-    strict=True,
-    reason="can_setsockopt() handles SO_RCVBUF only at level SOL_CAN_RAW",
-)
 def test_can_so_rcvbuf() -> None:
     """SO_RCVBUF at level SOL_SOCKET can be set and read on a CAN socket.
 

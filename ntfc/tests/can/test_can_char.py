@@ -156,10 +156,6 @@ def test_can_char_fionread() -> None:
     assert ret.startswith("canopt: PASS cfionread"), ret
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CANIOC_IFLUSH empties the FIFO but leaves rx_sem posted",
-)
 def test_can_char_iflush() -> None:
     """CANIOC_IFLUSH drops queued messages; the next read says EAGAIN."""
     canopt_start(0, f"ciflush {CAN_CHARDEV}")
