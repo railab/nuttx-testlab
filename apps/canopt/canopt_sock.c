@@ -54,6 +54,9 @@
 #define CANOPT_POLL_RX2_ID 0x5a2
 #define CANOPT_RCVBUF      2048
 #define CANOPT_RCVTIMEO_MS 300
+#define CANOPT_SNDBUF_ID   0x5b0
+#define CANOPT_SNDBUF      (2 * CAN_MTU)
+#define CANOPT_MAX_CONNS   64
 
 #ifndef CONFIG_NET_CAN_RAW_FILTER_MAX
 #  define CONFIG_NET_CAN_RAW_FILTER_MAX 1
@@ -1050,9 +1053,31 @@ static int canopt_ts(FAR struct canopt_args_s *args)
  * Description:
  *   Local loopback semantics: a frame sent on socket A reaches socket B on
  *   the same node only with CAN_RAW_LOOPBACK, and A itself only with
- *   CAN_RAW_LOOPBACK and CAN_RAW_RECV_OWN_MSGS.
+ *   CAN_RAW_LOOPBACK and CAN_RAW_RECV_OWN_MSGS.  The copy A receives is
+ *   flagged MSG_CONFIRM, the copy B receives is not.
  *
  ****************************************************************************/
+
+static bool canopt_recv_loop(int sd, FAR bool *confirm)
+{
+  struct canfd_frame frame;
+  struct msghdr msg;
+  struct iovec iov;
+
+  iov.iov_base = &frame;
+  iov.iov_len  = sizeof(frame);
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_iov    = &iov;
+  msg.msg_iovlen = 1;
+
+  if (recvmsg(sd, &msg, 0) != CAN_MTU || frame.can_id != CANOPT_LOOP_ID)
+    {
+      return false;
+    }
+
+  *confirm = (msg.msg_flags & MSG_CONFIRM) != 0;
+  return true;
+}
 
 static int canopt_loopback(FAR struct canopt_args_s *args)
 {
@@ -1061,8 +1086,11 @@ static int canopt_loopback(FAR struct canopt_args_s *args)
   struct pollfd pfd[2];
   int expect_peer;
   int expect_own;
+  int peer_confirm = 0;
+  int own_confirm = 0;
   int peer = 0;
   int own = 0;
+  bool confirm;
   bool pass;
   int sa;
   int sb;
@@ -1103,16 +1131,17 @@ static int canopt_loopback(FAR struct canopt_args_s *args)
       for (i = 0; i < 2; i++)
         {
           if ((pfd[i].revents & POLLIN) != 0 &&
-              read(pfd[i].fd, &frame, sizeof(frame)) == CAN_MTU &&
-              frame.can_id == CANOPT_LOOP_ID)
+              canopt_recv_loop(pfd[i].fd, &confirm))
             {
               if (i == 0)
                 {
                   own++;
+                  own_confirm += confirm ? 1 : 0;
                 }
               else
                 {
                   peer++;
+                  peer_confirm += confirm ? 1 : 0;
                 }
             }
         }
@@ -1128,9 +1157,11 @@ static int canopt_loopback(FAR struct canopt_args_s *args)
 
   expect_peer = args->loopback;
   expect_own  = args->loopback && args->recv_own;
-  pass = peer == expect_peer && own == expect_own;
-  printf("canopt: %s loopback peer=%d own=%d\n", pass ? "PASS" : "FAIL",
-         peer, own);
+  pass = peer == expect_peer && own == expect_own &&
+         own_confirm == own && peer_confirm == 0;
+  printf("canopt: %s loopback peer=%d own=%d own_confirm=%d "
+         "peer_confirm=%d\n", pass ? "PASS" : "FAIL", peer, own,
+         own_confirm, peer_confirm);
   return pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
@@ -1291,6 +1322,167 @@ static int canopt_hup(FAR struct canopt_args_s *args)
 }
 
 /****************************************************************************
+ * Name: canopt_name
+ *
+ * Description:
+ *   getsockname() on an unbound socket reports AF_CAN with interface index
+ *   0, on a bound socket the index of the bound interface.
+ *
+ ****************************************************************************/
+
+static bool canopt_getname(int sd, FAR int *ifindex)
+{
+  struct sockaddr_can addr;
+  socklen_t len = sizeof(addr);
+
+  memset(&addr, 0xff, sizeof(addr));
+  if (getsockname(sd, (FAR struct sockaddr *)&addr, &len) < 0 ||
+      len != sizeof(addr) || addr.can_family != AF_CAN)
+    {
+      return false;
+    }
+
+  *ifindex = addr.can_ifindex;
+  return true;
+}
+
+static int canopt_name(FAR struct canopt_args_s *args)
+{
+  int unbound = -1;
+  int bound = -1;
+  int ifindex;
+  bool pass;
+  int sd;
+
+  ifindex = if_nametoindex(args->endpoint);
+  sd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+  if (ifindex == 0 || sd < 0)
+    {
+      return canopt_fail(args->cmd, "open");
+    }
+
+  if (!canopt_getname(sd, &unbound))
+    {
+      return canopt_fail(args->cmd, "getsockname-unbound");
+    }
+
+  close(sd);
+
+  sd = canopt_sock_open(args->endpoint, false);
+  if (sd < 0)
+    {
+      return canopt_fail(args->cmd, "open-bound");
+    }
+
+  if (!canopt_getname(sd, &bound))
+    {
+      return canopt_fail(args->cmd, "getsockname-bound");
+    }
+
+  close(sd);
+
+  pass = unbound == 0 && bound == ifindex;
+  printf("canopt: %s name unbound=%d bound=%d ifindex=%d\n",
+         pass ? "PASS" : "FAIL", unbound, bound, ifindex);
+  return pass ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/****************************************************************************
+ * Name: canopt_conns
+ *
+ * Description:
+ *   Open CAN_RAW sockets until socket() fails and report how many could be
+ *   opened, which is the size of the CAN connection pool when dynamic
+ *   connection allocation is disabled.
+ *
+ ****************************************************************************/
+
+static int canopt_conns(FAR struct canopt_args_s *args)
+{
+  int sds[CANOPT_MAX_CONNS];
+  int err = 0;
+  int n;
+  int i;
+
+  for (n = 0; n < CANOPT_MAX_CONNS; n++)
+    {
+      sds[n] = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+      if (sds[n] < 0)
+        {
+          err = errno;
+          break;
+        }
+    }
+
+  for (i = 0; i < n; i++)
+    {
+      close(sds[i]);
+    }
+
+  printf("canopt: %s conns n=%d errno=%d\n",
+         n > 0 && n < CANOPT_MAX_CONNS ? "PASS" : "FAIL", n, err);
+  return n > 0 && n < CANOPT_MAX_CONNS ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/****************************************************************************
+ * Name: canopt_sndbuf
+ *
+ * Description:
+ *   Blocking writes through a send buffer limited with SO_SNDBUF to a
+ *   couple of frames: every write must complete while the driver drains
+ *   the buffer.  SO_SNDTIMEO turns a sender that is never woken up into a
+ *   failure instead of a hang.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_NET_CAN_WRITE_BUFFERS) && CONFIG_NET_SEND_BUFSIZE > 0
+static int canopt_sndbuf(FAR struct canopt_args_s *args)
+{
+  struct canfd_frame frame;
+  struct timeval tv;
+  int sent = 0;
+  int i;
+  int sd;
+
+  sd = canopt_sock_open(args->endpoint, false);
+  if (sd < 0)
+    {
+      return canopt_fail(args->cmd, "open");
+    }
+
+  tv.tv_sec  = args->timeout;
+  tv.tv_usec = 0;
+  if (canopt_setint(sd, SOL_SOCKET, SO_SNDBUF, CANOPT_SNDBUF) < 0 ||
+      setsockopt(sd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
+    {
+      return canopt_fail(args->cmd, "set");
+    }
+
+  for (i = 0; i < args->count; i++)
+    {
+      memset(&frame, 0, sizeof(frame));
+      frame.can_id = CANOPT_SNDBUF_ID;
+      frame.len    = 8;
+      canopt_fill(frame.data, frame.can_id, frame.len);
+      frame.data[0] = (uint8_t)i;
+      frame.data[1] = (uint8_t)(i >> 8);
+      if (write(sd, &frame, CAN_MTU) != CAN_MTU)
+        {
+          break;
+        }
+
+      sent++;
+    }
+
+  close(sd);
+  printf("canopt: %s sndbuf sent=%d count=%d errno=%d\n",
+         sent == args->count ? "PASS" : "FAIL", sent, args->count,
+         sent == args->count ? 0 : errno);
+  return sent == args->count ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+#endif
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -1349,6 +1541,20 @@ int canopt_sock_main(FAR struct canopt_args_s *args)
     {
       return canopt_hup(args);
     }
+  else if (strcmp(cmd, "name") == 0)
+    {
+      return canopt_name(args);
+    }
+  else if (strcmp(cmd, "conns") == 0)
+    {
+      return canopt_conns(args);
+    }
+#if defined(CONFIG_NET_CAN_WRITE_BUFFERS) && CONFIG_NET_SEND_BUFSIZE > 0
+  else if (strcmp(cmd, "sndbuf") == 0)
+    {
+      return canopt_sndbuf(args);
+    }
+#endif
 
   printf("canopt: FAIL %s unknown SocketCAN check\n", cmd);
   return EXIT_FAILURE;

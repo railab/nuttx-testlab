@@ -30,6 +30,7 @@ from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CAN_EFF_FLAG,
     CAN_EFF_MASK,
     CAN_RTR_FLAG,
+    CANFD_MTU,
     CLASSIC_FRAMES,
     MARKER_ID,
     VERDICT_RE,
@@ -45,6 +46,7 @@ from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     host_send,
     host_socket,
     kv_value,
+    unpack,
     verdict_of,
 )
 
@@ -55,6 +57,7 @@ pytestmark = [
 ]
 
 EXACT = CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG
+SNDBUF_ID = 0x5B0
 
 # (canopt filter options, filter list) per CAN_RAW_FILTER case
 
@@ -153,33 +156,15 @@ def test_can_raw_filter(case: str) -> None:
 
 @pytest.mark.parametrize(
     "loopback,recv_own",
-    [
-        (0, 0),
-        pytest.param(
-            1,
-            0,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="NuttX SocketCAN has no local loopback",
-            ),
-        ),
-        pytest.param(
-            1,
-            1,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="NuttX SocketCAN has no local loopback",
-            ),
-        ),
-    ],
+    [(0, 0), (1, 0), (1, 1)],
     ids=["off", "on", "recv-own"],
 )
 def test_can_loopback(loopback: int, recv_own: int) -> None:
     """CAN_RAW_LOOPBACK / CAN_RAW_RECV_OWN_MSGS local delivery.
 
     Socket A sends one frame; another socket B on the same node receives
-    it only with loopback on, A itself only with recv-own-msgs too. The
-    frame always reaches the bus.
+    it only with loopback on, A itself only with recv-own-msgs too, and
+    only A's copy carries MSG_CONFIRM. The frame always reaches the bus.
     """
     sock = host_socket()
     try:
@@ -256,8 +241,22 @@ def _can_stats() -> Tuple[int, int]:
 
 
 @pytest.mark.dep_config("CONFIG_NET_STATISTICS")
-def test_can_stats() -> None:
-    """``/proc/net/stat`` CAN counters count received and sent frames."""
+def test_can_stats(request: pytest.FixtureRequest) -> None:
+    """``/proc/net/stat`` CAN counters count received and sent frames.
+
+    ``CAN_RAW_LOOPBACK`` is on by default, so every frame the node sends
+    is also looped back to its local sockets and counted as received.
+
+    :param request: pytest request, to mark the buffered send case
+    """
+    if kv_value(0, "CONFIG_NET_CAN_WRITE_BUFFERS"):
+        request.applymarker(
+            pytest.mark.xfail(
+                strict=True,
+                reason="net/can: buffered send does not count sent frames",
+            )
+        )
+
     count = 5
     recv0, sent0 = _can_stats()
     host_send([Frame(0x5C0, 8)] * count, gap_s=0.005)
@@ -266,4 +265,56 @@ def test_can_stats() -> None:
     recv1, sent1 = _can_stats()
 
     tx = sum(int(n) for n in re.findall(r"=(\d+)", ret))
-    assert (recv1 - recv0, sent1 - sent0) == (count, tx)
+    assert (recv1 - recv0, sent1 - sent0) == (count + tx, tx)
+
+
+def test_can_getsockname() -> None:
+    """``getsockname()`` reports AF_CAN and the bound interface index.
+
+    An unbound socket reports interface index 0.
+    """
+    ret = canopt_run(0, "name can0")
+    assert ret.startswith("canopt: PASS name"), ret
+
+
+def test_can_conn_pool() -> None:
+    """CONFIG_NET_CAN_PREALLOC_CONNS sets the CAN connection pool size.
+
+    With dynamic connection allocation disabled, exactly the preallocated
+    number of CAN sockets can be open at the same time.
+    """
+    if kv_value(0, "CONFIG_NET_CAN_ALLOC_CONNS"):
+        pytest.skip("dynamic CAN connection allocation is enabled")
+
+    ret = canopt_run(0, "conns can0")
+    assert ret.startswith("canopt: PASS conns"), ret
+    count = int(re.search(r"n=(\d+)", ret).group(1))
+    assert count == int(kv_value(0, "CONFIG_NET_CAN_PREALLOC_CONNS")), ret
+
+
+@pytest.mark.dep_config("CONFIG_NET_CAN_WRITE_BUFFERS")
+def test_can_sndbuf_block() -> None:
+    """Blocking writes complete through a two-frame SO_SNDBUF.
+
+    The node writes ``count`` frames with a send buffer limited to two
+    frames, so most writes wait for the driver to drain the buffer. Every
+    write must be woken up; the host receives all frames in order.
+    """
+    count = 200
+    sock = host_socket(timeout=10.0)
+    try:
+        ret = canopt_run(0, f"sndbuf can0 -n {count} -t 5", timeout=60)
+        seqs = []
+        for _ in range(count):
+            try:
+                raw = sock.recv(CANFD_MTU)
+            except OSError:
+                break
+            can_id, length, _flags, data = unpack(raw)
+            if can_id == SNDBUF_ID and length == 8:
+                seqs.append(data[0] | data[1] << 8)
+    finally:
+        sock.close()
+
+    assert ret.startswith("canopt: PASS sndbuf"), ret
+    assert seqs == list(range(count))

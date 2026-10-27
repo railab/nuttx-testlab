@@ -16,6 +16,10 @@ sessions:
     confpath: ntfc/configs/sim/can-bus/config.yaml
     testpath: ntfc/tests/can
     resources: [can0]
+  - name: "sim-can-bus-buffered"
+    confpath: ntfc/configs/sim/can-bus-buffered/config.yaml
+    testpath: ntfc/tests/can
+    resources: [can0]
   - name: "sim-can-char"
     confpath: ntfc/configs/sim/can-char/config.yaml
     testpath: ntfc/tests/can

@@ -589,8 +589,10 @@ frame sizes, duplex, overload, backpressure. Same sessions as the
 Source: ``ntfc/tests/can/test_can_bus.py``. Two nodes and the host
 share one SocketCAN bus, vcan ``can0`` (see :doc:`architecture`).
 Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus`` (SocketCAN,
-``can0``), ``sim-can-char`` and ``qemu-intel64-can-char`` (CAN
-character driver, ``/dev/can0``). Nodes and the host send 1 ms apart
+``can0``), ``sim-can-bus-buffered`` (SocketCAN with write buffers,
+``NET_CAN_WRITE_BUFFERS`` and a 1024 byte ``NET_SEND_BUFSIZE``),
+``sim-can-char`` and ``qemu-intel64-can-char`` (CAN character driver,
+``/dev/can0``). Nodes and the host send 1 ms apart
 unless stated otherwise.
 
 .. list-table::
@@ -626,7 +628,8 @@ Source: ``ntfc/tests/can/test_can_sockopt.py``. Node 0 runs one
 ``canopt`` check (``apps/canopt``) on ``can0``; the host plays the bus
 side. The frame tables (classic: SFF, EFF, RTR, DLC 0..8; CAN FD: all
 lengths 0..64 with BRS/ESI) are in ``ntfc/tests/_canopt_common.py``.
-Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
+Sessions: ``sim-can-bus``, ``sim-can-bus-buffered``,
+``qemu-intel64-can-bus``.
 
 .. list-table::
    :header-rows: 1
@@ -660,7 +663,8 @@ Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
      - Variants ``off``, ``on``, ``recv-own``: a frame sent on socket A
        reaches socket B on the same node only with
        ``CAN_RAW_LOOPBACK``, A itself only with
-       ``CAN_RAW_RECV_OWN_MSGS`` too; the host always receives it.
+       ``CAN_RAW_RECV_OWN_MSGS`` too; A's copy carries ``MSG_CONFIRM``,
+       B's does not; the host always receives it.
    * - ``test_can_nonblock_poll``
      - ``EAGAIN`` on an empty socket (``O_NONBLOCK``, ``MSG_DONTWAIT``),
        ``poll()`` idle timeout and ``POLLOUT``, a nonblocking write the
@@ -669,8 +673,22 @@ Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
    * - ``test_can_poll_hup``
      - ``poll()`` returns ``POLLERR`` on ``ifdown can0``.
    * - ``test_can_stats``
-     - ``/proc/net/stat`` CAN ``Received`` grows by the 5 host frames,
-       ``Sent`` by the frames ``canopt tx`` sent.
+     - ``/proc/net/stat`` CAN ``Sent`` grows by the frames ``canopt tx``
+       sent, ``Received`` by the 5 host frames plus the sent frames,
+       which ``CAN_RAW_LOOPBACK`` (on by default) loops back locally.
+       Expected failure with ``NET_CAN_WRITE_BUFFERS``: the buffered
+       send path does not count sent frames.
+   * - ``test_can_getsockname``
+     - ``getsockname()`` returns ``AF_CAN`` with interface index 0 on an
+       unbound socket and the index of ``can0`` on a bound one.
+   * - ``test_can_conn_pool``
+     - With ``NET_CAN_ALLOC_CONNS`` 0, exactly
+       ``NET_CAN_PREALLOC_CONNS`` CAN sockets can be open at the same
+       time (skipped with dynamic connection allocation).
+   * - ``test_can_sndbuf_block``
+     - ``NET_CAN_WRITE_BUFFERS`` only: 200 blocking writes through a
+       two-frame ``SO_SNDBUF`` with a 5 s ``SO_SNDTIMEO`` all complete,
+       and the host receives the 200 frames in order.
 
 ``can`` frame types
 -------------------
