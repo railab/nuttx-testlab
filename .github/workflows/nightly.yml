@@ -15,3 +15,9 @@ jobs:
       contents: read
       packages: read
     uses: ./.github/workflows/tests.yml
+
+  hw-build:
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/hw-build.yml

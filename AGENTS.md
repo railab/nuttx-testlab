@@ -116,6 +116,7 @@ Signed-off-by: AuthorName <Valid@EmailAddress>
 - Board devices and their `hwtl` arguments live in
   `ntfc/tests/hw/_hw_rig.py`.
 - Use only devices that the upstream board code registers.
+- CI only builds the `hw-*` defconfigs (`tools/ci/build-hw.sh`).
 
 ## Commands
 
@@ -129,5 +130,6 @@ tools/docker/run.sh ci-sim                             # same, in Docker
 pip install -r Documentation/requirements.txt          # docs
 sphinx-build -W -b html Documentation /tmp/testlab-docs # build docs
 python tools/ci/check-docs.py                          # check docs are current
+tools/ci/build-hw.sh                                   # build hw-* defconfigs
 tools/hw/run.sh nucleo-g071rb nucleo-g071rb-hw-rig1    # one HW session
 ```

@@ -869,7 +869,8 @@ the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 and host clients), ``linuxptp`` (``ptp4l``, ``pmc``), ``kconfiglib``, ``pymodbus``, ``pyserial``,
 ``python-can`` and ``canopen`` (pip), and a Linux-kernel
 ``scripts/config`` fetched as ``kconfig-tweak``; the ARM64 and RISC-V
-bare-metal cross-toolchains are downloaded and unpacked under
+bare-metal cross-toolchains and the ARM (``arm-none-eabi``, used by the
+hardware build check) toolchain are downloaded and unpacked under
 ``/opt``. RISC-V has two: the xPack ``riscv-none-elf`` (as in upstream
 CI, the default) and riscv-collab's ``riscv32-unknown-elf`` (built with
 ``--enable-tls``). ``rv-virt-python`` uses the latter, as CPython keeps
@@ -925,11 +926,15 @@ CI workflows
   ``apps/*.h`` and ``apps/*CMakeLists.txt`` files, ``shellcheck`` on
   tracked ``*.sh`` files, ``tox -c ntfc/tox.ini``, a Sphinx ``-W``
   docs build, and ``tools/ci/check-docs.py``; job ``changes`` detects
-  whether ``tools/docker/**`` changed (``pull_request``: diff against
-  the PR base SHA; ``push``: diff against ``github.event.before``,
-  treating an all-zero ``before`` -- a branch's first push -- as a
-  change); job ``tests`` calls the reusable ``tests.yml`` with
-  ``build_image`` set to that result.
+  whether ``tools/docker/**`` changed and whether the hardware build
+  inputs (``boards/``, ``apps/``, ``tools/docker/``,
+  ``tools/ci/build-hw.sh``, ``hw-build.yml``) changed (``pull_request``:
+  diff against the PR base SHA; ``push``: diff against
+  ``github.event.before``, treating an all-zero ``before`` -- a branch's
+  first push -- as a change); job ``tests`` calls the reusable
+  ``tests.yml`` with ``build_image`` set to the docker result; job
+  ``hw-build`` calls ``hw-build.yml`` only when the hardware inputs
+  changed.
 - ``tests.yml`` (reusable, ``workflow_call``/``workflow_dispatch``):
   inputs ``targets`` (``all`` or one of ``sim``, ``qemu-armv8a``,
   ``rv-virt``, ``qemu-intel64``), ``session``, ``testpath``, ``image``,
@@ -948,7 +953,13 @@ CI workflows
   artifact ``result-<target>``.
 - ``nightly.yml``: ``schedule`` (``0 1 * * *``, i.e. 01:00 UTC
   daily) and manual ``workflow_dispatch``; calls ``tests.yml`` with no
-  inputs (so all targets, upstream ``master``).
+  inputs (so all targets, upstream ``master``) and ``hw-build.yml``.
+- ``hw-build.yml`` (reusable, also called by ``pr.yml``): in the image
+  (pulled, or built when ``build_image`` is set or the pulled image has
+  no ``arm-none-eabi-gcc``), ``tools/ci/build-hw.sh`` builds every
+  ``boards/*/*/*/configs/hw-*`` defconfig and fails one whose options
+  are not all in the resulting ``.config`` (kconfig only warns about
+  unknown symbols and unmet dependencies); nothing runs on hardware.
 - ``docker-image.yml``: on ``push`` to ``master`` when
   ``tools/docker/**`` changes, or manual ``workflow_dispatch``; builds
   ``tools/docker`` and pushes it to

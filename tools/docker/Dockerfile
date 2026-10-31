@@ -7,11 +7,13 @@
 # DAWN_* env, Dawn install scripts, clang-format/llvm.sh, cppcheck).
 # Cross toolchain recipes (versions/URLs) are taken from the upstream
 # Apache NuttX CI image build, apache/nuttx tools/ci/docker/linux/Dockerfile
-# (nuttx-toolchain-arm64 / nuttx-toolchain-riscv stages).
+# (nuttx-toolchain-arm / nuttx-toolchain-arm64 / nuttx-toolchain-riscv
+# stages).
 
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG ARM_TC=13.2.Rel1
 ARG ARM64_TC=13.2.Rel1
 ARG RISCV_TC=14.3.0-1
 ARG RISCV_TLS_TC=2026.08.27
@@ -55,6 +57,13 @@ RUN apt-get update \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# ARM (Cortex-M) toolchain for the build-only hardware defconfigs:
+# version/URL per apache/nuttx tools/ci/docker/linux/Dockerfile
+# (nuttx-toolchain-arm stage).
+RUN curl -fsSL "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_TC}/binrel/arm-gnu-toolchain-${ARM_TC}-x86_64-arm-none-eabi.tar.xz" \
+      | tar -xJ -C /opt \
+    && ln -s /opt/arm-gnu-toolchain-${ARM_TC}-x86_64-arm-none-eabi /opt/arm-none-eabi
+
 # ARM64 toolchain: version/URL per apache/nuttx
 # tools/ci/docker/linux/Dockerfile (nuttx-toolchain-arm64 stage).
 RUN curl -fsSL "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM64_TC}/binrel/arm-gnu-toolchain-${ARM64_TC}-x86_64-aarch64-none-elf.tar.xz" \
@@ -96,7 +105,7 @@ RUN (curl -fsSL --retry 3 "https://raw.githubusercontent.com/torvalds/linux/${LI
       -o /usr/local/bin/kconfig-tweak) \
     && chmod +x /usr/local/bin/kconfig-tweak
 
-ENV PATH="/opt/aarch64-none-elf/bin:/opt/riscv-none-elf/bin:/opt/riscv32-elf/bin:${PATH}"
+ENV PATH="/opt/arm-none-eabi/bin:/opt/aarch64-none-elf/bin:/opt/riscv-none-elf/bin:/opt/riscv32-elf/bin:${PATH}"
 ENV CC=gcc-14 CXX=g++-14
 
 RUN pip install --break-system-packages --no-cache-dir kconfiglib pymodbus==3.15.0 \

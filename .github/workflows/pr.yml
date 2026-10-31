@@ -76,13 +76,14 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       docker: ${{ steps.filter.outputs.docker }}
+      hw: ${{ steps.filter.outputs.hw }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Detect tools/docker changes
+      - name: Detect tools/docker and hardware build changes
         id: filter
         shell: bash
         env:
@@ -101,20 +102,43 @@ jobs:
               # silently keeping a stale :latest).
               if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
                 echo "docker=true" >> "$GITHUB_OUTPUT"
+                echo "hw=true" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
               range="$BEFORE_SHA..$HEAD_SHA"
               ;;
             *)
               echo "docker=false" >> "$GITHUB_OUTPUT"
+              echo "hw=false" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
-          if git diff --name-only "$range" | grep -q '^tools/docker/'; then
+          files=$(git diff --name-only "$range")
+          if echo "$files" | grep -q '^tools/docker/'; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
           fi
+          # Hardware defconfigs, the apps they build, the image and the
+          # build script/workflow
+          if echo "$files" | grep -q \
+               -e '^boards/' -e '^apps/' -e '^tools/docker/' \
+               -e '^tools/ci/build-hw\.sh$' \
+               -e '^\.github/workflows/hw-build\.yml$'; then
+            echo "hw=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hw=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  hw-build:
+    needs: [lint, changes]
+    if: needs.changes.outputs.hw == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/hw-build.yml
+    with:
+      build_image: ${{ needs.changes.outputs.docker == 'true' }}
 
   tests:
     needs: [lint, changes]
