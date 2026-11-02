@@ -9,7 +9,7 @@ targets and driven with [NTFC](https://github.com/apache/nuttx-ntfc).
 Target-side test apps (C, NuttX style) live in `apps/`, NTFC tests
 (Python) in `ntfc/`.
 
-Architecture and the exact list of test cases: [`Documentation/`](Documentation/).
+Architecture and the exact list of test cases: https://railab.github.io/nuttx-testlab/ (built from [`Documentation/`](Documentation/) on every push to master).
 
 ## Why
 
