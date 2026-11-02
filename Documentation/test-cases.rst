@@ -1256,6 +1256,13 @@ file on 9P).
        ``readlink`` returns it, ``open`` and ``stat`` follow it,
        ``symlink`` onto an existing name fails with ``EEXIST``,
        ``unlink`` removes only the link.
+   * - ``test_v9fs_open_nofollow``
+     - ``open(O_NOFOLLOW)`` of a symbolic link fails with ``ELOOP`` 20
+       times; the target still opens and reads back, and the share can
+       be unmounted and mounted again (flat MMIO builds).
+   * - ``test_v9fs_umount_inside``
+     - ``umount`` of a directory inside the share fails with ``EINVAL``
+       and the share stays mounted and usable.
    * - ``test_v9fs_errno``
      - Each failing call returns the POSIX errno and leaves the host
        directory unchanged: ``ENOENT`` (open, stat, unlink, rename of a
@@ -1277,6 +1284,11 @@ file on 9P).
        and read back after mounting again.
    * - ``test_v9fs_getpath``
      - ``fcntl(F_GETPATH)`` of an open file returns its full path.
+   * - ``test_v9fs_elf_bad_section``
+     - A copy of ``elftl`` with a section header ``sh_addralign`` of 3
+       (``align``) or an ``sh_size`` beyond the file (``size``) is
+       refused by ``posix_spawn()`` with ``ENOEXEC`` or ``EINVAL``, and
+       the intact program still runs afterwards.
    * - ``test_v9fs_elf_args``
      - ``/mnt/v9fs/bin/elftl args one two three`` prints
        ``elftl: PASS argc=5 args=one,two,three``.
@@ -1295,13 +1307,6 @@ file on 9P).
    * - ``test_v9fs_elf_stack_priority``
      - ``elftl stack``: stack size within 256 bytes below
        ``CONFIG_TESTLAB_ELFTL_STACKSIZE``, priority
-   * - ``test_v9fs_open_nofollow``
-     - ``open(O_NOFOLLOW)`` of a symbolic link fails with ``ELOOP`` 20
-       times; the target still opens and reads back, and the share can
-       be unmounted and mounted again (flat MMIO builds).
-   * - ``test_v9fs_umount_inside``
-     - ``umount`` of a directory inside the share fails with ``EINVAL``
-       and the share stays mounted and usable.
        ``CONFIG_TESTLAB_ELFTL_PRIORITY``.
    * - ``test_v9fs_elf_symbols``
      - ``elfsym`` (calls ``getpid``, ``gettid``, ``putchar``) loads and
@@ -1319,50 +1324,6 @@ file on 9P).
      - Mounting an unknown tag fails with ``ENOENT``; the share then
        mounts and 100000 bytes written by the node match on the host.
 
-``router`` module
------------------
-
-Sources: ``ntfc/tests/router/test_router_*.py``, helpers
-   * - ``test_v9fs_elf_bad_section``
-     - A copy of ``elftl`` with a section header ``sh_addralign`` of 3
-       (``align``) or an ``sh_size`` beyond the file (``size``) is
-       refused by ``posix_spawn()`` with ``ENOEXEC`` or ``EINVAL``, and
-       the intact program still runs afterwards.
-``ntfc/tests/_router_common.py``. One node forwards between host A and
-host B (see :doc:`architecture`); ``router_ifs`` addresses both node
-interfaces once per module. Sessions: ``qemu-armv8a-router``,
-``rv-virt-router``, ``qemu-intel64-router`` (all tests);
-``qemu-armv8a-router-hp2``, ``rv-virt-router-hp2``,
-``qemu-intel64-router-hp2`` (``test_router_duplex`` only, two
-high-priority work queue threads).
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Test
-     - PASS criterion
-   * - ``test_router_port_up``
-     - Each side: the NIC with the side's MAC is ``RUNNING`` and its host
-       pings the node's IPv4 and IPv6 address.
-   * - ``test_router_ping``
-     - IPv4 and IPv6: A pings B and B pings A.
-   * - ``test_router_ttl``
-     - IPv4 and IPv6: replies from B arrive with TTL 63; a request with
-       TTL 1 gets ``Time exceeded`` from the node.
-   * - ``test_router_reject``
-     - ``iptables -A FORWARD -d 10.52.0.1 -j REJECT``: A gets
-       ``Destination Net Unreachable`` from the node; A reaches B again
-       after ``-D``.
-   * - ``test_router_tcp``
-     - IPv4 and IPv6, A to B and B to A: 256 KiB echoed intact.
-   * - ``test_router_udp``
-     - IPv4 and IPv6, A to B and B to A: 200 datagrams of 1024 bytes
-       echoed intact.
-   * - ``test_router_iperf``
-     - A to B and B to A: 10 s of iperf2 TCP at 5 Mbit/s or more.
-   * - ``test_router_port_flap``
-     - The B side TAP is down for 3 s during an iperf run: A and B ping
 ``fs`` VFS, tmpfs and FAT
 -------------------------
 
@@ -1486,6 +1447,45 @@ address, 127-byte frames) and ``sim-pktradio``
      - ``ping6 -c 2 -s`` 16, 300 and 1200 to the node's own address:
        2 replies, at least ceil(size / 127) frames per packet.
 
+``router`` module
+-----------------
+
+Sources: ``ntfc/tests/router/test_router_*.py``, helpers
+``ntfc/tests/_router_common.py``. One node forwards between host A and
+host B (see :doc:`architecture`); ``router_ifs`` addresses both node
+interfaces once per module. Sessions: ``qemu-armv8a-router``,
+``rv-virt-router``, ``qemu-intel64-router`` (all tests);
+``qemu-armv8a-router-hp2``, ``rv-virt-router-hp2``,
+``qemu-intel64-router-hp2`` (``test_router_duplex`` only, two
+high-priority work queue threads).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_router_port_up``
+     - Each side: the NIC with the side's MAC is ``RUNNING`` and its host
+       pings the node's IPv4 and IPv6 address.
+   * - ``test_router_ping``
+     - IPv4 and IPv6: A pings B and B pings A.
+   * - ``test_router_ttl``
+     - IPv4 and IPv6: replies from B arrive with TTL 63; a request with
+       TTL 1 gets ``Time exceeded`` from the node.
+   * - ``test_router_reject``
+     - ``iptables -A FORWARD -d 10.52.0.1 -j REJECT``: A gets
+       ``Destination Net Unreachable`` from the node; A reaches B again
+       after ``-D``.
+   * - ``test_router_tcp``
+     - IPv4 and IPv6, A to B and B to A: 256 KiB echoed intact.
+   * - ``test_router_udp``
+     - IPv4 and IPv6, A to B and B to A: 200 datagrams of 1024 bytes
+       echoed intact.
+   * - ``test_router_iperf``
+     - A to B and B to A: 10 s of iperf2 TCP at 5 Mbit/s or more.
+   * - ``test_router_port_flap``
+     - The B side TAP is down for 3 s during an iperf run: A and B ping
        each other and echo TCP afterwards.
    * - ``test_nat_ping``
      - MASQUERADE on the B interface, host B without a route to A: A

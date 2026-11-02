@@ -388,10 +388,6 @@ X.509 and PEM parsing) is an Mbed TLS client/server::
   ``-n`` bytes (default 256) arrived or ``-t`` s (default 10) passed.
 - Verdict: ``sertl: PASS|FAIL dev=<dev> rx=<n>``; exit 0 on PASS.
 
-NTFC configs
-------------
-
-Each target has one NTFC config per scenario at
 ``apps/ptptl``
 ~~~~~~~~~~~~~~
 
@@ -416,6 +412,10 @@ the PTP daemon in a task (``ptpd_start()`` blocks in its caller)::
   ``-w`` s (default 30); master PASS when Sync and Announce went out in
   the last 5 s or a better master was selected.
 
+NTFC configs
+------------
+
+Each target has one NTFC config per scenario at
 ``ntfc/configs/<target>/<scenario>/config.yaml`` (``smoke`` below,
 ``ip-pair`` in `Host network (ip-pair)`_), keyed under ``config:``
 (``cwd: './external'``, ``build_dir: './build/<target>/smoke'``) and
@@ -510,14 +510,14 @@ Host network (ip-pair)
 (``10.42.0.1/24`` and ``fc00::1/112``, the host side) and TAPs
 ``tl-tap0``/``tl-tap1``. Node IPs come from ``CONFIG_NETINIT_IPADDR``
 and ``CONFIG_NETINIT_IPv6ADDR_8`` (gateways ``10.42.0.1``, ``fc00::1``).
-
-.. list-table::
-   :header-rows: 1
-
 A veth pair ``tl-ptp0``/``tl-ptp1`` (``52:54:00:2a:00:02``,
 ``10.42.1.2/24``, ``arp_ignore 1``, no IPv6) gives host daemons that need
 software TX timestamps (``ptp4l``) a bridge port; the bridge device
 itself reports none.
+
+.. list-table::
+   :header-rows: 1
+
    * - Node
      - IP
      - IPv6
@@ -683,6 +683,23 @@ QEMU in that directory for kernel builds, so the paths in its
 ``fstl`` and ``elftl`` load from it. ``PATH`` is
 ``/system/bin:/mnt/v9fs/bin``; ``TLS_LOG2_MAXSTACK=15`` allows the
 24 KiB ``elftl`` stack.
+
+6LoWPAN loopback (sixlowpan, pktradio)
+--------------------------------------
+
+Defconfigs ``boards/sim/sim/sim/configs/sixlowpan`` and ``pktradio``
+(from upstream ``sim:sixlowpan`` and ``sim:pktradio``): IPv6 only,
+``NET_6LOWPAN`` with HC06, one loopback radio registered as ``wpan0``
+and brought up by ``netinit`` (``NETINIT_NOMAC``). ``sixlowpan`` uses
+``IEEE802154_LOOPBACK`` (``WIRELESS_IEEE802154``, 16-bit short address
+``cd:ab``, 127-byte frames); ``pktradio`` uses ``PKTRADIO_LOOPBACK``
+(``WIRELESS_PKTRADIO``, 1-byte address, frames of ``IOB_BUFSIZE`` =
+128). Both add ``nettl`` with a 2048-byte buffer, ``ping6``,
+``NETDEV_STATISTICS`` and ``NET_STATISTICS`` (frame and packet
+counters in ``/proc/net``), ``IOB_NBUFFERS=96`` for 1280-byte
+datagrams and ``SIM_WALLTIME_SIGNAL``. No host network is involved:
+the frames loop back inside the node. Sessions ``sim-sixlowpan`` and
+``sim-pktradio`` run ``ntfc/tests/sixlowpan``.
 
 Routed networks (router)
 ------------------------

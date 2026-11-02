@@ -36,3 +36,9 @@ sessions:
     confpath: ntfc/configs/sim/tls/config.yaml
     testpath: ntfc/tests/tls
     resources: [tl-br0]
+  - name: "sim-sixlowpan"
+    confpath: ntfc/configs/sim/sixlowpan/config.yaml
+    testpath: ntfc/tests/sixlowpan
+  - name: "sim-pktradio"
+    confpath: ntfc/configs/sim/pktradio/config.yaml
+    testpath: ntfc/tests/sixlowpan
