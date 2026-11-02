@@ -1256,6 +1256,13 @@ file on 9P).
    * - ``test_v9fs_elf_stack_priority``
      - ``elftl stack``: stack size within 256 bytes below
        ``CONFIG_TESTLAB_ELFTL_STACKSIZE``, priority
+   * - ``test_v9fs_open_nofollow``
+     - ``open(O_NOFOLLOW)`` of a symbolic link fails with ``ELOOP`` 20
+       times; the target still opens and reads back, and the share can
+       be unmounted and mounted again (flat MMIO builds).
+   * - ``test_v9fs_umount_inside``
+     - ``umount`` of a directory inside the share fails with ``EINVAL``
+       and the share stays mounted and usable.
        ``CONFIG_TESTLAB_ELFTL_PRIORITY``.
    * - ``test_v9fs_elf_symbols``
      - ``elfsym`` (calls ``getpid``, ``gettid``, ``putchar``) loads and
@@ -1277,6 +1284,11 @@ file on 9P).
 -----------------
 
 Sources: ``ntfc/tests/router/test_router_*.py``, helpers
+   * - ``test_v9fs_elf_bad_section``
+     - A copy of ``elftl`` with a section header ``sh_addralign`` of 3
+       (``align``) or an ``sh_size`` beyond the file (``size``) is
+       refused by ``posix_spawn()`` with ``ENOEXEC`` or ``EINVAL``, and
+       the intact program still runs afterwards.
 ``ntfc/tests/_router_common.py``. One node forwards between host A and
 host B (see :doc:`architecture`); ``router_ifs`` addresses both node
 interfaces once per module. Sessions: ``qemu-armv8a-router``,
@@ -1312,6 +1324,129 @@ high-priority work queue threads).
      - A to B and B to A: 10 s of iperf2 TCP at 5 Mbit/s or more.
    * - ``test_router_port_flap``
      - The B side TAP is down for 3 s during an iperf run: A and B ping
+``fs`` VFS, tmpfs and FAT
+-------------------------
+
+Source: ``ntfc/tests/fs/test_fs_vfs.py``. Pipes and FIFOs of the pseudo
+file system, tmpfs mounted at ``/mnt/tmp`` and a FAT volume made with
+``mkrd`` and ``mkfatfs`` on a 1 MiB RAM disk and mounted at
+``/mnt/fat``; all checks run through ``fstl`` on the node. Expectations
+are quoted from POSIX; umount follows the Linux interface. Same
+sessions as the ``fs`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_vfs_pipe_espipe``
+     - ``lseek``, ``pread`` and ``pwrite`` on a pipe fail with
+       ``ESPIPE``.
+   * - ``test_vfs_fifo_espipe``
+     - ``lseek`` on a FIFO fails with ``ESPIPE``; the FIFO is removed.
+   * - ``test_tmpfs_open_dir_write``
+     - Opening a tmpfs directory with ``O_RDWR|O_DIRECTORY``,
+       ``O_WRONLY|O_DIRECTORY`` or plain ``O_WRONLY`` fails with
+       ``EISDIR``, with ``O_TMPFILE`` with ``EOPNOTSUPP``; the directory
+       is unchanged.
+   * - ``test_tmpfs_inode_numbers``
+     - Three files and a directory have nonzero, distinct ``st_ino``,
+       different from their parent's, and ``readdir`` reports the same
+       numbers in ``d_ino``.
+   * - ``test_tmpfs_pread_pwrite``
+     - ``fstl pio`` on tmpfs: ``pread``/``pwrite`` do not move the
+       offset, a write after a seek past the end extends the file, the
+       gap reads as zeros and the data before the old end is intact.
+   * - ``test_tmpfs_write_verify``
+     - 70000 pattern bytes written to tmpfs read back and ``stat``
+       reports the size.
+   * - ``test_tmpfs_truncate``
+     - ``ftruncate``, ``truncate`` and ``O_TRUNC`` on tmpfs shrink and
+       zero-extend.
+   * - ``test_tmpfs_extend_after_seek``
+     - ``ftruncate`` extending a tmpfs file whose offset was moved to
+       its start keeps the data, zero-fills the extension and leaves the
+       offset.
+   * - ``test_tmpfs_append``
+     - ``O_APPEND`` writes on tmpfs land at the end.
+   * - ``test_tmpfs_rmdir_deleted_full``
+     - 40 files created and unlinked in a tmpfs directory; ``rmdir`` of
+       it succeeds.
+   * - ``test_tmpfs_umount_inside``
+     - ``umount`` of a directory inside tmpfs fails with ``EINVAL``, the
+       mount stays.
+   * - ``test_fat_write_verify``
+     - 70000 pattern bytes written to FAT read back and ``stat``
+       reports the size.
+   * - ``test_fat_pread_pwrite``
+     - ``fstl pio`` on FAT (as for tmpfs), including ``fstat`` sizes of
+       the open file after it was extended.
+   * - ``test_fat_extend_after_seek``
+     - ``ftruncate`` extending a FAT file after a seek to its start
+       keeps the data and zero-fills only the extension.
+   * - ``test_fat_rmdir_deleted_full``
+     - As many files as fill the directory's cluster are created and
+       unlinked; ``rmdir`` of the directory succeeds.
+   * - ``test_fat_rmdir_deleted_partial``
+     - Three files created and unlinked; ``rmdir`` succeeds.
+   * - ``test_fat_umount_inside``
+     - ``umount`` of a directory inside the FAT volume fails with
+       ``EINVAL``, the mount stays.
+   * - ``test_fat_statfs``
+     - ``statfs`` of the FAT volume: a block size that is a multiple of
+       512, at most 2048 blocks, ``bfree`` not above ``blocks``.
+
+``sixlowpan`` module
+--------------------
+
+Source: ``ntfc/tests/sixlowpan/test_sixlowpan.py``. One sim node whose
+only network device is ``wpan0``, a 6LoWPAN loopback radio: every frame
+the adaptation layer sends is received by the same node, so traffic to
+the node's own link-local address passes IPHC compression (RFC 6282),
+fragmentation and reassembly (RFC 4944 5.3) in both directions.
+``nettl -6`` echoes the data; ``/proc/net/wpan0`` counts the frames
+(``RX Received``), the lower bound checked is ceil(size / 127) frames
+per packet and direction (IEEE 802.15.4 frames carry at most 127
+octets). NuttX compresses a packet only from
+``CONFIG_NET_6LOWPAN_COMPRESSION_THRESHOLD`` bytes of payload (63);
+smaller ones go with the uncompressed IPv6 dispatch. Sessions:
+``sim-sixlowpan`` (``CONFIG_IEEE802154_LOOPBACK``, 16-bit short
+address, 127-byte frames) and ``sim-pktradio``
+(``CONFIG_PKTRADIO_LOOPBACK``, 1-byte address, 128-byte frames).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_sixlowpan_link_local_address``
+     - ``ifconfig wpan0`` shows ``fe80::ff:fe00:XXXX`` with XXXX the
+       link address shown as ``HWaddr`` (RFC 6282 3.2.2, RFC 4944 6).
+   * - ``test_sixlowpan_udp_echo``
+     - UDP datagrams of 16, 64, 120, 500 and 1228 bytes to port 61616
+       (ports compressed to 4 bits, RFC 6282 4.3.3) and 5101 (ports
+       inline): 4 datagrams echoed with ``lost=0`` and at least
+       ceil(size / 127) frames per datagram and direction.
+   * - ``test_sixlowpan_udp_fragment_burst``
+     - 50 datagrams of 1228 bytes back to back, all echoed.
+   * - ``test_sixlowpan_udp_interleaved``
+     - A background and a foreground client each send 20 datagrams of
+       1228 bytes to their own server at the same time; both report
+       ``lost=0`` (fragments of different datagrams interleave, told
+       apart by datagram_tag).
+   * - ``test_sixlowpan_udp_over_mtu``
+     - One 1236-byte datagram (IPv6 length 1284, below the 1294-byte
+       device MTU) is echoed, or sendto() fails with ``EMSGSIZE``.
+   * - ``test_sixlowpan_tcp_echo``
+     - TCP streams of 3000, 4096 and 65536 bytes (nettl writes 2048-byte
+       chunks and reads each back) echoed intact, at least
+       ceil(bytes / 127) frames per direction.
+   * - ``test_sixlowpan_ping6``
+     - ``ping6 -c 2 -s`` 16, 300 and 1200 to the node's own address:
+       2 replies, at least ceil(size / 127) frames per packet.
+
        each other and echo TCP afterwards.
    * - ``test_nat_ping``
      - MASQUERADE on the B interface, host B without a route to A: A

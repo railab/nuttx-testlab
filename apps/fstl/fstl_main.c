@@ -98,19 +98,23 @@ static void fstl_usage(FAR const char *progname)
           "  append <path>              O_APPEND\n"
           "  sync   <path>              fsync\n"
           "  conc   <dir> <n> <size>    n threads write own files\n"
+          "  extend <path>              ftruncate extends after a seek\n"
           "  ls     <dir>               readdir end, d_ino (-n -q)\n"
           "  stat   <path>              print stat, stable st_ino\n"
           "  statfs <path>              print statfs\n"
           "  chmod  <path> <octal>\n"
           "  utime  <path> <sec>        set atime and mtime\n"
           "  deep   <dir> <depth>       nested directories\n"
+          "  fillrm <dir> <n>           n files created, removed, rmdir\n"
           "  err    <op> <path> [path2] <ERRNO[|ERRNO]|OK>\n"
           "         op: open wronly creat excl opendir mkdir rmdir\n"
           "         unlink stat rename symlink readlink seekneg\n"
+          "         seekpipe preadpipe pwritepipe seekfifo rdwrdir\n"
+          "         wrdirflag tmpfile nofollow\n"
           "  path   <path>              F_GETPATH\n"
           "  mount  <fstype> <target> <data> <ERRNO|OK>\n"
           "  umount <target> <ERRNO|OK>\n"
-          "  exec   <path|name> <status> [args...]\n"
+          "  exec   <path|name> <status|ERRNO> [args...]\n"
           "  -s seed  pattern seed (default 0)\n"
           "  -b size  I/O buffer size (default %d)\n"
           "  -a       open with O_APPEND\n"
@@ -329,6 +333,10 @@ int main(int argc, FAR char *argv[])
       ret = fstl_conc(args[0], atoi(args[1]),
                       (off_t)strtoll(args[2], NULL, 0));
     }
+  else if (strcmp(check, "extend") == 0 && nargs == 1)
+    {
+      ret = fstl_extend(args[0]);
+    }
   else if (strcmp(check, "ls") == 0 && nargs == 1)
     {
       ret = fstl_ls(args[0], &opts);
@@ -352,6 +360,10 @@ int main(int argc, FAR char *argv[])
   else if (strcmp(check, "deep") == 0 && nargs == 2)
     {
       ret = fstl_deep(args[0], atoi(args[1]));
+    }
+  else if (strcmp(check, "fillrm") == 0 && nargs == 2)
+    {
+      ret = fstl_fillrm(args[0], atoi(args[1]));
     }
   else if (strcmp(check, "path") == 0 && nargs == 1)
     {

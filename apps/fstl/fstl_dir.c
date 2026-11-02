@@ -27,11 +27,13 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/wait.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <spawn.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -487,6 +489,145 @@ fail:
   return -1;
 }
 
+#ifdef CONFIG_PIPES
+/* lseek, pread or pwrite on a pipe; returns -1 with errno set */
+
+static int fstl_pipe_op(FAR const char *op)
+{
+  char byte = 'x';
+  int fds[2];
+  int ret;
+
+  if (pipe(fds) < 0)
+    {
+      return -1;
+    }
+
+  if (strcmp(op, "seekpipe") == 0)
+    {
+      ret = lseek(fds[0], 10, SEEK_CUR) < 0 ? -1 : 0;
+    }
+  else if (strcmp(op, "preadpipe") == 0)
+    {
+      ret = pread(fds[0], &byte, 1, 0) < 0 ? -1 : 0;
+    }
+  else
+    {
+      ret = pwrite(fds[1], &byte, 1, 0) < 0 ? -1 : 0;
+    }
+
+  if (ret < 0)
+    {
+      ret = -errno;
+    }
+
+  close(fds[0]);
+  close(fds[1]);
+  if (ret < 0)
+    {
+      errno = -ret;
+      return -1;
+    }
+
+  return OK;
+}
+
+/* lseek on a FIFO created at path; the FIFO is removed again */
+
+static int fstl_fifo_seek(FAR const char *path)
+{
+  int errcode = 0;
+  int fd;
+
+  if (mkfifo(path, 0644) < 0)
+    {
+      return -1;
+    }
+
+  fd = open(path, O_RDWR);
+  if (fd < 0)
+    {
+      errcode = errno;
+    }
+  else
+    {
+      if (lseek(fd, 10, SEEK_CUR) < 0)
+        {
+          errcode = errno;
+        }
+
+      close(fd);
+    }
+
+  unlink(path);
+  if (errcode != 0)
+    {
+      errno = errcode;
+      return -1;
+    }
+
+  return OK;
+}
+#endif /* CONFIG_PIPES */
+
+/* fillrm <dir> <n>: create n empty files with 8.3 names in dir, unlink
+ * them all, then rmdir must succeed on the now empty directory.
+ */
+
+int fstl_fillrm(FAR const char *dir, int count)
+{
+  char path[PATH_MAX];
+  int i;
+  int fd;
+
+  if (count < 1 || count > 999)
+    {
+      printf("fstl: FAIL fillrm n=%d\n", count);
+      return -1;
+    }
+
+  if (mkdir(dir, 0755) < 0)
+    {
+      printf("fstl: FAIL fillrm mkdir errno=%s\n", fstl_errname(errno));
+      return -1;
+    }
+
+  for (i = 0; i < count; i++)
+    {
+      snprintf(path, sizeof(path), "%s/F%03d", dir, i);
+      fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+      if (fd < 0)
+        {
+          printf("fstl: FAIL fillrm create %d errno=%s\n", i,
+                 fstl_errname(errno));
+          return -1;
+        }
+
+      close(fd);
+    }
+
+  for (i = 0; i < count; i++)
+    {
+      snprintf(path, sizeof(path), "%s/F%03d", dir, i);
+      if (unlink(path) < 0)
+        {
+          printf("fstl: FAIL fillrm unlink %d errno=%s\n", i,
+                 fstl_errname(errno));
+          return -1;
+        }
+    }
+
+  if (rmdir(dir) < 0)
+    {
+      printf("fstl: FAIL fillrm rmdir n=%d errno=%s\n", count,
+             fstl_errname(errno));
+      return -1;
+    }
+
+  printf("fstl: PASS fillrm n=%d\n", count);
+  return OK;
+}
+
 /* err <op> <path> [path2] <expect>: run one call and check its errno */
 
 int fstl_err(int argc, FAR char *argv[])
@@ -584,6 +725,36 @@ int fstl_err(int argc, FAR char *argv[])
       fd = open(path, O_RDONLY);
       ret = fd < 0 ? -1 : lseek(fd, -1, SEEK_SET) < 0 ? -1 : 0;
     }
+#ifdef CONFIG_PIPES
+  else if (strcmp(op, "seekpipe") == 0 ||
+           strcmp(op, "preadpipe") == 0 ||
+           strcmp(op, "pwritepipe") == 0)
+    {
+      ret = fstl_pipe_op(op);
+    }
+  else if (strcmp(op, "seekfifo") == 0)
+    {
+      ret = fstl_fifo_seek(path);
+    }
+#endif
+  else if (strcmp(op, "rdwrdir") == 0)
+    {
+      ret = fd = open(path, O_RDWR | O_DIRECTORY);
+    }
+  else if (strcmp(op, "wrdirflag") == 0)
+    {
+      ret = fd = open(path, O_WRONLY | O_DIRECTORY);
+    }
+#ifdef O_TMPFILE
+  else if (strcmp(op, "tmpfile") == 0)
+    {
+      ret = fd = open(path, O_RDWR | O_TMPFILE, 0644);
+    }
+#endif
+  else if (strcmp(op, "nofollow") == 0)
+    {
+      ret = fd = open(path, O_RDONLY | O_NOFOLLOW);
+    }
   else
     {
       printf("fstl: FAIL err op %s\n", op);
@@ -661,6 +832,7 @@ int fstl_exec(int argc, FAR char *argv[])
   FAR char *const *args;
   pid_t pid;
   int status;
+  bool experr;
   int want;
   int ret;
 
@@ -671,6 +843,7 @@ int fstl_exec(int argc, FAR char *argv[])
     }
 
   want = atoi(argv[1]);
+  experr = isalpha((unsigned char)argv[1][0]);
 
   /* argv[1] is replaced by argv[0], so the child gets argv[0] = path */
 
@@ -684,6 +857,20 @@ int fstl_exec(int argc, FAR char *argv[])
   else
     {
       ret = posix_spawnp(&pid, argv[0], NULL, NULL, args, NULL);
+    }
+
+  if (experr)
+    {
+      /* The spawn itself must fail with one of these errnos */
+
+      if (ret == 0)
+        {
+          waitpid(pid, &status, 0);
+          printf("fstl: FAIL exec spawned want=%s\n", argv[1]);
+          return -1;
+        }
+
+      return fstl_expect("exec", "spawn", ret, argv[1]);
     }
 
   if (ret != 0)

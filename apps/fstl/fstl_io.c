@@ -41,6 +41,8 @@
 #define FSTL_CONC_MAX  8
 #define FSTL_PIO_SIZE  4096
 #define FSTL_FILL      0xa5
+#define FSTL_EXTEND_SIZE 2048
+#define FSTL_EXTEND_GROW 1024
 
 /****************************************************************************
  * Private Types
@@ -397,17 +399,30 @@ int fstl_pio(FAR const char *path)
       goto fail;
     }
 
-  /* 7: write after a seek past the end leaves a hole of zeros */
+  /* 7: a write after a seek past the end extends the file */
 
   step++;
   memset(buf, FSTL_FILL, 4);
   if (lseek(fd, 2 * FSTL_PIO_SIZE, SEEK_SET) != 2 * FSTL_PIO_SIZE ||
-      write(fd, buf, 4) != 4 ||
-      fstl_size(fd) != 2 * FSTL_PIO_SIZE + 4)
+      write(fd, buf, 4) != 4)
     {
       goto fail;
     }
 
+  /* 8: to the written position plus the write */
+
+  step++;
+  if (fstl_size(fd) != 2 * FSTL_PIO_SIZE + 4)
+    {
+      printf("fstl: FAIL pio step=%d size=%lld\n", step,
+             (long long)fstl_size(fd));
+      close(fd);
+      return -1;
+    }
+
+  /* 9: the gap reads as zeros */
+
+  step++;
   for (pos = FSTL_PIO_SIZE; pos < 2 * FSTL_PIO_SIZE; pos += sizeof(buf))
     {
       size_t len = 2 * FSTL_PIO_SIZE - pos < (off_t)sizeof(buf) ?
@@ -416,11 +431,34 @@ int fstl_pio(FAR const char *path)
       n = pread(fd, buf, len, pos);
       if (n != (ssize_t)len || !fstl_is(buf, len, 0))
         {
-          goto fail;
+          printf("fstl: FAIL pio step=%d gap pos=%lld\n", step,
+                 (long long)pos);
+          close(fd);
+          return -1;
         }
     }
 
-  /* 8: pwrite past the end extends the file */
+  /* 10: the data before the old end is intact (1000..1100 is step 2) */
+
+  step++;
+  for (pos = 0; pos < FSTL_PIO_SIZE; pos += sizeof(buf))
+    {
+      size_t len = FSTL_PIO_SIZE - pos < (off_t)sizeof(buf) ?
+                   (size_t)(FSTL_PIO_SIZE - pos) : sizeof(buf);
+
+      n = pread(fd, buf, len, pos);
+      if (n != (ssize_t)len ||
+          (pos != 1000 && fstl_check(buf, len, (uint32_t)pos, 0) != len) ||
+          (pos == 1000 && !fstl_is(buf, len, FSTL_FILL)))
+        {
+          printf("fstl: FAIL pio step=%d data pos=%lld\n", step,
+                 (long long)pos);
+          close(fd);
+          return -1;
+        }
+    }
+
+  /* 11: pwrite past the end extends the file */
 
   step++;
   memset(buf, FSTL_FILL, 4);
@@ -439,6 +477,93 @@ int fstl_pio(FAR const char *path)
 
 fail:
   printf("fstl: FAIL pio step=%d errno=%s\n", step, fstl_errname(errno));
+  close(fd);
+  return -1;
+}
+
+/* ftruncate() extends a file whose read/write position was moved back
+ * to its start: the old data stays, the new bytes are zeros and the
+ * position does not move.
+ */
+
+int fstl_extend(FAR const char *path)
+{
+  uint8_t buf[256];
+  off_t pos;
+  int step = 0;
+  int fd;
+
+  fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  if (fd < 0)
+    {
+      return fstl_fail("extend", "open", fd);
+    }
+
+  /* 1: pattern of FSTL_EXTEND_SIZE bytes */
+
+  step++;
+  if (fstl_putpattern(fd, buf, sizeof(buf), 0, FSTL_EXTEND_SIZE, 0) < 0)
+    {
+      goto fail;
+    }
+
+  /* 2: move the position (and the cursor of the open file) to the start */
+
+  step++;
+  if (lseek(fd, 0, SEEK_SET) != 0 || read(fd, buf, 16) != 16 ||
+      fstl_check(buf, 16, 0, 0) != 16)
+    {
+      goto fail;
+    }
+
+  /* 3: extend by FSTL_EXTEND_GROW bytes; the position stays at 16 */
+
+  step++;
+  if (ftruncate(fd, FSTL_EXTEND_SIZE + FSTL_EXTEND_GROW) < 0 ||
+      fstl_size(fd) != FSTL_EXTEND_SIZE + FSTL_EXTEND_GROW ||
+      lseek(fd, 0, SEEK_CUR) != 16)
+    {
+      goto fail;
+    }
+
+  /* 4: the old data is intact */
+
+  step++;
+  for (pos = 0; pos < FSTL_EXTEND_SIZE; pos += sizeof(buf))
+    {
+      if (pread(fd, buf, sizeof(buf), pos) != (ssize_t)sizeof(buf) ||
+          fstl_check(buf, sizeof(buf), (uint32_t)pos, 0) != sizeof(buf))
+        {
+          printf("fstl: FAIL extend data pos=%lld\n", (long long)pos);
+          close(fd);
+          return -1;
+        }
+    }
+
+  /* 5: the new bytes are zeros */
+
+  step++;
+  for (; pos < FSTL_EXTEND_SIZE + FSTL_EXTEND_GROW; pos += sizeof(buf))
+    {
+      if (pread(fd, buf, sizeof(buf), pos) != (ssize_t)sizeof(buf) ||
+          !fstl_is(buf, sizeof(buf), 0))
+        {
+          printf("fstl: FAIL extend zeros pos=%lld\n", (long long)pos);
+          close(fd);
+          return -1;
+        }
+    }
+
+  if (close(fd) < 0)
+    {
+      return fstl_fail("extend", "close", -1);
+    }
+
+  printf("fstl: PASS extend size=%d\n", FSTL_EXTEND_SIZE + FSTL_EXTEND_GROW);
+  return OK;
+
+fail:
+  printf("fstl: FAIL extend step=%d errno=%s\n", step, fstl_errname(errno));
   close(fd);
   return -1;
 }

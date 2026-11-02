@@ -31,6 +31,7 @@ import os
 import re
 import shutil
 import stat
+import struct
 import time
 from pathlib import Path
 from typing import Iterator, Optional, Tuple
@@ -579,6 +580,40 @@ def test_v9fs_symlink(work: Tuple[Path, str]) -> None:
     assert (host / "f").read_bytes() == pattern(0, 1000, 9)
 
 
+def test_v9fs_open_nofollow(work: Tuple[Path, str]) -> None:
+    """open(O_NOFOLLOW) of a symbolic link fails with ELOOP, 20 times.
+
+    POSIX open(): "[ELOOP] O_NOFOLLOW was specified and the path
+    argument names a symbolic link."  The failed opens hold nothing:
+    the target still opens, and the share can be unmounted afterwards.
+    """
+    host, node = work
+    (host / "f").write_bytes(pattern(0, 1000, 9))
+    os.symlink("f", host / "lnk")
+    for _ in range(20):
+        fstl_pass(f"err nofollow {node}/lnk ELOOP")
+    fstl_pass(f"err nofollow {node}/f OK")
+    fstl_pass(f"verify {node}/lnk 1000 -s 9")
+    if not kv("CONFIG_DRIVERS_VIRTIO_PCI") and not kv("CONFIG_BUILD_KERNEL"):
+        fstl_pass(f"umount {MNT} OK")
+        assert not _mounted()
+        _mount()
+
+
+def test_v9fs_umount_inside(work: Tuple[Path, str]) -> None:
+    """umount() of a directory inside the share fails with EINVAL.
+
+    POSIX has no umount; Linux umount(2): "[EINVAL] target is not a
+    mount point."  The share stays mounted and usable.
+    """
+    host, node = work
+    (host / "d").mkdir()
+    fstl_pass(f"umount {node}/d EINVAL")
+    fstl_pass(f"umount {node} EINVAL")
+    assert _mounted()
+    fstl_pass(f"err stat {node}/d OK")
+
+
 UNLINK_DIR_BUG = (
     "fs/v9fs: unlink() of a directory sends Tunlinkat and returns the "
     "server's error EISDIR; POSIX unlink() fails with [EPERM] for a "
@@ -752,6 +787,66 @@ def test_v9fs_elf_stack_priority(share: Path) -> None:
     want = int(kv("CONFIG_TESTLAB_ELFTL_STACKSIZE"))
     assert want - 256 <= int(got["size"]) <= want
     assert int(got["prio"]) == int(kv("CONFIG_TESTLAB_ELFTL_PRIORITY"))
+
+
+def _corrupt_section(data: bytes, field: str) -> bytes:
+    """Return an ELF image with one section header field made invalid.
+
+    :param data: ELF file contents (ELFCLASS32 or ELFCLASS64, little
+     endian)
+    :param field: ``align`` (sh_addralign 3, not a power of two) or
+     ``size`` (sh_size beyond the file)
+    :return: patched image
+    """
+    assert data[:4] == b"\x7fELF" and data[5] == 1, "not a LE ELF"
+    if data[4] == 2:  # ELFCLASS64
+        (shoff,) = struct.unpack_from("<Q", data, 0x28)
+        shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
+        off_size, off_align, fmt = 0x20, 0x30, "<Q"
+    else:
+        (shoff,) = struct.unpack_from("<I", data, 0x20)
+        shentsize, shnum = struct.unpack_from("<HH", data, 0x2E)
+        off_size, off_align, fmt = 0x14, 0x20, "<I"
+    out = bytearray(data)
+    for i in range(1, shnum):
+        base = shoff + i * shentsize
+        sh_type = struct.unpack_from("<I", out, base + 4)[0]
+        if sh_type == 1:  # SHT_PROGBITS: a loaded section
+            if field == "align":
+                struct.pack_into(fmt, out, base + off_align, 3)
+            else:
+                struct.pack_into(fmt, out, base + off_size, len(data) * 4)
+            return bytes(out)
+    raise AssertionError("no PROGBITS section")
+
+
+BINFMT_ERRNO_BUG = (
+    "binfmt/binfmt_loadmodule.c load_absmodule(): the error of the last "
+    "registered loader is returned, so an existing file every loader "
+    "rejects (ELF: EINVAL) fails with the builtin loader's ENOENT; POSIX "
+    "exec: [ENOEXEC] 'has an unrecognized format'"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=BINFMT_ERRNO_BUG)
+@pytest.mark.parametrize("field", ["align", "size"])
+def test_v9fs_elf_bad_section(share: Path, field: str) -> None:
+    """A program with an invalid section header does not load.
+
+    ELF (TIS 1.2, 1-10): sh_addralign "must be 0 or a positive,
+    integral power of 2"; sh_size gives the section's size in the
+    file.  POSIX posix_spawn()/exec: "[ENOEXEC] The new process image
+    file has the appropriate access permission but has an unrecognized
+    format"; EINVAL is the other value a loader may give for an invalid
+    image.  The node keeps running: a good program still starts.
+    """
+    _elf(share, "elftl")
+    data = (share / "bin" / "elftl").read_bytes()
+    (share / "bin" / f"elfbad{field}").write_bytes(
+        _corrupt_section(data, field)
+    )
+    fstl_pass(f"exec {MNT}/bin/elfbad{field} ENOEXEC|EINVAL")
+    fstl_pass(f"exec {MNT}/bin/elftl 0 exit 0")
 
 
 def test_v9fs_elf_symbols(request: pytest.FixtureRequest, share: Path) -> None:

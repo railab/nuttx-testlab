@@ -70,6 +70,7 @@ int fstl_trunc(FAR const char *path);
 int fstl_append(FAR const char *path);
 int fstl_sync(FAR const char *path);
 int fstl_conc(FAR const char *dir, int nthreads, off_t size);
+int fstl_extend(FAR const char *path);
 
 /* Name space checks (fstl_dir.c) */
 
@@ -79,6 +80,7 @@ int fstl_statfs(FAR const char *path);
 int fstl_chmod(FAR const char *path, FAR const char *mode);
 int fstl_utime(FAR const char *path, FAR const char *sec);
 int fstl_deep(FAR const char *dir, int depth);
+int fstl_fillrm(FAR const char *dir, int count);
 int fstl_err(int argc, FAR char *argv[]);
 int fstl_path(FAR const char *path);
 int fstl_mount(FAR const char *fstype, FAR const char *target,
