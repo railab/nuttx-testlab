@@ -53,6 +53,7 @@ from _ptp_common import (
     clock_identity,
     node_mac,
     offsets_ms,
+    ptptl_run,
     ptptl_start,
     ptptl_wait,
 )
@@ -95,17 +96,6 @@ PTPD_TIMEOUT_BUG = (
     "announceReceiptTimeout announce intervals of the master "
     "(IEEE 1588-2008 9.2.6.11, 3 x 2 s here)"
 )
-
-
-@pytest.fixture(autouse=True)
-def consoles_alive() -> None:
-    """Send a harmless command to every node before each test.
-
-    NTFC treats a node that stays silent for 180 s as busy-looping;
-    most tests here use node0 only, so node1 must not sit idle.
-    """
-    for node in range(len(pytest.products)):
-        pytest.products[node].core(0).sendCommand("echo", timeout=10)
 
 
 @pytest.fixture
@@ -475,14 +465,14 @@ def test_ptp_stop_restart(net_leak: LeakCheck) -> None:
     """Starting and stopping the daemon three times leaks nothing.
 
     ``include/netutils/ptpd.h`` ptpd_stop(): "On success, returns OK".
-    PASS: each run ends with ``stop=0`` and ``exit=0``, and the heap
-    (``free``) and the IOB and connection counters are back at the
-    values before the test.
+    The runs are in the foreground, so NSH has reaped the task before
+    ``free`` is read.  PASS: each run ends with ``stop=0`` and
+    ``exit=0``, and the heap (``free``) and the IOB and connection
+    counters are back at the values before the test.
     """
     heap = HeapCheck()
     for _ in range(3):
-        ptptl_start(0, "", runtime=5)
-        verdict, _status = ptptl_wait(0, 30)
+        verdict, _status = ptptl_run(0, "", runtime=5)
         assert verdict["verdict"] == "PASS", verdict
         assert verdict["stop"] == 0 and verdict["exit"] == 0, verdict
     heap.check()

@@ -63,3 +63,15 @@ def ptptl_runs() -> Iterator[None]:
     """Wait for ptptl runs left by a failed test."""
     yield
     ptptl_cleanup()
+
+
+@pytest.fixture(autouse=True)
+def nodes_alive() -> None:
+    """Send ``echo`` to every node before each test.
+
+    NTFC reboots a node that prints nothing for 180 s as busy-looping,
+    and many tests use node0 only.
+    """
+    for product in pytest.products:
+        for cpu in range(len(product.cores)):
+            product.core(cpu).sendCommand("echo", timeout=10)

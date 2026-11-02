@@ -544,7 +544,18 @@ def ptptl_wait(
     """
     ret = _core(node).readUntilPattern(VERDICT_RE, timeout=timeout)
     _RUNNING[:] = [r for r in _RUNNING if r[0] != node]
-    out = str(ret.output)
+    return _parse_run(node, str(ret.output))
+
+
+def _parse_run(
+    node: int, out: str
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Parse the verdict and status lines of a ``ptptl`` run.
+
+    :param node: product index, for the message
+    :param out: console output of the run
+    :return: verdict fields and status lines
+    """
     found = re.search(VERDICT_RE, out)
     assert found, f"no ptptl verdict on node{node}: {out}"
     verdict = {
@@ -557,6 +568,25 @@ def ptptl_wait(
     status = [status_fields(m) for m in STATUS_RE.finditer(out)]
     print(f"node{node} ptptl: {verdict}, {len(status)} status lines")
     return verdict, status
+
+
+def ptptl_run(
+    node: int, args: str, runtime: int = 30
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Run ``ptptl`` in the foreground on a node until its verdict.
+
+    The shell reaps the task before the prompt returns, so memory
+    checks after this call see the task's memory released.
+
+    :param node: product index
+    :param args: options, without ``-t``
+    :param runtime: seconds the app runs (``-t``)
+    :return: verdict fields and status lines as in :func:`ptptl_wait`
+    """
+    ret = _core(node).sendCommandReadUntilPattern(
+        f"ptptl {args} -t {runtime}", pattern=VERDICT_RE, timeout=runtime + 30
+    )
+    return _parse_run(node, str(ret.output))
 
 
 def ptptl_cleanup() -> None:
