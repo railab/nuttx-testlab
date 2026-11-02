@@ -1388,6 +1388,57 @@ static int canopt_name(FAR struct canopt_args_s *args)
 }
 
 /****************************************************************************
+ * Name: canopt_proto
+ *
+ * Description:
+ *   socket(PF_CAN, SOCK_RAW, proto) with a protocol the stack does not
+ *   implement (CAN_BCM) and one outside the protocol numbers
+ *   (CAN_NPROTO) must fail with EPROTONOSUPPORT; CAN_RAW must succeed.
+ *
+ ****************************************************************************/
+
+static int canopt_proto(FAR struct canopt_args_s *args)
+{
+  int bcm_errno = 0;
+  int bad_errno = 0;
+  bool raw_ok;
+  int sd;
+
+  sd = socket(PF_CAN, SOCK_RAW, CAN_BCM);
+  if (sd >= 0)
+    {
+      close(sd);
+    }
+  else
+    {
+      bcm_errno = errno;
+    }
+
+  sd = socket(PF_CAN, SOCK_RAW, CAN_NPROTO);
+  if (sd >= 0)
+    {
+      close(sd);
+    }
+  else
+    {
+      bad_errno = errno;
+    }
+
+  sd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+  raw_ok = sd >= 0;
+  if (raw_ok)
+    {
+      close(sd);
+    }
+
+  printf("canopt: %s proto bcm=%d nproto=%d raw=%d\n",
+         bcm_errno == EPROTONOSUPPORT && bad_errno == EPROTONOSUPPORT &&
+         raw_ok ? "PASS" : "FAIL", bcm_errno, bad_errno, raw_ok ? 1 : 0);
+  return bcm_errno == EPROTONOSUPPORT && bad_errno == EPROTONOSUPPORT &&
+         raw_ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/****************************************************************************
  * Name: canopt_conns
  *
  * Description:
@@ -1548,6 +1599,10 @@ int canopt_sock_main(FAR struct canopt_args_s *args)
   else if (strcmp(cmd, "conns") == 0)
     {
       return canopt_conns(args);
+    }
+  else if (strcmp(cmd, "proto") == 0)
+    {
+      return canopt_proto(args);
     }
 #if defined(CONFIG_NET_CAN_WRITE_BUFFERS) && CONFIG_NET_SEND_BUFSIZE > 0
   else if (strcmp(cmd, "sndbuf") == 0)

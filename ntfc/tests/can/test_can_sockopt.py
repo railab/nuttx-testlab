@@ -318,3 +318,16 @@ def test_can_sndbuf_block() -> None:
 
     assert ret.startswith("canopt: PASS sndbuf"), ret
     assert seqs == list(range(count))
+
+
+def test_can_socket_unsupported_protocol() -> None:
+    """socket() with a CAN protocol the stack lacks fails EPROTONOSUPPORT.
+
+    POSIX socket(): "[EPROTONOSUPPORT] The protocol is not supported by
+    the address family, or the protocol is not supported by the
+    implementation."  ``canopt proto``: ``CAN_BCM`` (not implemented)
+    and ``CAN_NPROTO`` (no such protocol) both fail with
+    EPROTONOSUPPORT; ``CAN_RAW`` still opens.
+    """
+    ret = canopt_run(0, "proto can0")
+    assert ret.startswith("canopt: PASS proto"), ret

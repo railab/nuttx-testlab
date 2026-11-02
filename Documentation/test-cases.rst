@@ -645,6 +645,42 @@ frame sizes, duplex, overload, backpressure. Same sessions as the
        sent 20 ms apart: the host then reads the whole TCP stream intact,
        no IOB leaked.
 
+``ip`` robustness
+-----------------
+
+Source: ``ntfc/tests/ip/test_ip_robust.py``. The host builds malformed
+packets byte by byte and sends them to node0 on the bridge with an
+``AF_PACKET`` socket; afterwards node0 must still answer ``ping6`` from
+the host and reach the host itself. Expectations cite RFC 8200, RFC
+4443, RFC 3810, RFC 2131/2132 and POSIX. Same sessions as the ``ip``
+module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_ipv6_exthdr_bounds``
+     - 50 echo requests each behind a Hop-by-Hop or Destination Options
+       header that claims more octets than the packet holds, a Payload
+       Length ending inside the header, an empty header or a chain whose
+       second header overruns: no Echo Reply; an echo request behind a
+       well-formed PadN Hop-by-Hop option is answered; node0 still pings.
+   * - ``test_mld_report_bounds``
+     - 50 MLDv2 Reports each to ff02::16 with a record count beyond the
+       message, 65535 sources, 255 words of aux data, a truncated record
+       or a truncated report: node0 still pings.
+   * - ``test_dhcpd_option_bounds``
+     - node0 ``dhcpd``: 20 DISCOVERs each with an option length beyond
+       the message, a missing length octet, no end option, an overload
+       option without options in sname/file, or padding only get no
+       OFFER; a well-formed DISCOVER then gets an OFFER; node0 still
+       pings.
+   * - ``test_sendmsg_iov_overflow``
+     - node0 ``nettl -c <host> -u -I``: ``sendmsg()`` with iov_len values
+       summing past ``SSIZE_MAX`` fails with ``EINVAL``.
+
 ``can`` module
 ---------------
 
@@ -699,6 +735,9 @@ Sessions: ``sim-can-bus``, ``sim-can-bus-buffered``,
 
    * - Test
      - PASS criterion
+   * - ``test_can_socket_unsupported_protocol``
+     - ``canopt proto``: ``socket(PF_CAN, SOCK_RAW, CAN_BCM)`` and
+       ``CAN_NPROTO`` fail with ``EPROTONOSUPPORT``; ``CAN_RAW`` opens.
    * - ``test_can_sockopt_roundtrip``
      - ``CAN_RAW_FILTER`` (default catch-all, up to
        ``NET_CAN_RAW_FILTER_MAX``, empty list), ``CAN_RAW_ERR_FILTER``,

@@ -48,7 +48,7 @@ static void canopt_usage(FAR const char *progname)
   fprintf(stderr,
           "Usage: %s <check> <ifname|/dev/canN> [options]\n"
           "SocketCAN checks: sockopt optbits rcvbuf rcvtimeo rx tx fdrx\n"
-          "  legacy ts loopback poll hup name conns sndbuf\n"
+          "  legacy ts loopback poll hup name conns sndbuf proto\n"
           "Character driver checks: crx ctx cioctl calign cnonblock\n"
           "  coverflow cfionread ciflush crtr\n"
           "  -F id/mask  CAN_RAW_FILTER entry, hex (repeatable)\n"

@@ -87,6 +87,7 @@ struct nettl_args_s
   bool        flood;
   bool        duplex;
   bool        nbconnect;
+  bool        iovcheck;
   bool        sink;
   int         rate;
   int         rcvbuf;
@@ -604,6 +605,53 @@ static int nettl_tcp_duplex(int sd, FAR const struct nettl_args_s *args);
 /* Connect on a nonblocking socket and report the connect() result and,
  * after poll(POLLOUT), the SO_ERROR of the connection attempt.
  */
+
+/****************************************************************************
+ * Name: nettl_iov_overflow
+ *
+ * Description:
+ *   sendmsg() with iov_len values whose sum overflows an ssize_t must
+ *   fail with EINVAL and send nothing.
+ *
+ ****************************************************************************/
+
+static int nettl_iov_overflow(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_storage sa;
+  struct msghdr msg;
+  struct iovec iov[2];
+  socklen_t salen;
+  ssize_t ret;
+  int err;
+  int sd;
+
+  sd = nettl_socket(args, &sa, &salen);
+  if (sd < 0)
+    {
+      printf("nettl: FAIL tx=0 rx=0 lost=0 err=1 iov=0\n");
+      return EXIT_FAILURE;
+    }
+
+  iov[0].iov_base = g_txbuf;
+  iov[0].iov_len  = SSIZE_MAX;
+  iov[1].iov_base = g_txbuf;
+  iov[1].iov_len  = 16;
+
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_name    = &sa;
+  msg.msg_namelen = salen;
+  msg.msg_iov     = iov;
+  msg.msg_iovlen  = 2;
+
+  ret = sendmsg(sd, &msg, 0);
+  err = ret < 0 ? errno : 0;
+  close(sd);
+
+  printf("nettl: %s tx=0 rx=0 lost=0 err=%d iov=%d ret=%zd\n",
+         ret < 0 && err == EINVAL ? "PASS" : "FAIL",
+         ret < 0 && err == EINVAL ? 0 : 1, err, ret);
+  return ret < 0 && err == EINVAL ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
 static int nettl_tcp_nbconnect(FAR const struct nettl_args_s *args)
 {
@@ -1297,7 +1345,7 @@ static void nettl_usage(FAR const char *progname)
          "[-l len] [-t sec] [-w] [-D sec] [-L n [-E]] [-C n] "
          "[-S [-R bytes]]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
-         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N]\n", progname);
+         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-I]\n", progname);
 }
 
 /****************************************************************************
@@ -1314,7 +1362,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNSR:"))
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNSR:I"))
          != ERROR)
     {
       unsigned long val;
@@ -1378,6 +1426,9 @@ int main(int argc, FAR char *argv[])
             break;
           case 'N':
             args.nbconnect = true;
+            break;
+          case 'I':
+            args.iovcheck = true;
             break;
           case 'S':
             args.sink = true;
@@ -1496,6 +1547,7 @@ int main(int argc, FAR char *argv[])
   if ((args.flood && (args.server || !args.udp)) ||
       (args.duplex && (args.server || args.udp)) ||
       (args.nbconnect && (args.server || args.udp)) ||
+      (args.iovcheck && (args.server || !args.udp)) ||
       (args.sink && (!args.server || !args.udp || args.reuse > 0)) ||
       (args.rcvbuf > 0 && !args.sink))
     {
@@ -1527,6 +1579,11 @@ int main(int argc, FAR char *argv[])
 
   if (args.udp)
     {
+      if (args.iovcheck)
+        {
+          return nettl_iov_overflow(&args);
+        }
+
       return args.flood ? nettl_udp_flood(&args) : nettl_udp_client(&args);
     }
 

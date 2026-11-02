@@ -127,6 +127,9 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
   returned ``EINPROGRESS``, ``nettl: connect poll <ret> revents
   0x<revents> so_error <SO_ERROR>`` after ``poll(POLLOUT)`` with the
   ``-t`` timeout; passes if the connection was established.
+- ``-I`` UDP client only: ``sendmsg()`` of a two-element iov whose
+  lengths sum past ``SSIZE_MAX``; passes when it fails with ``EINVAL``
+  and prints ``iov=<errno> ret=<ret>`` on the verdict line.
 
 - ``-w`` TCP server only: after accept(), send ``-n`` bytes of
   pattern data to the client (no echo) then close; does not combine
@@ -246,7 +249,8 @@ with ``/`` in place of the ifname, e.g. ``cantl -s /dev/can0 ...``.
 
 - One CAN feature check per run. SocketCAN checks (ifname): ``sockopt``,
   ``optbits``, ``rcvbuf``, ``rcvtimeo``, ``rx``, ``tx``, ``fdrx``,
-  ``legacy``, ``ts``, ``loopback``, ``poll``, ``hup``. Character driver
+  ``legacy``, ``ts``, ``loopback``, ``poll``, ``hup``, ``name``,
+  ``conns``, ``sndbuf``, ``proto``. Character driver
   checks (device path): ``crx``, ``ctx``, ``cioctl``, ``calign``,
   ``cnonblock``, ``coverflow``, ``cfionread``, ``ciflush``, ``crtr``.
   See :doc:`test-cases` for what each one verifies.
