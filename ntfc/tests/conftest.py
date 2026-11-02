@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _can_common import cantl_cleanup  # noqa: E402
 from _net_common import nettl_cleanup  # noqa: E402
 from _netleak import net_leak  # noqa: E402, F401 - fixture
+from _ptp_common import ptptl_cleanup  # noqa: E402
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -55,3 +56,10 @@ def cantl_receivers() -> Iterator[None]:
     """Let background cantl receivers left by a failed test exit."""
     yield
     cantl_cleanup()
+
+
+@pytest.fixture(autouse=True)
+def ptptl_runs() -> Iterator[None]:
+    """Wait for ptptl runs left by a failed test."""
+    yield
+    ptptl_cleanup()

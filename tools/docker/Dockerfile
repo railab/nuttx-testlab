@@ -36,6 +36,7 @@ RUN apt-get update \
         iputils-ping \
         unzip \
         kmod \
+        linuxptp \
         make \
         mosquitto \
         mosquitto-clients \

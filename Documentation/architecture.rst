@@ -388,6 +388,30 @@ NTFC configs
 ------------
 
 Each target has one NTFC config per scenario at
+``apps/ptptl``
+~~~~~~~~~~~~~~
+
+``ptptl`` (``CONFIG_TESTLAB_PTPTL``, depends on ``NETUTILS_PTPD``) runs
+the PTP daemon in a task (``ptpd_start()`` blocks in its caller)::
+
+   ptptl [-c] [-i iface] [-d none|e2e|p2p] [-r] [-k clock] [-t sec]
+         [-w sec] [-o ns]
+
+- Master with BMCA by default; ``-c`` client only. ``-i`` interface
+  (``eth0``), ``-d`` delay mechanism (``e2e``), ``-r`` IEEE 802.3
+  transport instead of UDP/IPv4, ``-k`` clock (``realtime`` or
+  ``/dev/ptpN``).
+- Every second ``ptpd_status()`` is printed as ``ptptl: status t=<s>
+  valid=<0|1> gm=<id> p1= class= steps= delta=<ns> adj=<ns> drift=<ppb>
+  path=<ns> ann= sync= dreq= pdreq= txsync= txann= now=<sec.nsec>``
+  (ages in ms since that packet, -1 if never).
+- Runs ``-t`` s (default 30), then ``ptpd_stop()`` and ``waitpid()``.
+  Verdict ``ptptl: PASS|FAIL synced=<0|1> first=<s> stop=<rc>
+  exit=<status>``: client PASS when the source was valid with
+  ``|delta| <= -o`` (default 50 ms) in three consecutive polls within
+  ``-w`` s (default 30); master PASS when Sync and Announce went out in
+  the last 5 s or a better master was selected.
+
 ``ntfc/configs/<target>/<scenario>/config.yaml`` (``smoke`` below,
 ``ip-pair`` in `Host network (ip-pair)`_), keyed under ``config:``
 (``cwd: './external'``, ``build_dir: './build/<target>/smoke'``) and
@@ -486,6 +510,10 @@ and ``CONFIG_NETINIT_IPv6ADDR_8`` (gateways ``10.42.0.1``, ``fc00::1``).
 .. list-table::
    :header-rows: 1
 
+A veth pair ``tl-ptp0``/``tl-ptp1`` (``52:54:00:2a:00:02``,
+``10.42.1.2/24``, ``arp_ignore 1``, no IPv6) gives host daemons that need
+software TX timestamps (``ptp4l``) a bridge port; the bridge device
+itself reports none.
    * - Node
      - IP
      - IPv6
@@ -745,7 +773,7 @@ the build toolchain (``build-essential``, ``cmake``, ``ninja-build``,
 ``gcc-14``/``g++-14``), QEMU packages (``qemu-system-arm``,
 ``qemu-system-misc``, ``qemu-system-x86``), ``can-utils``, ``socat``,
 ``iperf`` (iperf2), ``mosquitto`` and ``mosquitto-clients`` (MQTT broker
-and host clients), ``kconfiglib``, ``pymodbus``, ``pyserial``,
+and host clients), ``linuxptp`` (``ptp4l``, ``pmc``), ``kconfiglib``, ``pymodbus``, ``pyserial``,
 ``python-can`` and ``canopen`` (pip), and a Linux-kernel
 ``scripts/config`` fetched as ``kconfig-tweak``; the ARM64 and RISC-V
 bare-metal cross-toolchains are downloaded and unpacked under

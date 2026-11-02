@@ -509,6 +509,68 @@ connections to leave TIME_WAIT. Same sessions as the ``ip`` module.
      - With the broker stopped, ``mqtt_pub`` reports ``Connect failed``
        and then exits on SIGINT. Runs last.
 
+``ip`` PTP
+----------
+
+Source: ``ntfc/tests/ip/test_ip_ptp.py``. ``netutils/ptpd`` on the
+nodes, run through ``ptptl`` (``apps/ptptl``); host peer ``ptp4l``
+(linuxptp) on a veth port of the bridge (``tl-ptp0``, the bridge device
+has no software TX timestamps) with ``free_running``
+(the host clock is never adjusted), ``pmc`` for its data sets, and a
+sniffer that decodes every PTP message on the bridge. A node's clock
+offset is the host receive time minus the originTimestamp of the
+messages the node sends (Sync as master, Delay_Req as client). The
+targets have no ``adjtime()``, so a client synchronizes by stepping;
+the bound after synchronization is 50 ms. Expectations cite IEEE
+1588-2008 clauses. Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_ptp_client_sync_from_host``
+     - node0 client of a ptp4l grandmaster: the source is valid with the
+       host's clockIdentity (EUI-64 of its veth MAC), stepsRemoved 0,
+       and the last Delay_Req originTimestamps are within 50 ms of the
+       host clock.
+   * - ``test_ptp_client_steps_large_offset``
+     - node0's clock set 2 h ahead ends within 50 ms of the host clock.
+   * - ``test_ptp_client_loses_master``
+     - After ptp4l stops, the node reports no valid source within 3
+       announce intervals (announceReceiptTimeout) plus 2 s.
+   * - ``test_ptp_master_wire_format``
+     - node0 master: Announce, Sync and Follow_Up on UDP 319/320,
+       versionPTP 2, domain 0, twoStepFlag only in Sync, Follow_Up with
+       the sequenceId of its Sync, sequenceId +1 per type,
+       logMessageInterval matching the measured rate, sourcePortIdentity
+       from the node MAC with portNumber 1, Announce priority1 128,
+       clockClass 248 and stepsRemoved 0.
+   * - ``test_ptp_master_to_host``
+     - ptp4l as slave of node0: ``pmc`` shows the slave branch
+       (UNCALIBRATED, free running), the node as grandmaster with
+       priority1 128 and clockClass 248, stepsRemoved 1 and a positive
+       meanPathDelay; every host Delay_Req but the last gets a
+       Delay_Resp with its sequenceId and requestingPortIdentity.
+   * - ``test_ptp_bmca``
+     - ``host``: ptp4l priority1 127 wins, node0 follows it and sends no
+       more Sync. ``node``: ptp4l priority1 200 loses, takes the slave
+       branch with node0 as grandmaster, and node0 never selects it.
+   * - ``test_ptp_delay_p2p``
+     - Peer delay: every node Pdelay_Req but the last gets Pdelay_Resp
+       and Pdelay_Resp_Follow_Up with its sequenceId; the source is valid
+       and the path delay is not negative.
+   * - ``test_ptp_transport_raw``
+     - IEEE 802.3 transport (EtherType 0x88F7): the client synchronizes
+       as over UDP.
+   * - ``test_ptp_node_to_node``
+     - node1 client of node0: node0's identity as grandmaster, and the
+       two nodes' originTimestamps agree within 50 ms.
+   * - ``test_ptp_stop_restart``
+     - Three daemon runs on node0: ``ptpd_stop()`` returns 0, the daemon
+       task exits 0, heap and IOB counters are back at their baseline.
+
 ``ip`` services
 ---------------
 
