@@ -323,7 +323,11 @@ PASS. It uses only POSIX calls, so it works on any file system::
   ``fstl: ent <name> d_ino= st_ino= type= size=`` lines unless ``-q``.
 - ``err`` runs one call (``open``, ``wronly``, ``creat``, ``excl``,
   ``opendir``, ``mkdir``, ``rmdir``, ``unlink``, ``stat``, ``rename``,
-  ``symlink``, ``readlink``, ``seekneg``) and compares its errno.
+  ``symlink``, ``readlink``, ``seekneg``, ...) and compares its errno;
+  ``rd*``/``wr*`` ops open the file for reading/writing only and then
+  write/read it (``write``/``read``, ``pwrite``/``pread``,
+  ``fwrite``/``fread``), ``piperdwrite``/``pipewrread`` use the wrong
+  end of a pipe.
 - ``conc`` runs ``n`` threads that each write and read back
   ``<dir>/conc<i>.bin`` (seed ``i + 1``); ``exec`` runs a program with
   ``posix_spawn`` (``posix_spawnp`` for a name) and checks its exit

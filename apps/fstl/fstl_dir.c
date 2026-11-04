@@ -490,7 +490,9 @@ fail:
 }
 
 #ifdef CONFIG_PIPES
-/* lseek, pread or pwrite on a pipe; returns -1 with errno set */
+/* lseek, pread or pwrite on a pipe, or a write to its read end or a read
+ * from its write end; returns -1 with errno set
+ */
 
 static int fstl_pipe_op(FAR const char *op)
 {
@@ -511,9 +513,17 @@ static int fstl_pipe_op(FAR const char *op)
     {
       ret = pread(fds[0], &byte, 1, 0) < 0 ? -1 : 0;
     }
-  else
+  else if (strcmp(op, "pwritepipe") == 0)
     {
       ret = pwrite(fds[1], &byte, 1, 0) < 0 ? -1 : 0;
+    }
+  else if (strcmp(op, "piperdwrite") == 0)
+    {
+      ret = write(fds[0], &byte, 1) < 0 ? -1 : 0;
+    }
+  else
+    {
+      ret = read(fds[1], &byte, 1) < 0 ? -1 : 0;
     }
 
   if (ret < 0)
@@ -569,6 +579,86 @@ static int fstl_fifo_seek(FAR const char *path)
   return OK;
 }
 #endif /* CONFIG_PIPES */
+
+/* A read or write in the wrong access mode: rd* ops open the file for
+ * reading only and write to it, wr* ops open it for writing only and read
+ * from it, with read()/write(), pread()/pwrite() or fread()/fwrite().
+ * Returns -1 with errno set.
+ */
+
+static int fstl_mode_op(FAR const char *op, FAR const char *path)
+{
+  bool rdonly = op[0] == 'r';
+  char byte = 'x';
+  int errcode = 0;
+  int fd;
+
+#ifdef CONFIG_FILE_STREAM
+  if (strcmp(op, "rdfwrite") == 0 || strcmp(op, "wrfread") == 0)
+    {
+      FAR FILE *stream = fopen(path, rdonly ? "r" : "w");
+
+      if (stream == NULL)
+        {
+          return -1;
+        }
+
+      /* A failed call must also set the error indicator of the stream;
+       * report EIO when it does not, so that no expectation matches.
+       */
+
+      errno = 0;
+      if ((rdonly ? fwrite(&byte, 1, 1, stream) :
+                    fread(&byte, 1, 1, stream)) == 0)
+        {
+          errcode = errno;
+          if (!ferror(stream))
+            {
+              printf("fstl: %s no error indicator errno=%s\n", op,
+                     fstl_errname(errcode));
+              errcode = EIO;
+            }
+        }
+
+      fclose(stream);
+      errno = errcode;
+      return errcode != 0 ? -1 : OK;
+    }
+#else
+  if (strcmp(op, "rdfwrite") == 0 || strcmp(op, "wrfread") == 0)
+    {
+      errno = ENOSYS;
+      return -1;
+    }
+#endif
+
+  fd = open(path, rdonly ? O_RDONLY : O_WRONLY);
+  if (fd < 0)
+    {
+      return -1;
+    }
+
+  if (strcmp(op, "rdwrite") == 0)
+    {
+      errcode = write(fd, &byte, 1) < 0 ? errno : 0;
+    }
+  else if (strcmp(op, "rdpwrite") == 0)
+    {
+      errcode = pwrite(fd, &byte, 1, 0) < 0 ? errno : 0;
+    }
+  else if (strcmp(op, "wrread") == 0)
+    {
+      errcode = read(fd, &byte, 1) < 0 ? errno : 0;
+    }
+  else
+    {
+      errcode = pread(fd, &byte, 1, 0) < 0 ? errno : 0;
+    }
+
+  close(fd);
+  errno = errcode;
+  return errcode != 0 ? -1 : OK;
+}
 
 /* fillrm <dir> <n>: create n empty files with 8.3 names in dir, unlink
  * them all, then rmdir must succeed on the now empty directory.
@@ -728,7 +818,9 @@ int fstl_err(int argc, FAR char *argv[])
 #ifdef CONFIG_PIPES
   else if (strcmp(op, "seekpipe") == 0 ||
            strcmp(op, "preadpipe") == 0 ||
-           strcmp(op, "pwritepipe") == 0)
+           strcmp(op, "pwritepipe") == 0 ||
+           strcmp(op, "piperdwrite") == 0 ||
+           strcmp(op, "pipewrread") == 0)
     {
       ret = fstl_pipe_op(op);
     }
@@ -737,6 +829,12 @@ int fstl_err(int argc, FAR char *argv[])
       ret = fstl_fifo_seek(path);
     }
 #endif
+  else if (strcmp(op, "rdwrite") == 0 || strcmp(op, "rdpwrite") == 0 ||
+           strcmp(op, "wrread") == 0 || strcmp(op, "wrpread") == 0 ||
+           strcmp(op, "rdfwrite") == 0 || strcmp(op, "wrfread") == 0)
+    {
+      ret = fstl_mode_op(op, path);
+    }
   else if (strcmp(op, "rdwrdir") == 0)
     {
       ret = fd = open(path, O_RDWR | O_DIRECTORY);

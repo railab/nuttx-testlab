@@ -154,6 +154,19 @@ def test_vfs_fifo_espipe() -> None:
     assert "tlfifo" not in run("ls /")
 
 
+@pytest.mark.dep_config("CONFIG_PIPES")
+@pytest.mark.parametrize("op", ["piperdwrite", "pipewrread"])
+def test_vfs_pipe_wrong_end(op: str) -> None:
+    """A write to a pipe's read end or a read from its write end fails.
+
+    POSIX pipe(): "fildes[0] for the read end of the pipe, and fildes[1]
+    for the write end of the pipe"; write(): "[EBADF] The fildes argument
+    is not a valid file descriptor open for writing."  read(): "[EBADF]
+    The fildes argument is not a valid file descriptor open for reading."
+    """
+    fstl_pass(f"err {op} - EBADF")
+
+
 # Directory opens
 
 
@@ -268,6 +281,31 @@ def test_tmpfs_umount_inside(tmpfs: str, tmpdir: str) -> None:
     fstl_pass(f"umount {tmpdir} EINVAL")
     assert _mounted(tmpfs, "tmpfs"), run("mount")
     assert fstl_pass(f"stat {tmpdir}")
+
+
+@pytest.mark.parametrize(
+    "op",
+    ["rdwrite", "rdpwrite", "rdfwrite", "wrread", "wrpread", "wrfread"],
+)
+def test_tmpfs_wrong_access_mode(tmpdir: str, op: str) -> None:
+    """A read or write in the wrong access mode fails with EBADF.
+
+    The file is open for reading only and written, or open for writing
+    only and read.  POSIX write() and pwrite(): "[EBADF] The fildes
+    argument is not a valid file descriptor open for writing."  read()
+    and pread(): "[EBADF] The fildes argument is not a valid file
+    descriptor open for reading."
+    fwrite() and fread() fail as fputc() and fgetc() do: "[EBADF] The
+    file descriptor underlying stream is not a valid file descriptor open
+    for writing" (for reading); "the error indicator for the stream shall
+    be set".  A file open for reading only is not changed.
+    """
+    if op[2] == "f" and not kv("CONFIG_FILE_STREAM"):
+        pytest.skip("no CONFIG_FILE_STREAM")
+    fstl_pass(f"write {tmpdir}/m.bin 16 -s 9")
+    fstl_pass(f"err {op} {tmpdir}/m.bin EBADF")
+    if op.startswith("rd"):
+        fstl_pass(f"verify {tmpdir}/m.bin 16 -s 9")
 
 
 # FAT on a RAM disk

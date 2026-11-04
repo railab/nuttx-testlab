@@ -1349,6 +1349,9 @@ sessions as the ``fs`` module.
        ``ESPIPE``.
    * - ``test_vfs_fifo_espipe``
      - ``lseek`` on a FIFO fails with ``ESPIPE``; the FIFO is removed.
+   * - ``test_vfs_pipe_wrong_end``
+     - ``write`` to a pipe's read end and ``read`` from its write end
+       fail with ``EBADF``.
    * - ``test_tmpfs_open_dir_write``
      - Opening a tmpfs directory with ``O_RDWR|O_DIRECTORY``,
        ``O_WRONLY|O_DIRECTORY`` or plain ``O_WRONLY`` fails with
@@ -1380,6 +1383,11 @@ sessions as the ``fs`` module.
    * - ``test_tmpfs_umount_inside``
      - ``umount`` of a directory inside tmpfs fails with ``EINVAL``, the
        mount stays.
+   * - ``test_tmpfs_wrong_access_mode``
+     - ``write``, ``pwrite`` and ``fwrite`` on a file open for reading
+       only, and ``read``, ``pread`` and ``fread`` on one open for
+       writing only, fail with ``EBADF`` (stdio sets the error
+       indicator); the read-only file is unchanged.
    * - ``test_fat_write_verify``
      - 70000 pattern bytes written to FAT read back and ``stat``
        reports the size.
