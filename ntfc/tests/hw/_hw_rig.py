@@ -34,7 +34,248 @@ Entry = Tuple[str, str]
 #: Verdict line printed by every hwtl subcommand.
 VERDICT = r"hwtl: (PASS|FAIL) [^\r\n]*"
 
-RIGS: Dict[str, Dict[str, List[Any]]] = {}
+RIGS: Dict[str, Dict[str, List[Any]]] = {
+    "nucleo-g071rb": {
+        "timer": [
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+        "oneshot": [
+            ("lponeshot2-1ms", "/dev/lponeshot2 1000"),
+            ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
+            ("lponeshot2-half", "/dev/lponeshot2 0"),
+        ],
+    },
+    "nucleo-c092rc": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer3-1ms", "/dev/timer3 1000 2000"),
+            ("timer3-20ms", "/dev/timer3 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot14-1ms", "/dev/oneshot14 1000"),
+            ("oneshot14-20ms", "/dev/oneshot14 20000"),
+            ("oneshot14-half", "/dev/oneshot14 0"),
+            ("oneshot16-1ms", "/dev/oneshot16 1000"),
+            ("oneshot16-20ms", "/dev/oneshot16 20000"),
+            ("oneshot16-half", "/dev/oneshot16 0"),
+        ],
+    },
+    "nucleo-c562re": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer7-1ms", "/dev/timer7 1000 2000"),
+            ("timer7-20ms", "/dev/timer7 20000 2000"),
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+        ],
+    },
+    "nucleo-f091rc": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer7-1ms", "/dev/timer7 1000 2000"),
+            ("timer7-20ms", "/dev/timer7 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("oneshot14-1ms", "/dev/oneshot14 1000"),
+            ("oneshot14-20ms", "/dev/oneshot14 20000"),
+            ("oneshot14-half", "/dev/oneshot14 0"),
+        ],
+    },
+    "nucleo-f446re": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer7-1ms", "/dev/timer7 1000 2000"),
+            ("timer7-20ms", "/dev/timer7 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("oneshot5-1ms", "/dev/oneshot5 1000"),
+            ("oneshot5-20ms", "/dev/oneshot5 20000"),
+        ],
+    },
+    "nucleo-f722ze": {
+        "timer": [
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+    },
+    "nucleo-f767zi": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer5-1ms", "/dev/timer5 1000 2000"),
+            ("timer5-20ms", "/dev/timer5 20000 2000"),
+            ("timer6-1ms", "/dev/timer6 1000 2000"),
+            ("timer6-20ms", "/dev/timer6 20000 2000"),
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot7-1ms", "/dev/oneshot7 1000"),
+            ("oneshot7-20ms", "/dev/oneshot7 20000"),
+            ("oneshot7-half", "/dev/oneshot7 0"),
+        ],
+    },
+    "nucleo-l552ze": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+            ("lptimer3-1ms", "/dev/lptimer3 1000 2000"),
+            ("lptimer3-20ms", "/dev/lptimer3 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("lponeshot2-1ms", "/dev/lponeshot2 1000"),
+            ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
+            ("lponeshot2-half", "/dev/lponeshot2 0"),
+        ],
+    },
+    "nucleo-u083rc": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("lptimer2-1ms", "/dev/lptimer2 1000 2000"),
+            ("lptimer2-20ms", "/dev/lptimer2 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("lponeshot3-1ms", "/dev/lponeshot3 1000"),
+            ("lponeshot3-20ms", "/dev/lponeshot3 20000"),
+            ("lponeshot3-half", "/dev/lponeshot3 0"),
+        ],
+    },
+    "nucleo-u3c5zi-q": {
+        "timer": [
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+            ("lptimer3-1ms", "/dev/lptimer3 1000 2000"),
+            ("lptimer3-20ms", "/dev/lptimer3 20000 2000"),
+        ],
+        "oneshot": [
+            ("lponeshot2-1ms", "/dev/lponeshot2 1000"),
+            ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
+            ("lponeshot2-half", "/dev/lponeshot2 0"),
+            ("lponeshot4-1ms", "/dev/lponeshot4 1000"),
+            ("lponeshot4-20ms", "/dev/lponeshot4 20000"),
+            ("lponeshot4-half", "/dev/lponeshot4 0"),
+        ],
+    },
+    "nucleo-l073rz": {
+        "timer": [
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+    },
+    "nucleo-l476rg": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("lponeshot2-1ms", "/dev/lponeshot2 1000"),
+            ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
+            ("lponeshot2-half", "/dev/lponeshot2 0"),
+        ],
+    },
+    "nucleo-f303ze": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer7-1ms", "/dev/timer7 1000 2000"),
+            ("timer7-20ms", "/dev/timer7 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+        ],
+    },
+    "nucleo-c071rb": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer3-1ms", "/dev/timer3 1000 2000"),
+            ("timer3-20ms", "/dev/timer3 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot14-1ms", "/dev/oneshot14 1000"),
+            ("oneshot14-20ms", "/dev/oneshot14 20000"),
+            ("oneshot14-half", "/dev/oneshot14 0"),
+            ("oneshot16-1ms", "/dev/oneshot16 1000"),
+            ("oneshot16-20ms", "/dev/oneshot16 20000"),
+            ("oneshot16-half", "/dev/oneshot16 0"),
+        ],
+    },
+    "nucleo-h533re": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer7-1ms", "/dev/timer7 1000 2000"),
+            ("timer7-20ms", "/dev/timer7 20000 2000"),
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("lponeshot2-1ms", "/dev/lponeshot2 1000"),
+            ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
+            ("lponeshot2-half", "/dev/lponeshot2 0"),
+        ],
+    },
+    "nucleo-h743zi": {
+        "timer": [
+            ("timer2-1ms", "/dev/timer2 1000 2000"),
+            ("timer2-20ms", "/dev/timer2 20000 2000"),
+            ("timer7-1ms", "/dev/timer7 1000 2000"),
+            ("timer7-20ms", "/dev/timer7 20000 2000"),
+            ("lptimer1-1ms", "/dev/lptimer1 1000 2000"),
+            ("lptimer1-20ms", "/dev/lptimer1 20000 2000"),
+            ("lptimer3-1ms", "/dev/lptimer3 1000 2000"),
+            ("lptimer3-20ms", "/dev/lptimer3 20000 2000"),
+            ("lptimer5-1ms", "/dev/lptimer5 1000 2000"),
+            ("lptimer5-20ms", "/dev/lptimer5 20000 2000"),
+        ],
+        "oneshot": [
+            ("oneshot6-1ms", "/dev/oneshot6 1000"),
+            ("oneshot6-20ms", "/dev/oneshot6 20000"),
+            ("oneshot6-half", "/dev/oneshot6 0"),
+            ("lponeshot2-1ms", "/dev/lponeshot2 1000"),
+            ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
+            ("lponeshot2-half", "/dev/lponeshot2 0"),
+            ("lponeshot4-1ms", "/dev/lponeshot4 1000"),
+            ("lponeshot4-20ms", "/dev/lponeshot4 20000"),
+            ("lponeshot4-half", "/dev/lponeshot4 0"),
+        ],
+    },
+}
 
 
 def board() -> str:

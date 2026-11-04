@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Hardware sessions of one board, run one at a time with
+# tools/hw/run.sh <board> <session>.
+
+options:
+  fail_fast: false
+  parallel: false
+
+sessions:
+  - name: "nucleo-l073rz-hw-rig1"
+    confpath: ntfc/configs/hw/nucleo-l073rz/hw-rig1/config.yaml.in
+    testpath: ntfc/tests
+    modules: "Testlab_Hw"

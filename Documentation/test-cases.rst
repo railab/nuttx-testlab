@@ -1600,3 +1600,45 @@ the board's entries; a board without entries for a test skips it.
      - Per entry (``<dev> <period_us> <ms>``): the expirations counted in
        ``<ms>`` are within 2 % (+1) of ``<ms>`` / period
        (``CONFIG_TIMER``).
+
+Sessions of the ``hw`` module (``modules: Testlab_Hw``, defconfig
+``configs/hw-rig1`` of the board):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Session
+     - Devices
+   * - ``nucleo-g071rb-hw-rig1``
+     - ``/dev/lptimer1``, ``/dev/lponeshot2``
+   * - ``nucleo-c092rc-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer3``, ``/dev/oneshot14``, ``/dev/oneshot16``
+   * - ``nucleo-c562re-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/oneshot6``
+   * - ``nucleo-f091rc-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/oneshot6``, ``/dev/oneshot14``
+   * - ``nucleo-f446re-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/oneshot6``, ``/dev/oneshot5``
+   * - ``nucleo-f722ze-hw-rig1``
+     - ``/dev/lptimer1``
+   * - ``nucleo-f767zi-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer5``, ``/dev/timer6``, ``/dev/lptimer1``, ``/dev/oneshot7``
+   * - ``nucleo-l552ze-hw-rig1``
+     - ``/dev/timer2``, ``/dev/lptimer1``, ``/dev/lptimer3``, ``/dev/oneshot6``, ``/dev/lponeshot2``
+   * - ``nucleo-u083rc-hw-rig1``
+     - ``/dev/timer2``, ``/dev/lptimer2``, ``/dev/oneshot6``, ``/dev/lponeshot3``
+   * - ``nucleo-u3c5zi-q-hw-rig1``
+     - ``/dev/lptimer1``, ``/dev/lptimer3``, ``/dev/lponeshot2``, ``/dev/lponeshot4``
+   * - ``nucleo-l073rz-hw-rig1``
+     - ``/dev/lptimer1``
+   * - ``nucleo-l476rg-hw-rig1``
+     - ``/dev/timer2``, ``/dev/lptimer1``, ``/dev/oneshot6``, ``/dev/lponeshot2``
+   * - ``nucleo-f303ze-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/oneshot6``
+   * - ``nucleo-c071rb-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer3``, ``/dev/oneshot14``, ``/dev/oneshot16``
+   * - ``nucleo-h533re-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/oneshot6``, ``/dev/lponeshot2``
+   * - ``nucleo-h743zi-hw-rig1``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/lptimer3``, ``/dev/lptimer5``, ``/dev/oneshot6``, ``/dev/lponeshot2``, ``/dev/lponeshot4``
