@@ -420,12 +420,15 @@ sessions (:doc:`hardware`)::
 
    hwtl <check> <args...>
 
-- Checks: ``timer``; ``hwtl`` without arguments prints their arguments.
+- Checks: ``timer``, ``oneshot``; ``hwtl`` without arguments prints their arguments.
   A check whose driver is not configured reports an error.
 - Verdict: ``hwtl: PASS|FAIL <check> <details>``; exit 0 on PASS.
 - ``timer <dev> <period_us> <ms>``: sets the period, counts the
   expiration signals for ``<ms>`` against ``CLOCK_MONOTONIC``; PASS
   within 2 % (+1) of ``<ms>`` / period.
+- ``oneshot <dev> <us>``: starts one delay of ``<us>`` (0: half the
+  maximum delay) and measures it with ``CLOCK_MONOTONIC``; PASS when it
+  fires early by at most one tick, late by at most two ticks + 2 ms.
 
 NTFC configs
 ------------

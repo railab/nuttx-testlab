@@ -40,6 +40,10 @@
 #  include <nuttx/timers/timer.h>
 #endif
 
+#ifdef CONFIG_ONESHOT
+#  include <nuttx/timers/oneshot.h>
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -53,7 +57,7 @@
 #  define HWTL_HAVE_COUNT 1
 #endif
 
-#ifdef HWTL_HAVE_COUNT
+#if defined(HWTL_HAVE_COUNT) || defined(CONFIG_ONESHOT)
 #  define HWTL_HAVE_SIGWAIT 1
 #endif
 
@@ -88,6 +92,7 @@ struct hwtl_cmd_s
  ****************************************************************************/
 
 static enum hwtl_res_e hwtl_timer(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_oneshot(FAR char **argv, FAR char *detail);
 
 /****************************************************************************
  * Private Data
@@ -97,6 +102,9 @@ static const struct hwtl_cmd_s g_hwtl_cmds[] =
 {
   {
     "timer", "<dev> <period_us> <ms>", 3, 3, hwtl_timer
+  },
+  {
+    "oneshot", "<dev> <us>", 2, 2, hwtl_oneshot
   }
 };
 
@@ -185,7 +193,7 @@ static void hwtl_sig_restore(FAR const sigset_t *old)
 #endif
 
 /****************************************************************************
- * Timer devices
+ * Timer and oneshot devices
  ****************************************************************************/
 
 /* Periodic /dev/timerN: expirations counted against CLOCK_MONOTONIC */
@@ -243,6 +251,92 @@ static enum hwtl_res_e hwtl_timer(FAR char **argv, FAR char *detail)
          HWTL_PASS : HWTL_FAIL;
 #else
   snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_TIMER");
+  return HWTL_ERROR;
+#endif
+}
+
+/* /dev/oneshotN: one expiry after us microseconds (0: half the maximum
+ * delay), measured with CLOCK_MONOTONIC
+ */
+
+static enum hwtl_res_e hwtl_oneshot(FAR char **argv, FAR char *detail)
+{
+#ifdef CONFIG_ONESHOT
+  struct oneshot_start_s start;
+  struct timespec maxdelay;
+  struct timespec t0;
+  struct timespec t1;
+  struct timespec wait;
+  sigset_t set;
+  sigset_t old;
+  uint64_t maxus;
+  uint64_t us = strtoull(argv[1], NULL, 0);
+  int64_t elapsed;
+  int fd;
+  int ret;
+
+  fd = open(argv[0], O_RDONLY);
+  if (fd < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "open %s errno=%d", argv[0], errno);
+      return HWTL_ERROR;
+    }
+
+  if (ioctl(fd, OSIOC_MAXDELAY, (unsigned long)&maxdelay) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "maxdelay errno=%d", errno);
+      close(fd);
+      return HWTL_ERROR;
+    }
+
+  maxus = (uint64_t)maxdelay.tv_sec * 1000000 + maxdelay.tv_nsec / 1000;
+  if (us == 0)
+    {
+      us = maxus / 2;
+    }
+
+  hwtl_sig_block(&old);
+
+  memset(&start, 0, sizeof(start));
+  start.pid                = getpid();
+  start.event.sigev_notify = SIGEV_SIGNAL;
+  start.event.sigev_signo  = HWTL_SIGNO;
+  start.ts.tv_sec          = us / 1000000;
+  start.ts.tv_nsec         = (us % 1000000) * 1000;
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  if (ioctl(fd, OSIOC_START, (unsigned long)&start) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "start errno=%d", errno);
+      close(fd);
+      hwtl_sig_restore(&old);
+      return HWTL_ERROR;
+    }
+
+  sigemptyset(&set);
+  sigaddset(&set, HWTL_SIGNO);
+  wait.tv_sec  = us / 1000000 + 1;
+  wait.tv_nsec = 0;
+  ret = sigtimedwait(&set, NULL, &wait);
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  elapsed = (int64_t)(t1.tv_sec - t0.tv_sec) * 1000000 +
+            (t1.tv_nsec - t0.tv_nsec) / 1000;
+
+  ioctl(fd, OSIOC_CANCEL, (unsigned long)&wait);
+  close(fd);
+  hwtl_sig_restore(&old);
+
+  /* Early by at most one tick, late by at most two ticks + 2 ms */
+
+  snprintf(detail, HWTL_DETAIL_MAX, "%s max_us=%" PRIu64 " us=%" PRIu64
+           " elapsed_us=%" PRId64 " fired=%d", argv[0], maxus, us, elapsed,
+           ret == HWTL_SIGNO);
+  return (ret == HWTL_SIGNO && us <= maxus &&
+          elapsed + CONFIG_USEC_PER_TICK >= (int64_t)us &&
+          elapsed <= (int64_t)us + 2 * CONFIG_USEC_PER_TICK + 2000) ?
+         HWTL_PASS : HWTL_FAIL;
+#else
+  snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_ONESHOT");
   return HWTL_ERROR;
 #endif
 }

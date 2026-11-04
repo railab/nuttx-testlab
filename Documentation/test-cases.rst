@@ -1592,6 +1592,10 @@ the board's entries; a board without entries for a test skips it.
 
    * - Test
      - PASS criterion
+   * - ``test_hw_oneshot_delay``
+     - Per entry (``<dev> <us>``, 0 = half the maximum delay): the delay
+       fires, early by at most 1 tick, late by at most 2 ticks + 2 ms
+       (``CONFIG_ONESHOT``).
    * - ``test_hw_timer_period``
      - Per entry (``<dev> <period_us> <ms>``): the expirations counted in
        ``<ms>`` are within 2 % (+1) of ``<ms>`` / period
