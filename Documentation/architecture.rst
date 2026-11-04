@@ -786,6 +786,16 @@ sees the stacks of exited programs released.
 node) and redirects the bridge's ingress (node to host) to ``ifb``
 device ``tl-ifb0`` with the same netem qdisc.
 
+Hardware sessions
+-----------------
+
+Per board ``ntfc/manifest-hw-<board>.yaml`` and
+``ntfc/configs/hw/<board>/<defconfig>/config.yaml.in`` (``device:
+serial``, ``@PORT@``/``@PROBE@`` placeholders), run on the host with
+``tools/hw/run.sh``; boards and sessions in :doc:`hardware`. Manifest
+sessions use ``testpath: ntfc/tests`` with the NTFC module
+``Testlab_Hw``, which ``run.sh`` passes as ``--modules``.
+
 Docker image and runner
 ------------------------
 

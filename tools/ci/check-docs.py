@@ -20,10 +20,12 @@
 
 Collects every ``test_*`` function/method defined under
 ``ntfc/tests/**/test_*.py`` and every manifest session name defined in
-``ntfc/manifest-*.yaml``, and compares them against the double-backtick
-literals in ``Documentation/test-cases.rst``. Exits non-zero (printing
-every mismatch) if a test or session is undocumented, or if the docs
-name a test or session that does not exist.
+``ntfc/manifest-*.yaml`` (including the per-board hardware manifests
+``ntfc/manifest-hw-<board>.yaml``), and compares them against the
+double-backtick literals in ``Documentation/test-cases.rst``. Exits
+non-zero (printing every mismatch) if a test or session is
+undocumented, or if the docs name a test or session that does not
+exist.
 """
 
 import ast
@@ -45,6 +47,11 @@ MANIFEST_GLOB = "ntfc/manifest-*.yaml"
 #: Glob (relative to REPO_ROOT) matching each target's NTFC config
 #: directory (``ntfc/configs/<target>``).
 TARGET_GLOB = "ntfc/configs/*"
+
+#: Glob (relative to REPO_ROOT) matching each hardware board's NTFC config
+#: directory (``ntfc/configs/hw/<board>``, sessions in
+#: ``ntfc/manifest-hw-<board>.yaml``).
+HW_BOARD_GLOB = "ntfc/configs/hw/*"
 
 #: Path (relative to REPO_ROOT) of the test-cases documentation page.
 DOC_PATH = "Documentation/test-cases.rst"
@@ -103,13 +110,19 @@ def collect_session_names(root: Path) -> Set[str]:
 
 
 def collect_target_names(root: Path) -> Set[str]:
-    """Collect every target name from its ntfc/configs/<target> directory.
+    """Collect every target name from its NTFC config directory.
+
+    Targets are ``ntfc/configs/<target>`` and, for hardware sessions,
+    ``ntfc/configs/hw/<board>`` (``ntfc/configs/hw`` itself is not a
+    target).
 
     :param root: repository root
     :return: set of target directory names (e.g. ``sim``,
-        ``qemu-armv8a``)
+        ``qemu-armv8a``, ``nucleo-f446re``)
     """
-    return {path.name for path in root.glob(TARGET_GLOB) if path.is_dir()}
+    paths = list(root.glob(TARGET_GLOB)) + list(root.glob(HW_BOARD_GLOB))
+    hw_dir = root / Path(HW_BOARD_GLOB).parent
+    return {path.name for path in paths if path.is_dir() and path != hw_dir}
 
 
 def collect_doc_literals(doc: Path) -> Set[str]:

@@ -13,6 +13,7 @@ Rules for working in this repo. Humans: start with
 | `testenv/`      | Host-side network setup scripts for multi-node scenarios          |
 | `Documentation/`| Architecture and test-case documentation (Sphinx, RST)            |
 | `tools/docker/` | Docker image and runner used for local/CI reproduction            |
+| `tools/hw/`     | Host-native hardware session runner and probe listing             |
 | `.github/`      | PR checks (lint + tests), nightly, manual tests, Docker image publish |
 | `external/`     | NuttX + nuttx-apps sources, fetched by `repo_init.sh` (not in git) |
 
@@ -99,6 +100,23 @@ Signed-off-by: AuthorName <Valid@EmailAddress>
    build if a test or session is undocumented, or if the docs name one
    that does not exist.
 
+## Hardware sessions
+
+- One board connected at a time; no wiring; one defconfig per session
+  (`configs/hw-rig1`), documented in `Documentation/hardware.rst`.
+- One manifest per board, `ntfc/manifest-hw-<board>.yaml`, never per
+  family; sessions are named `<board>-hw-rig1` and list the NTFC
+  `modules` they run (`testpath: ntfc/tests`).
+- `tools/hw/run.sh <board> <session> [testpath]`: board and session are
+  mandatory, there is no "run all". Host-native, sources from
+  `NUTTX_REPO`/`NUTTX_REF`/... like `repo_init.sh`.
+- `ntfc/configs/hw/<board>/<defconfig>/config.yaml.in` uses `@PORT@` and
+  `@PROBE@`; ports and probe serials (`HW_PORT`, `HW_PROBE`) are never
+  committed.
+- Board devices and their `hwtl` arguments live in
+  `ntfc/tests/hw/_hw_rig.py`.
+- Use only devices that the upstream board code registers.
+
 ## Commands
 
 ```sh
@@ -111,4 +129,5 @@ tools/docker/run.sh ci-sim                             # same, in Docker
 pip install -r Documentation/requirements.txt          # docs
 sphinx-build -W -b html Documentation /tmp/testlab-docs # build docs
 python tools/ci/check-docs.py                          # check docs are current
+tools/hw/run.sh nucleo-g071rb nucleo-g071rb-hw-rig1    # one HW session
 ```

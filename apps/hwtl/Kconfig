@@ -1,0 +1,31 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_HWTL
+	tristate "hwtl: hardware rig test tool"
+	default n
+	---help---
+		Board peripheral checks over a fixed wiring rig: UART
+		loopback, GPIO, PWM, pulse count, ADC, DAC, quadrature
+		encoder, CAN loopback, RNG, clock, usleep() latency,
+		scheduler, timer, oneshot, capture and watchdog.  Each check
+		prints one PASS/FAIL verdict line; "hwtl rig" reports which
+		rig nets are mounted.
+
+if TESTLAB_HWTL
+
+config TESTLAB_HWTL_PROGNAME
+	string "Program name"
+	default "hwtl"
+
+config TESTLAB_HWTL_PRIORITY
+	int "hwtl task priority"
+	default 100
+
+config TESTLAB_HWTL_STACKSIZE
+	int "hwtl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
