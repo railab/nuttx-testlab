@@ -1576,3 +1576,23 @@ bytes than before the test (10 s settle time); "no IOB leaked": the
    * - ``test_tls_session_churn``
      - 40 back-to-back node client sessions of 1 KiB all pass; heap
        freed, no IOB leaked, NSH answers.
+
+``hw`` module
+-------------
+
+Source: ``ntfc/tests/hw/test_hw_*.py``, board tables in
+``ntfc/tests/hw/_hw_rig.py``, boards in :doc:`hardware`. Real boards,
+run with ``tools/hw/run.sh``. Every test runs one ``hwtl`` subcommand
+(``apps/hwtl``) and passes on ``hwtl: PASS``. Tests are parametrized by
+the board's entries; a board without entries for a test skips it.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_hw_timer_period``
+     - Per entry (``<dev> <period_us> <ms>``): the expirations counted in
+       ``<ms>`` are within 2 % (+1) of ``<ms>`` / period
+       (``CONFIG_TIMER``).

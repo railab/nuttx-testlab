@@ -4,15 +4,11 @@
 #
 
 config TESTLAB_HWTL
-	tristate "hwtl: hardware rig test tool"
+	tristate "hwtl: hardware test tool"
 	default n
 	---help---
-		Board peripheral checks over a fixed wiring rig: UART
-		loopback, GPIO, PWM, pulse count, ADC, DAC, quadrature
-		encoder, CAN loopback, RNG, clock, usleep() latency,
-		scheduler, timer, oneshot, capture and watchdog.  Each check
-		prints one PASS/FAIL verdict line; "hwtl rig" reports which
-		rig nets are mounted.
+		Board device checks: periodic timer.  Each check prints one
+		PASS/FAIL verdict line.
 
 if TESTLAB_HWTL
 

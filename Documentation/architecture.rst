@@ -412,6 +412,21 @@ the PTP daemon in a task (``ptpd_start()`` blocks in its caller)::
   ``-w`` s (default 30); master PASS when Sync and Announce went out in
   the last 5 s or a better master was selected.
 
+``apps/hwtl``
+~~~~~~~~~~~~~
+
+``hwtl`` (``CONFIG_TESTLAB_HWTL``) runs device checks in the hardware
+sessions (:doc:`hardware`)::
+
+   hwtl <check> <args...>
+
+- Checks: ``timer``; ``hwtl`` without arguments prints their arguments.
+  A check whose driver is not configured reports an error.
+- Verdict: ``hwtl: PASS|FAIL <check> <details>``; exit 0 on PASS.
+- ``timer <dev> <period_us> <ms>``: sets the period, counts the
+  expiration signals for ``<ms>`` against ``CLOCK_MONOTONIC``; PASS
+  within 2 % (+1) of ``<ms>`` / period.
+
 NTFC configs
 ------------
 
