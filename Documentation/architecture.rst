@@ -108,7 +108,7 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
    nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec]
             [-L n [-E]] [-S [-R bytes]]
    nettl -c addr [-u] [-p port] [-n count] [-l len] [-t sec] [-k idle [-P]]
-            [-r pps] [-d] [-N]
+            [-r pps] [-d] [-N] [-X]
 
 - ``-k idle`` TCP client only: before the transfer, enable keep-alive
   (``idle`` s idle, 1 s interval, 3 probes) and wait idle in
@@ -127,6 +127,12 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
   returned ``EINPROGRESS``, ``nettl: connect poll <ret> revents
   0x<revents> so_error <SO_ERROR>`` after ``poll(POLLOUT)`` with the
   ``-t`` timeout; passes if the connection was established.
+- ``-X`` TCP client only: wait for the peer's FIN, then send one byte
+  every 100 ms (``MSG_NOSIGNAL``) until a send fails, then once more,
+  then once without ``MSG_NOSIGNAL`` with a ``SIGPIPE`` handler; passes
+  if the first error is ``EPIPE`` or ``ECONNRESET``, both later ones
+  ``EPIPE`` and ``SIGPIPE`` was caught once (``first= again= sig=
+  sigpipe=`` on the verdict line).
 - ``-I`` UDP client only: ``sendmsg()`` of a two-element iov whose
   lengths sum past ``SSIZE_MAX``; passes when it fails with ``EINVAL``
   and prints ``iov=<errno> ret=<ret>`` on the verdict line.

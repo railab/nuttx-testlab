@@ -300,6 +300,10 @@ node0 against the host. Same sessions as the ``ip`` module.
    * - ``test_tcp_rst_mid_transfer``
      - A host RST during a transfer ends the node server with a
        verdict; a new server then echoes 16 KiB intact.
+   * - ``test_tcp_send_after_peer_close``
+     - ``nettl -X``: after the host closed, the first failing send gives
+       ``EPIPE`` or ``ECONNRESET``, the next one ``EPIPE``, and one
+       without ``MSG_NOSIGNAL`` ``EPIPE`` and one ``SIGPIPE``.
    * - ``test_tcp_keepalive_live_peer``
      - A node client with keep-alive (1 s idle, 1 s interval, 3 probes)
        idles 6 s against a host server, then echoes 1 KiB.

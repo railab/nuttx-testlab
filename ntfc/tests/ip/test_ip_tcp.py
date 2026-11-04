@@ -239,6 +239,34 @@ def test_tcp_rst_mid_transfer() -> None:
     assert host_tcp_echo_check(NODE_IPS[0], port, 16 * CHUNK)
 
 
+def test_tcp_send_after_peer_close() -> None:
+    """A send on a connection the host closed fails with EPIPE.
+
+    The host accepts and closes at once; the node waits for the FIN and
+    sends until the host's reset ends the connection.  POSIX send():
+    "[EPIPE] The socket is shut down for writing, or the socket is
+    connection-mode and is no longer connected. In the latter case, and
+    if the socket is of type SOCK_STREAM or SOCK_SEQPACKET and the
+    MSG_NOSIGNAL flag is not set, the SIGPIPE signal is generated to the
+    calling thread."  The first failing send may report the reset
+    instead: "[ECONNRESET] A connection was forcibly closed by a peer."
+    """
+    port = 5259
+    with TcpEchoServer(HOST_IP, port, close_after=0) as srv:
+        out = (
+            _core()
+            .sendCommandReadUntilPattern(
+                f"nettl -c {HOST_IP} -p {port} -X -t 10",
+                pattern=VERDICT_RE,
+                timeout=30,
+            )
+            .output
+        )
+    assert srv.connections == 1
+    found = re.search(VERDICT_RE, out)
+    assert found and found.group(1) == "PASS", out
+
+
 @pytest.mark.dep_config("CONFIG_NET_TCP_KEEPALIVE")
 def test_tcp_keepalive_live_peer() -> None:
     """Keep-alive probes answered by the host keep an idle connection up.

@@ -31,6 +31,7 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
@@ -87,6 +88,7 @@ struct nettl_args_s
   bool        flood;
   bool        duplex;
   bool        nbconnect;
+  bool        peerclosed;
   bool        iovcheck;
   bool        sink;
   int         rate;
@@ -99,6 +101,7 @@ struct nettl_args_s
 
 static uint8_t g_txbuf[NETTL_BUFSIZE + NETTL_UDP_HDR];
 static uint8_t g_rxbuf[NETTL_BUFSIZE + NETTL_UDP_HDR];
+static volatile sig_atomic_t g_nettl_sigpipe;
 
 /****************************************************************************
  * Private Functions
@@ -691,6 +694,89 @@ static int nettl_tcp_nbconnect(FAR const struct nettl_args_s *args)
   printf("nettl: %s tx=0 rx=0 err=%d\n", ret == 0 ? "PASS" : "FAIL",
          ret == 0 ? 0 : 1);
   return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/****************************************************************************
+ * Name: nettl_tcp_peerclosed
+ *
+ * Description:
+ *   Send on a connection that the peer has closed.  The client waits for
+ *   the peer's FIN, then sends one byte at a time until a send fails: the
+ *   peer answers the data with a reset, so the first failure is EPIPE or
+ *   ECONNRESET.  Every send after it must fail with EPIPE, and a send
+ *   without MSG_NOSIGNAL must also raise SIGPIPE.
+ *
+ ****************************************************************************/
+
+static void nettl_sigpipe(int signo)
+{
+  g_nettl_sigpipe++;
+}
+
+static int nettl_tcp_peerclosed(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_storage sa;
+  struct sigaction act;
+  socklen_t salen;
+  ssize_t ret;
+  bool pass;
+  int first = 0;
+  int again;
+  int sig;
+  int tx = 0;
+  int sd;
+
+  sd = nettl_socket(args, &sa, &salen);
+  if (sd < 0 ||
+      connect(sd, (FAR struct sockaddr *)&sa, salen) < 0)
+    {
+      printf("nettl: connect failed %d\n", errno);
+      printf("nettl: FAIL tx=0 rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  /* The peer closes at once: recv() returns 0 at its FIN */
+
+  ret = recv(sd, g_rxbuf, sizeof(g_rxbuf), 0);
+  if (ret != 0)
+    {
+      printf("nettl: no FIN, recv %zd errno %d\n", ret,
+             ret < 0 ? errno : 0);
+      close(sd);
+      printf("nettl: FAIL tx=0 rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
+
+  while (first == 0 && tx < args->timeout * 10)
+    {
+      if (send(sd, g_txbuf, 1, MSG_NOSIGNAL) < 0)
+        {
+          first = errno;
+        }
+      else
+        {
+          tx++;
+          usleep(100000);
+        }
+    }
+
+  again = send(sd, g_txbuf, 1, MSG_NOSIGNAL) < 0 ? errno : 0;
+
+  memset(&act, 0, sizeof(act));
+  act.sa_handler = nettl_sigpipe;
+  sigemptyset(&act.sa_mask);
+  sigaction(SIGPIPE, &act, NULL);
+
+  g_nettl_sigpipe = 0;
+  sig = send(sd, g_txbuf, 1, 0) < 0 ? errno : 0;
+  close(sd);
+
+  pass = (first == EPIPE || first == ECONNRESET) && again == EPIPE &&
+         sig == EPIPE && g_nettl_sigpipe == 1;
+  printf("nettl: %s tx=%d rx=0 err=%d first=%d again=%d sig=%d "
+         "sigpipe=%d\n", pass ? "PASS" : "FAIL", tx, pass ? 0 : 1, first,
+         again, sig, (int)g_nettl_sigpipe);
+  return pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 static int nettl_tcp_client(FAR const struct nettl_args_s *args)
@@ -1345,7 +1431,7 @@ static void nettl_usage(FAR const char *progname)
          "[-l len] [-t sec] [-w] [-D sec] [-L n [-E]] [-C n] "
          "[-S [-R bytes]]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
-         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-I]\n", progname);
+         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-X] [-I]\n", progname);
 }
 
 /****************************************************************************
@@ -1362,7 +1448,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNSR:I"))
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:I"))
          != ERROR)
     {
       unsigned long val;
@@ -1426,6 +1512,9 @@ int main(int argc, FAR char *argv[])
             break;
           case 'N':
             args.nbconnect = true;
+            break;
+          case 'X':
+            args.peerclosed = true;
             break;
           case 'I':
             args.iovcheck = true;
@@ -1540,13 +1629,14 @@ int main(int argc, FAR char *argv[])
       return EXIT_FAILURE;
     }
 
-  /* -r is a UDP client option, -d a TCP client option; -S is a UDP
-   * server option without -L, -R needs -S.
+  /* -r is a UDP client option, -d, -N and -X are TCP client options; -S
+   * is a UDP server option without -L, -R needs -S.
    */
 
   if ((args.flood && (args.server || !args.udp)) ||
       (args.duplex && (args.server || args.udp)) ||
       (args.nbconnect && (args.server || args.udp)) ||
+      (args.peerclosed && (args.server || args.udp)) ||
       (args.iovcheck && (args.server || !args.udp)) ||
       (args.sink && (!args.server || !args.udp || args.reuse > 0)) ||
       (args.rcvbuf > 0 && !args.sink))
@@ -1585,6 +1675,11 @@ int main(int argc, FAR char *argv[])
         }
 
       return args.flood ? nettl_udp_flood(&args) : nettl_udp_client(&args);
+    }
+
+  if (args.peerclosed)
+    {
+      return nettl_tcp_peerclosed(&args);
     }
 
   return args.nbconnect ? nettl_tcp_nbconnect(&args) :
