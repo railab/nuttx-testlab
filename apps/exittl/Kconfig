@@ -12,6 +12,8 @@ config TESTLAB_EXITTL
 		waits in pause(), then calls exit() from the child's main
 		thread.  Prints a PASS verdict line if the whole child task
 		ends within the timeout and the SIGTERM handler never ran.
+		"exittl wait" checks waitpid() with SA_NOCLDWAIT and with
+		SIGCHLD set to SIG_IGN (needs SCHED_WAITPID).
 
 if TESTLAB_EXITTL
 

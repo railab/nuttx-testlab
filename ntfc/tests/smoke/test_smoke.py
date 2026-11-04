@@ -150,3 +150,31 @@ def test_exit_ends_all_threads(request: pytest.FixtureRequest) -> None:
     found = re.search(r"exittl: (PASS|FAIL)[^\r\n]*", out)
     assert found, out
     assert found.group(1) == "PASS", out
+
+
+@pytest.mark.cmd_check("exittl_main")
+@pytest.mark.dep_config("CONFIG_SCHED_WAITPID")
+def test_wait_child_status_not_kept() -> None:
+    """waitpid() without kept child status waits for all children.
+
+    ``exittl wait`` sets SA_NOCLDWAIT, then (with ``CONFIG_SIG_DEFAULT``)
+    SIGCHLD to SIG_IGN, and starts two children of 200 and 600 ms for
+    each.  POSIX wait(): "If the calling process has SA_NOCLDWAIT set or
+    has SIGCHLD set to SIG_IGN, and the process has no unwaited-for
+    children that were transformed into zombie processes, the calling
+    thread shall block until all of the children of the process
+    containing the calling thread terminate, and wait() and waitpid()
+    shall fail and set errno to [ECHILD]."  After each, SIGCHLD is set
+    back to SIG_DFL without SA_NOCLDWAIT, and waitpid() must again
+    "obtain status information" of a child (exit status 7).
+    """
+    out = (
+        pytest.product.core(0)
+        .sendCommandReadUntilPattern(
+            "exittl wait", pattern=r"exittl: (PASS|FAIL) wait", timeout=15
+        )
+        .output
+    )
+    found = re.search(r"exittl: (PASS|FAIL) wait", out)
+    assert found, out
+    assert found.group(1) == "PASS", out

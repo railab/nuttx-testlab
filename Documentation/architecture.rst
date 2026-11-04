@@ -220,6 +220,12 @@ sets a flag that the parent reads (flat build: shared memory).
 - Verdict: ``exittl: PASS pid=<n>`` if the child is gone (``kill(pid, 0)``
   fails with ``ESRCH``) within 5 s and the handler never ran, else
   ``exittl: FAIL pid=<n> alive=<0|1> handler=<0|1>``; exit 0 on PASS.
+- ``exittl wait`` (``CONFIG_SCHED_WAITPID``): with ``SA_NOCLDWAIT``, and
+  with ``SIGCHLD`` set to ``SIG_IGN`` (``CONFIG_SIG_DEFAULT``), starts
+  children of 200 and 600 ms and expects ``waitpid(-1)`` to fail with
+  ``ECHILD`` after both ended; after each, with ``SIG_DFL``,
+  ``waitpid()`` must return a child's exit status 7. Verdict
+  ``exittl: PASS|FAIL wait``.
 
 ``apps/cantl``
 ~~~~~~~~~~~~~~

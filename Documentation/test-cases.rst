@@ -92,6 +92,13 @@ Test functions
   its main thread. PASS: ``exittl: PASS`` (the child is gone within
   5 s and the ``SIGTERM`` handler did not run).
 
+``test_wait_child_status_not_kept``
+  Runs ``exittl wait``: with ``SA_NOCLDWAIT``, and with ``SIGCHLD`` set
+  to ``SIG_IGN``, ``waitpid(-1)`` blocks until both children (200 and
+  600 ms) ended and fails with ``ECHILD``; after each, with ``SIG_DFL``,
+  ``waitpid()`` returns a child's exit status 7. PASS: ``exittl: PASS
+  wait``.
+
 ``ip`` module
 -------------
 
