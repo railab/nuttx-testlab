@@ -1176,8 +1176,8 @@ contents, names and modes on the host directly. Data is the ``fstl``
 pattern; ``bin/`` holds the loadable programs ``elftl`` and ``elfsym``
 of the build and is in the node's ``PATH``. Sessions:
 ``qemu-armv8a-v9fs``, ``rv-virt-v9fs``, ``qemu-intel64-v9fs`` (flat
-builds) and ``qemu-armv8a-v9fs-knsh`` (kernel build, every program a
-file on 9P).
+builds), ``qemu-armv8a-v9fs-knsh`` and ``qemu-intel64-v9fs-knsh``
+(kernel builds, every program a file on 9P).
 
 .. list-table::
    :header-rows: 1

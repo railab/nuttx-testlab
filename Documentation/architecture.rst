@@ -529,8 +529,8 @@ sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 ``qemu-intel64`` also have ``<target>-can-bus`` and ``<target>-can-char``
 (``ntfc/tests/can``, ``resources: [can0]``, see `Host SocketCAN bus
 (can-bus)`_). ``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64`` also have
-``<target>-v9fs`` and ``qemu-armv8a`` has ``qemu-armv8a-v9fs-knsh``
-(``ntfc/tests/fs``, see `Host share (v9fs)`_). ``qemu-armv8a``,
+``<target>-v9fs``, and ``qemu-armv8a`` and ``qemu-intel64`` have
+``<target>-v9fs-knsh`` (``ntfc/tests/fs``, see `Host share (v9fs)`_). ``qemu-armv8a``,
 ``rv-virt`` and ``qemu-intel64`` also have ``<target>-router``
 (``ntfc/tests/router``) and ``<target>-router-hp2`` (its
 ``test_router_duplex``), both ``resources: [tl-rbr0]``, see
@@ -717,6 +717,13 @@ QEMU in that directory for kernel builds, so the paths in its
 ``fstl`` and ``elftl`` load from it. ``PATH`` is
 ``/system/bin:/mnt/v9fs/bin``; ``TLS_LOG2_MAXSTACK=15`` allows the
 24 KiB ``elftl`` stack.
+
+``boards/x86_64/qemu/qemu-intel64/configs/v9fs-knsh`` is the same for
+``qemu-intel64`` (upstream ``knsh_romfs`` address layout, both 9P
+devices on PCI). As upstream ``knsh_romfs_pci`` it sets
+``DEV_SIMPLE_ADDRENV``, which gives the virtio drivers
+``up_addrenv_pa_to_va()`` (x86_64 has no own one), and leaves
+``TLS_ALIGNED`` off, so the stack size has no power-of-two limit.
 
 6LoWPAN loopback (sixlowpan, pktradio)
 --------------------------------------

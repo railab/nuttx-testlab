@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Kernel build: NTFC starts QEMU in the build directory, so tlbin (path=.)
+# exports the build with the programs in bin/ and the tlfs path is
+# relative to it (build/v9fs/qemu-intel64-v9fs-knsh).
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-intel64/v9fs-knsh'
+
+product:
+  name: "qemu-intel64-v9fs-knsh"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      boot_timeout: 30
+      exec_path: 'qemu-system-x86_64'
+      exec_args: '-m 1G -cpu host -enable-kvm -nographic -serial mon:stdio
+                  -fsdev local,id=tlbin,security_model=none,readonly=on,path=.
+                  -device virtio-9p-pci,fsdev=tlbin,mount_tag=tlbin
+                  -fsdev local,id=tlfs,path=../../../v9fs/qemu-intel64-v9fs-knsh,security_model=none
+                  -device virtio-9p-pci,fsdev=tlfs,mount_tag=tlshare'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/v9fs-knsh'
