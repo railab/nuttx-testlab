@@ -273,6 +273,10 @@ sessions as the ``ip`` module.
    * - ``test_mcast_membership_lifetime``
      - node0's membership is still in the bridge table 20 s after the
        join, and is gone within 10 s after its socket closes.
+   * - ``test_mcast_all_nodes_join_leave``
+     - Two cycles of node0 joining ff02::1, echoing 20 host datagrams
+       sent to ff02::1 and leaving on close; both server verdicts
+       ``nettl: PASS``.
 
 ``ip`` TCP
 ----------

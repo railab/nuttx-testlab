@@ -25,6 +25,7 @@ report (timers set by testenv/ip-pair.sh). Its group table
 """
 
 import json
+import re
 import socket
 import struct
 import subprocess
@@ -47,6 +48,8 @@ pytestmark = [
 
 BRIDGE = "tl-br0"
 GROUPS = {False: "239.42.0.1", True: "ff12::42"}
+ALL_NODES = "ff02::1"
+SERVER_VERDICT_RE = r"nettl: (PASS|FAIL) rx=\d+ err=\d+"
 MEMBERSHIP_S = 15  # mcast_membership_interval in testenv/ip-pair.sh
 
 MLD_REPORT_BUG = (
@@ -195,3 +198,32 @@ def test_mcast_membership_lifetime(ipv6: bool) -> None:
     assert _member(group), "membership expired: queries not answered"
     _end_server(addr, 5232)
     assert _wait_member(group, False, 10), "group not left on close"
+
+
+def test_mcast_all_nodes_join_leave() -> None:
+    """An explicit join and leave of ff02::1 keeps the all-nodes group.
+
+    The node is always a member of the all-nodes group: RFC 4291, 2.8:
+    "A host is required to recognize the following addresses as
+    identifying itself: ... The All-Nodes multicast addresses defined in
+    Section 2.7.1."  A socket may still join it (RFC 3493, 5.2:
+    IPV6_JOIN_GROUP "Join a multicast group on a specified local
+    interface") and leave it again when it closes.  Two such cycles must
+    both echo host datagrams sent to ff02::1, so the first leave did not
+    drop the group.
+    """
+    _skip_unless(True)
+    for port in (5233, 5234):
+        nettl_server(0, True, port, NODE_IP6S[0], ipv6=True, group=ALL_NODES)
+        assert host_udp_echo_check(
+            ALL_NODES, port, 20, retries=2, mcast_dev=BRIDGE
+        ), f"port {port}: no echo from ff02::1"
+        _end_server(NODE_IP6S[0], port)
+        out = (
+            pytest.products[0]
+            .core(0)
+            .readUntilPattern(SERVER_VERDICT_RE, timeout=10)
+            .output
+        )
+        found = re.search(SERVER_VERDICT_RE, out)
+        assert found and found.group(1) == "PASS", out
