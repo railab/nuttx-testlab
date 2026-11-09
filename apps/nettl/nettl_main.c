@@ -37,11 +37,13 @@
 #include <errno.h>
 
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <net/if.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -76,6 +78,7 @@ struct nettl_args_s
   bool        epoll;
   FAR char   *addr;
   FAR char   *group;
+  FAR char   *ifname;
   uint16_t    port;
   size_t      count;
   size_t      len;
@@ -654,6 +657,88 @@ static int nettl_iov_overflow(FAR const struct nettl_args_s *args)
          ret < 0 && err == EINVAL ? "PASS" : "FAIL",
          ret < 0 && err == EINVAL ? 0 : 1, err, ret);
   return ret < 0 && err == EINVAL ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/* An interface ioctl on req, named ifname */
+
+static int nettl_ifioctl(int sd, int cmd, FAR struct ifreq *req,
+                         FAR const char *ifname)
+{
+  memset(req, 0, sizeof(*req));
+  strlcpy(req->ifr_name, ifname, IFNAMSIZ);
+  return ioctl(sd, cmd, (unsigned long)req);
+}
+
+/****************************************************************************
+ * Name: nettl_ifbrd
+ *
+ * Description:
+ *   SIOCGIFBRDADDR of an interface with IFF_BROADCAST gives its address
+ *   with all host bits set (address | ~netmask).
+ *
+ ****************************************************************************/
+
+static int nettl_ifbrd(FAR const char *ifname)
+{
+  char saddr[INET_ADDRSTRLEN];
+  char smask[INET_ADDRSTRLEN];
+  char sbrd[INET_ADDRSTRLEN];
+  struct ifreq req;
+  struct in_addr addr;
+  struct in_addr mask;
+  struct in_addr brd;
+  bool pass;
+  int flags;
+  int err = 0;
+  int sd;
+
+  sd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sd < 0)
+    {
+      printf("nettl: FAIL tx=0 rx=0 lost=0 err=1 socket errno=%d\n", errno);
+      return EXIT_FAILURE;
+    }
+
+  if (nettl_ifioctl(sd, SIOCGIFFLAGS, &req, ifname) < 0)
+    {
+      err = errno;
+    }
+
+  flags = req.ifr_flags;
+
+  if (err == 0 && nettl_ifioctl(sd, SIOCGIFADDR, &req, ifname) < 0)
+    {
+      err = errno;
+    }
+
+  addr = ((FAR struct sockaddr_in *)&req.ifr_addr)->sin_addr;
+
+  if (err == 0 && nettl_ifioctl(sd, SIOCGIFNETMASK, &req, ifname) < 0)
+    {
+      err = errno;
+    }
+
+  mask = ((FAR struct sockaddr_in *)&req.ifr_netmask)->sin_addr;
+
+  if (err == 0 && nettl_ifioctl(sd, SIOCGIFBRDADDR, &req, ifname) < 0)
+    {
+      err = errno;
+    }
+
+  brd = ((FAR struct sockaddr_in *)&req.ifr_broadaddr)->sin_addr;
+  close(sd);
+
+  inet_ntop(AF_INET, &addr, saddr, sizeof(saddr));
+  inet_ntop(AF_INET, &mask, smask, sizeof(smask));
+  inet_ntop(AF_INET, &brd, sbrd, sizeof(sbrd));
+
+  pass = err == 0 && (flags & IFF_BROADCAST) != 0 &&
+         brd.s_addr == (addr.s_addr | ~mask.s_addr);
+
+  printf("nettl: %s tx=0 rx=0 lost=0 err=%d if=%s addr=%s mask=%s brd=%s "
+         "bcast=%d errno=%d\n", pass ? "PASS" : "FAIL", pass ? 0 : 1,
+         ifname, saddr, smask, sbrd, (flags & IFF_BROADCAST) != 0, err);
+  return pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 static int nettl_tcp_nbconnect(FAR const struct nettl_args_s *args)
@@ -1432,6 +1517,7 @@ static void nettl_usage(FAR const char *progname)
          "[-S [-R bytes]]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
          "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-X] [-I]\n", progname);
+  printf("       %s -B ifname\n", progname);
 }
 
 /****************************************************************************
@@ -1448,7 +1534,7 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:I"))
+  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IB:"))
          != ERROR)
     {
       unsigned long val;
@@ -1471,6 +1557,9 @@ int main(int argc, FAR char *argv[])
             break;
           case 'g':
             args.group = optarg;
+            break;
+          case 'B':
+            args.ifname = optarg;
             break;
           case 'w':
             args.write_only = true;
@@ -1592,6 +1681,19 @@ int main(int argc, FAR char *argv[])
             nettl_usage(argv[0]);
             return EXIT_FAILURE;
         }
+    }
+
+  /* -B is a mode of its own */
+
+  if (args.ifname != NULL)
+    {
+      if (args.server || args.addr != NULL)
+        {
+          nettl_usage(argv[0]);
+          return EXIT_FAILURE;
+        }
+
+      return nettl_ifbrd(args.ifname);
     }
 
   if (args.server == (args.addr != NULL))

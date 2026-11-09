@@ -351,6 +351,9 @@ each test. Same sessions as the ``ip`` module.
      - ``ifconfig eth0 10.42.0.21``: node1 pings the host and answers
        on the new address, not on the old one, and echoes 16 KiB over
        TCP on the new address.
+   * - ``test_link_broadcast_address``
+     - ``SIOCGIFBRDADDR`` of node1's eth0 is ``10.42.0.255`` and, after
+       ``netmask 255.255.0.0``, ``10.42.255.255``.
 
 ``ip`` ARP
 ----------

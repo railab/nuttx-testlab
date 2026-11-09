@@ -23,6 +23,7 @@ interface, its bridge port and its configured address back afterwards.
 """
 
 import json
+import re
 import subprocess
 from typing import Any, Iterator, List
 
@@ -170,3 +171,38 @@ def test_link_readdress() -> None:
     _run("ip", "neigh", "flush", "dev", BRIDGE, "to", NODE_IPS[NODE])
     assert not _host_ping(NODE_IPS[NODE], count=3)
     assert _tcp_echo(NEW_IP, 5502)
+
+
+def _broadcast() -> str:
+    """Return node1's eth0 broadcast address from ``nettl -B``.
+
+    :return: dotted IPv4 address of SIOCGIFBRDADDR
+    """
+    ret = _core().sendCommandReadUntilPattern(
+        "nettl -B eth0",
+        pattern=r"nettl: (PASS|FAIL) tx=[^\r\n]*[\r\n]",
+        timeout=10,
+    )
+    found = re.search(r"nettl: (PASS|FAIL) [^\r\n]*", str(ret.output))
+    assert found, ret.output
+    verdict = found.group(0)
+    assert verdict.startswith("nettl: PASS"), verdict
+    assert " bcast=1 " in verdict, verdict
+    return re.search(r" brd=(\S+)", verdict).group(1)
+
+
+def test_link_broadcast_address() -> None:
+    """SIOCGIFBRDADDR gives the subnet broadcast address of eth0.
+
+    No POSIX text; netdevice(7): "SIOCGIFBRDADDR, SIOCSIFBRDADDR  Get or
+    set the broadcast address for a device using ifr_brdaddr."  An
+    IFF_BROADCAST interface addressed with SIOCSIFADDR and SIOCSIFNETMASK
+    has the address with all host bits set, and follows a netmask change.
+    """
+    assert _broadcast() == "10.42.0.255"
+    ret = _core().sendCommand(
+        f"ifconfig eth0 {NODE_IPS[NODE]} dr {HOST_IP} netmask 255.255.0.0",
+        timeout=10,
+    )
+    assert ret == 0
+    assert _broadcast() == "10.42.255.255"
