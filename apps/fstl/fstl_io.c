@@ -24,8 +24,10 @@
 #include <nuttx/config.h>
 
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +45,7 @@
 #define FSTL_FILL      0xa5
 #define FSTL_EXTEND_SIZE 2048
 #define FSTL_EXTEND_GROW 1024
+#define FSTL_IOV_SIZE  100
 
 /****************************************************************************
  * Private Types
@@ -755,6 +758,139 @@ int fstl_sync(FAR const char *path)
 
 fail:
   printf("fstl: FAIL sync step=%d errno=%s\n", step, fstl_errname(errno));
+  if (fd >= 0)
+    {
+      close(fd);
+    }
+
+  return -1;
+}
+
+/* readv() and writev(): areas are filled and written in order, a sum of
+ * iov_len values above SSIZE_MAX fails with EINVAL, writev() leaves the
+ * file offset of a failed call unchanged.
+ */
+
+int fstl_iov(FAR const char *path)
+{
+  uint8_t buf[FSTL_IOV_SIZE];
+  uint8_t rd[FSTL_IOV_SIZE + 16];
+  struct iovec iov[3];
+  ssize_t ret = 0;
+  int step = 0;
+  int fd;
+
+  fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  if (fd < 0)
+    {
+      return fstl_fail("iov", "open", fd);
+    }
+
+  /* 1: writev of three areas, the middle one empty, writes them in order */
+
+  step++;
+  fstl_fill(buf, sizeof(buf), 0, 0);
+  iov[0].iov_base = buf;
+  iov[0].iov_len  = 37;
+  iov[1].iov_base = buf + 37;
+  iov[1].iov_len  = 0;
+  iov[2].iov_base = buf + 37;
+  iov[2].iov_len  = sizeof(buf) - 37;
+  ret = writev(fd, iov, 3);
+  if (ret != (ssize_t)sizeof(buf) || fstl_size(fd) != (off_t)sizeof(buf))
+    {
+      goto fail;
+    }
+
+  /* 2: readv fills the first area before the next one */
+
+  step++;
+  memset(rd, 0, sizeof(rd));
+  iov[0].iov_base = rd;
+  iov[0].iov_len  = 10;
+  iov[1].iov_base = rd + 10;
+  iov[1].iov_len  = 0;
+  iov[2].iov_base = rd + 10;
+  iov[2].iov_len  = sizeof(rd) - 10;
+  if (lseek(fd, 0, SEEK_SET) != 0 ||
+      (ret = readv(fd, iov, 3)) != (ssize_t)sizeof(buf) ||
+      fstl_check(rd, sizeof(buf), 0, 0) != sizeof(buf))
+    {
+      goto fail;
+    }
+
+  /* 3: readv at the end of the file returns 0 */
+
+  step++;
+  if ((ret = readv(fd, iov, 3)) != 0)
+    {
+      goto fail;
+    }
+
+  /* 4: writev with a sum above SSIZE_MAX fails with EINVAL and leaves
+   * the file offset unchanged
+   */
+
+  step++;
+  iov[0].iov_base = buf;
+  iov[0].iov_len  = 16;
+  iov[1].iov_base = buf;
+  iov[1].iov_len  = SSIZE_MAX;
+  if (lseek(fd, 20, SEEK_SET) != 20)
+    {
+      goto fail;
+    }
+
+  errno = 0;
+  ret = writev(fd, iov, 2);
+  if (ret != -1 || errno != EINVAL || lseek(fd, 0, SEEK_CUR) != 20)
+    {
+      goto fail;
+    }
+
+  /* 5: readv with a sum above SSIZE_MAX fails with EINVAL */
+
+  step++;
+  iov[0].iov_base = rd;
+  iov[1].iov_base = rd;
+  errno = 0;
+  ret = readv(fd, iov, 2);
+  if (ret != -1 || errno != EINVAL)
+    {
+      goto fail;
+    }
+
+  close(fd);
+
+  /* 6: readv on a write-only and writev on a read-only descriptor fail
+   * with EBADF
+   */
+
+  step++;
+  iov[0].iov_base = rd;
+  iov[0].iov_len  = 16;
+  fd = open(path, O_WRONLY);
+  errno = 0;
+  if (fd < 0 || (ret = readv(fd, iov, 1)) != -1 || errno != EBADF)
+    {
+      goto fail;
+    }
+
+  close(fd);
+  fd = open(path, O_RDONLY);
+  errno = 0;
+  if (fd < 0 || (ret = writev(fd, iov, 1)) != -1 || errno != EBADF)
+    {
+      goto fail;
+    }
+
+  close(fd);
+  printf("fstl: PASS iov\n");
+  return OK;
+
+fail:
+  printf("fstl: FAIL iov step=%d ret=%zd errno=%s\n", step, ret,
+         fstl_errname(errno));
   if (fd >= 0)
     {
       close(fd);

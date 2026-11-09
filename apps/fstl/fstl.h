@@ -71,6 +71,7 @@ int fstl_append(FAR const char *path);
 int fstl_sync(FAR const char *path);
 int fstl_conc(FAR const char *dir, int nthreads, off_t size);
 int fstl_extend(FAR const char *path);
+int fstl_iov(FAR const char *path);
 
 /* Name space checks (fstl_dir.c) */
 

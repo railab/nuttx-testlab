@@ -1386,6 +1386,10 @@ sessions as the ``fs`` module.
      - ``ftruncate`` extending a tmpfs file whose offset was moved to
        its start keeps the data, zero-fills the extension and leaves the
        offset.
+   * - ``test_tmpfs_readv_writev``
+     - ``readv``/``writev`` on tmpfs fill and write the areas in order;
+       an ``iov_len`` sum above ``SSIZE_MAX`` fails with ``EINVAL``
+       (``writev`` keeps the offset); wrong access mode gives ``EBADF``.
    * - ``test_tmpfs_append``
      - ``O_APPEND`` writes on tmpfs land at the end.
    * - ``test_tmpfs_rmdir_deleted_full``
@@ -1408,6 +1412,8 @@ sessions as the ``fs`` module.
    * - ``test_fat_extend_after_seek``
      - ``ftruncate`` extending a FAT file after a seek to its start
        keeps the data and zero-fills only the extension.
+   * - ``test_fat_readv_writev``
+     - As ``test_tmpfs_readv_writev``, on FAT.
    * - ``test_fat_rmdir_deleted_full``
      - As many files as fill the directory's cluster are created and
        unlinked; ``rmdir`` of the directory succeeds.

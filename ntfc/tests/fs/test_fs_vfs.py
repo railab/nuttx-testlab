@@ -253,6 +253,21 @@ def test_tmpfs_extend_after_seek(tmpdir: str) -> None:
     fstl_pass(f"extend {tmpdir}/e.bin")
 
 
+def test_tmpfs_readv_writev(tmpdir: str) -> None:
+    """readv() and writev() on tmpfs.
+
+    POSIX readv(): "The readv() function shall always fill an area
+    completely before proceeding to the next."  writev(): "The writev()
+    function shall always write a complete area before proceeding to the
+    next."  Both "shall fail if: [EINVAL] The sum of the iov_len values in
+    the iov array" overflowed (readv) / "would overflow" (writev) "an
+    ssize_t"; a failed writev() returns -1 and "the file-pointer shall
+    remain unchanged".  read()/write() [EBADF]: not open for reading /
+    writing.
+    """
+    fstl_pass(f"iov {tmpdir}/v.bin")
+
+
 def test_tmpfs_append(tmpdir: str) -> None:
     """O_APPEND writes land at the end regardless of the offset.
 
@@ -337,6 +352,21 @@ def test_fat_extend_after_seek(fatdir: str) -> None:
     old end is unchanged and the file offset is not moved.
     """
     fstl_pass(f"extend {fatdir}/E.BIN")
+
+
+def test_fat_readv_writev(fatdir: str) -> None:
+    """readv() and writev() on FAT.
+
+    POSIX readv(): "The readv() function shall always fill an area
+    completely before proceeding to the next."  writev(): "The writev()
+    function shall always write a complete area before proceeding to the
+    next."  Both "shall fail if: [EINVAL] The sum of the iov_len values in
+    the iov array" overflowed (readv) / "would overflow" (writev) "an
+    ssize_t"; a failed writev() returns -1 and "the file-pointer shall
+    remain unchanged".  read()/write() [EBADF]: not open for reading /
+    writing.
+    """
+    fstl_pass(f"iov {fatdir}/V.BIN")
 
 
 @pytest.mark.xfail(strict=True, reason=FAT_RMDIR_BUG)

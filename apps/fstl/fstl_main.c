@@ -99,6 +99,7 @@ static void fstl_usage(FAR const char *progname)
           "  sync   <path>              fsync\n"
           "  conc   <dir> <n> <size>    n threads write own files\n"
           "  extend <path>              ftruncate extends after a seek\n"
+          "  iov    <path>              readv/writev\n"
           "  ls     <dir>               readdir end, d_ino (-n -q)\n"
           "  stat   <path>              print stat, stable st_ino\n"
           "  statfs <path>              print statfs\n"
@@ -337,6 +338,10 @@ int main(int argc, FAR char *argv[])
   else if (strcmp(check, "extend") == 0 && nargs == 1)
     {
       ret = fstl_extend(args[0]);
+    }
+  else if (strcmp(check, "iov") == 0 && nargs == 1)
+    {
+      ret = fstl_iov(args[0]);
     }
   else if (strcmp(check, "ls") == 0 && nargs == 1)
     {
