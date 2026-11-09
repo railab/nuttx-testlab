@@ -43,7 +43,8 @@ Defconfig ``hw-rig1``: upstream ``nsh`` + ``hwtl``, ``SIG_DEFAULT``,
 ``NSH_MAXARGUMENTS=32``, ``LINE_MAX=256`` and the board devices below,
 registered by the STM32 board common code
 (``BOARD_STM32_COMMON_TIMn_TIMER``/``_ONESHOT``,
-``BOARD_STM32_COMMON_LPTIMn_TIMER``/``_ONESHOT``). Session names are
+``BOARD_STM32_COMMON_LPTIMn_TIMER``/``_ONESHOT``), and ``/dev/random``
+from ``STM32_RNG`` where listed. Session names are
 ``<board>-hw-rig1``. All boards are flashed with ``STM32_Programmer_CLI
 -c port=SWD sn=<probe> mode=UR -d nuttx.bin 0x08000000 -v -rst``.
 
@@ -145,7 +146,7 @@ nucleo-h533re
 
 Console USART2 (PA2/PA3, ST-LINK VCP). Timers: TIM2 ``/dev/timer2``,
 TIM7 ``/dev/timer7``, LPTIM1 ``/dev/lptimer1``. Oneshots: TIM6
-``/dev/oneshot6``, LPTIM2 ``/dev/lponeshot2``.
+``/dev/oneshot6``, LPTIM2 ``/dev/lponeshot2``. RNG ``/dev/random``.
 
 nucleo-h743zi
 -------------
@@ -154,4 +155,4 @@ Console USART3 (PD8/PD9, ST-LINK VCP). Timers: TIM2 ``/dev/timer2``,
 TIM7 ``/dev/timer7``, LPTIM1 ``/dev/lptimer1``, LPTIM3
 ``/dev/lptimer3``, LPTIM5 ``/dev/lptimer5``. Oneshots: TIM6
 ``/dev/oneshot6``, LPTIM2 ``/dev/lponeshot2``, LPTIM4
-``/dev/lponeshot4``.
+``/dev/lponeshot4``. RNG ``/dev/random``.

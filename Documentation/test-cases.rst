@@ -1666,6 +1666,6 @@ Sessions of the ``hw`` module (``modules: Testlab_Hw``, defconfig
    * - ``nucleo-c071rb-hw-rig1``
      - ``/dev/timer2``, ``/dev/timer3``, ``/dev/oneshot14``, ``/dev/oneshot16``
    * - ``nucleo-h533re-hw-rig1``
-     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/oneshot6``, ``/dev/lponeshot2``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/oneshot6``, ``/dev/lponeshot2``, ``/dev/random``
    * - ``nucleo-h743zi-hw-rig1``
-     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/lptimer3``, ``/dev/lptimer5``, ``/dev/oneshot6``, ``/dev/lponeshot2``, ``/dev/lponeshot4``
+     - ``/dev/timer2``, ``/dev/timer7``, ``/dev/lptimer1``, ``/dev/lptimer3``, ``/dev/lptimer5``, ``/dev/oneshot6``, ``/dev/lponeshot2``, ``/dev/lponeshot4``, ``/dev/random``

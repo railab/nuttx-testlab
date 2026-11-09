@@ -249,6 +249,9 @@ RIGS: Dict[str, Dict[str, List[Any]]] = {
             ("lponeshot2-20ms", "/dev/lponeshot2 20000"),
             ("lponeshot2-half", "/dev/lponeshot2 0"),
         ],
+        "rng": [
+            ("random", "/dev/random 40"),
+        ],
     },
     "nucleo-h743zi": {
         "timer": [
@@ -273,6 +276,9 @@ RIGS: Dict[str, Dict[str, List[Any]]] = {
             ("lponeshot4-1ms", "/dev/lponeshot4 1000"),
             ("lponeshot4-20ms", "/dev/lponeshot4 20000"),
             ("lponeshot4-half", "/dev/lponeshot4 0"),
+        ],
+        "rng": [
+            ("random", "/dev/random 40"),
         ],
     },
 }
