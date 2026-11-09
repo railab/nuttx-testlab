@@ -7,8 +7,8 @@ config TESTLAB_HWTL
 	tristate "hwtl: hardware test tool"
 	default n
 	---help---
-		Board device checks: periodic timer, oneshot timer and random
-		number generator.  Each check prints one PASS/FAIL verdict line.
+		Board device checks: periodic timer, oneshot timer, random number
+		generator and RTC.  Each check prints one PASS/FAIL verdict line.
 
 if TESTLAB_HWTL
 

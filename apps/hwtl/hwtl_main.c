@@ -44,6 +44,10 @@
 #  include <nuttx/timers/oneshot.h>
 #endif
 
+#ifdef CONFIG_RTC_DRIVER
+#  include <nuttx/timers/rtc.h>
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -59,13 +63,27 @@
 
 /* Helpers needed only by some subcommands */
 
-#ifdef CONFIG_TIMER
+#if defined(CONFIG_TIMER) || defined(CONFIG_RTC_PERIODIC)
 #  define HWTL_HAVE_COUNT 1
 #endif
 
-#if defined(HWTL_HAVE_COUNT) || defined(CONFIG_ONESHOT)
+#if defined(HWTL_HAVE_COUNT) || defined(CONFIG_ONESHOT) || \
+    defined(CONFIG_RTC_ALARM)
 #  define HWTL_HAVE_SIGWAIT 1
 #endif
+
+#if defined(CONFIG_RTC_DRIVER) && defined(CONFIG_RTC_DATETIME)
+#  define HWTL_HAVE_RTC 1
+#endif
+
+/* RTC time check start: one year rollover two seconds after the start */
+
+#define HWTL_RTC_YEAR     2026
+#define HWTL_RTC_MON      11
+#define HWTL_RTC_MDAY     31
+#define HWTL_RTC_HOUR     23
+#define HWTL_RTC_MIN      59
+#define HWTL_RTC_SEC      58
 
 /****************************************************************************
  * Private Types
@@ -100,6 +118,10 @@ struct hwtl_cmd_s
 static enum hwtl_res_e hwtl_timer(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_oneshot(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_rng(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_rtctime(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_rtcalarm(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_rtccancel(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_rtcperiodic(FAR char **argv, FAR char *detail);
 
 /****************************************************************************
  * Private Data
@@ -115,6 +137,18 @@ static const struct hwtl_cmd_s g_hwtl_cmds[] =
   },
   {
     "rng", "<dev> <blocks>", 2, 2, hwtl_rng
+  },
+  {
+    "rtctime", "<dev> <ms>", 2, 2, hwtl_rtctime
+  },
+  {
+    "rtcalarm", "<dev> <id> <s>", 3, 3, hwtl_rtcalarm
+  },
+  {
+    "rtccancel", "<dev> <id> <s>", 3, 3, hwtl_rtccancel
+  },
+  {
+    "rtcperiodic", "<dev> <period_ms> <ms>", 3, 3, hwtl_rtcperiodic
   }
 };
 
@@ -128,7 +162,7 @@ static uint8_t g_hwtl_rngbuf[HWTL_RNG_BLOCK];
  * Private Functions
  ****************************************************************************/
 
-#ifdef HWTL_HAVE_COUNT
+#if defined(HWTL_HAVE_COUNT) || defined(HWTL_HAVE_RTC)
 /* Milliseconds elapsed since start */
 
 static long hwtl_elapsed_ms(FAR const struct timespec *start)
@@ -139,6 +173,9 @@ static long hwtl_elapsed_ms(FAR const struct timespec *start)
   return (now.tv_sec - start->tv_sec) * 1000 +
          (now.tv_nsec - start->tv_nsec) / 1000000;
 }
+#endif
+
+#ifdef HWTL_HAVE_COUNT
 
 /* Count HWTL_SIGNO deliveries for ms milliseconds (signal blocked) */
 
@@ -489,6 +526,316 @@ static enum hwtl_res_e hwtl_rng(FAR char **argv, FAR char *detail)
            "ones=%d poker=%d.%02d", argv[0], blocks, bad, repeats, ones,
            poker / 100, poker % 100);
   return (bad == 0 && repeats == 0) ? HWTL_PASS : HWTL_FAIL;
+}
+
+/****************************************************************************
+ * RTC
+ ****************************************************************************/
+
+#ifdef HWTL_HAVE_RTC
+/* RTC time as seconds since the epoch */
+
+static time_t hwtl_rtc_secs(FAR const struct rtc_time *rt)
+{
+  struct tm tm;
+
+  memset(&tm, 0, sizeof(tm));
+  tm.tm_sec  = rt->tm_sec;
+  tm.tm_min  = rt->tm_min;
+  tm.tm_hour = rt->tm_hour;
+  tm.tm_mday = rt->tm_mday;
+  tm.tm_mon  = rt->tm_mon;
+  tm.tm_year = rt->tm_year;
+  return timegm(&tm);
+}
+#endif
+
+/* Set the RTC, read it back now and after ms milliseconds: both reads
+ * match the elapsed CLOCK_MONOTONIC time within one second, across a year
+ * rollover
+ */
+
+static enum hwtl_res_e hwtl_rtctime(FAR char **argv, FAR char *detail)
+{
+#ifdef HWTL_HAVE_RTC
+  struct rtc_time set;
+  struct rtc_time now;
+  struct timespec start;
+  time_t base;
+  long first;
+  long delta;
+  long elapsed;
+  int ms = atoi(argv[1]);
+  int fd;
+
+  fd = open(argv[0], O_RDWR);
+  if (fd < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "open %s errno=%d", argv[0], errno);
+      return HWTL_ERROR;
+    }
+
+  memset(&set, 0, sizeof(set));
+  set.tm_year = HWTL_RTC_YEAR - 1900;
+  set.tm_mon  = HWTL_RTC_MON;
+  set.tm_mday = HWTL_RTC_MDAY;
+  set.tm_hour = HWTL_RTC_HOUR;
+  set.tm_min  = HWTL_RTC_MIN;
+  set.tm_sec  = HWTL_RTC_SEC;
+  base = hwtl_rtc_secs(&set);
+
+  if (ioctl(fd, RTC_SET_TIME, (unsigned long)&set) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "set errno=%d", errno);
+      close(fd);
+      return HWTL_ERROR;
+    }
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
+  if (ioctl(fd, RTC_RD_TIME, (unsigned long)&now) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "read errno=%d", errno);
+      close(fd);
+      return HWTL_ERROR;
+    }
+
+  first = hwtl_rtc_secs(&now) - base;
+
+  usleep(ms * 1000);
+
+  if (ioctl(fd, RTC_RD_TIME, (unsigned long)&now) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "read errno=%d", errno);
+      close(fd);
+      return HWTL_ERROR;
+    }
+
+  elapsed = hwtl_elapsed_ms(&start);
+  delta   = hwtl_rtc_secs(&now) - base;
+  close(fd);
+
+  snprintf(detail, HWTL_DETAIL_MAX, "%s first=%ld rtc_s=%ld elapsed_ms=%ld "
+           "now=%04d-%02d-%02d %02d:%02d:%02d", argv[0], first, delta,
+           elapsed, now.tm_year + 1900, now.tm_mon + 1, now.tm_mday,
+           now.tm_hour, now.tm_min, now.tm_sec);
+  return (first >= 0 && first <= 1 &&
+          delta * 1000 >= elapsed - 1000 &&
+          delta * 1000 <= elapsed + 1000) ? HWTL_PASS : HWTL_FAIL;
+#else
+  snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_RTC_DRIVER");
+  return HWTL_ERROR;
+#endif
+}
+
+#if defined(HWTL_HAVE_RTC) && defined(CONFIG_RTC_ALARM)
+/* Set alarm id to fire in secs seconds, signal on HWTL_SIGNO */
+
+static int hwtl_rtc_setalarm(int fd, int id, int secs)
+{
+  struct rtc_setrelative_s rel;
+
+  memset(&rel, 0, sizeof(rel));
+  rel.id                          = id;
+  rel.pid                         = getpid();
+  rel.event.sigev_notify          = SIGEV_SIGNAL;
+  rel.event.sigev_signo           = HWTL_SIGNO;
+  rel.event.sigev_value.sival_int = id;
+  rel.reltime                     = secs;
+
+  return ioctl(fd, RTC_SET_RELATIVE, (unsigned long)&rel);
+}
+
+/* Read whether alarm id is active, negative on error */
+
+static int hwtl_rtc_active(int fd, int id)
+{
+  struct rtc_rdalarm_s rd;
+
+  memset(&rd, 0, sizeof(rd));
+  rd.id = id;
+  if (ioctl(fd, RTC_RD_ALARM, (unsigned long)&rd) < 0)
+    {
+      return -errno;
+    }
+
+  return rd.active;
+}
+#endif
+
+/* Alarm id in secs seconds: active after set, fires not before secs and
+ * at most one second later (the RTC alarm has a one second resolution)
+ */
+
+static enum hwtl_res_e hwtl_rtcalarm(FAR char **argv, FAR char *detail)
+{
+#if defined(HWTL_HAVE_RTC) && defined(CONFIG_RTC_ALARM)
+  struct timespec start;
+  struct timespec wait;
+  sigset_t set;
+  sigset_t old;
+  long elapsed;
+  int id = atoi(argv[1]);
+  int secs = atoi(argv[2]);
+  int active;
+  int ret;
+  int fd;
+
+  fd = open(argv[0], O_RDWR);
+  if (fd < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "open %s errno=%d", argv[0], errno);
+      return HWTL_ERROR;
+    }
+
+  hwtl_sig_block(&old);
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  if (hwtl_rtc_setalarm(fd, id, secs) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "alarm %d errno=%d", id, errno);
+      close(fd);
+      hwtl_sig_restore(&old);
+      return HWTL_ERROR;
+    }
+
+  active = hwtl_rtc_active(fd, id);
+
+  sigemptyset(&set);
+  sigaddset(&set, HWTL_SIGNO);
+  wait.tv_sec  = secs + 3;
+  wait.tv_nsec = 0;
+  ret = sigtimedwait(&set, NULL, &wait);
+  elapsed = hwtl_elapsed_ms(&start);
+
+  ioctl(fd, RTC_CANCEL_ALARM, (unsigned long)id);
+  close(fd);
+  hwtl_sig_restore(&old);
+
+  snprintf(detail, HWTL_DETAIL_MAX, "%s id=%d s=%d active=%d fired=%d "
+           "elapsed_ms=%ld", argv[0], id, secs, active, ret == HWTL_SIGNO,
+           elapsed);
+  return (active == 1 && ret == HWTL_SIGNO &&
+          elapsed + CONFIG_USEC_PER_TICK / 1000 >= secs * 1000L &&
+          elapsed <= (secs + 1) * 1000L + 100) ? HWTL_PASS : HWTL_FAIL;
+#else
+  snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_RTC_ALARM");
+  return HWTL_ERROR;
+#endif
+}
+
+/* Alarm id cancelled right after it is set: inactive, never fires */
+
+static enum hwtl_res_e hwtl_rtccancel(FAR char **argv, FAR char *detail)
+{
+#if defined(HWTL_HAVE_RTC) && defined(CONFIG_RTC_ALARM)
+  struct timespec wait;
+  sigset_t set;
+  sigset_t old;
+  int id = atoi(argv[1]);
+  int secs = atoi(argv[2]);
+  int active;
+  int ret;
+  int fd;
+
+  fd = open(argv[0], O_RDWR);
+  if (fd < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "open %s errno=%d", argv[0], errno);
+      return HWTL_ERROR;
+    }
+
+  hwtl_sig_block(&old);
+
+  if (hwtl_rtc_setalarm(fd, id, secs) < 0 ||
+      ioctl(fd, RTC_CANCEL_ALARM, (unsigned long)id) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "alarm %d errno=%d", id, errno);
+      close(fd);
+      hwtl_sig_restore(&old);
+      return HWTL_ERROR;
+    }
+
+  active = hwtl_rtc_active(fd, id);
+
+  sigemptyset(&set);
+  sigaddset(&set, HWTL_SIGNO);
+  wait.tv_sec  = secs + 1;
+  wait.tv_nsec = 0;
+  ret = sigtimedwait(&set, NULL, &wait);
+
+  close(fd);
+  hwtl_sig_restore(&old);
+
+  snprintf(detail, HWTL_DETAIL_MAX, "%s id=%d s=%d active=%d fired=%d",
+           argv[0], id, secs, active, ret == HWTL_SIGNO);
+  return (active == 0 && ret != HWTL_SIGNO) ? HWTL_PASS : HWTL_FAIL;
+#else
+  snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_RTC_ALARM");
+  return HWTL_ERROR;
+#endif
+}
+
+/* Periodic wakeup: wakeups counted in ms are within one of
+ * ms / period_ms
+ */
+
+static enum hwtl_res_e hwtl_rtcperiodic(FAR char **argv, FAR char *detail)
+{
+#if defined(HWTL_HAVE_RTC) && defined(CONFIG_RTC_PERIODIC)
+  struct rtc_setperiodic_s per;
+  sigset_t old;
+  int period = atoi(argv[1]);
+  int ms = atoi(argv[2]);
+  int expect;
+  int count;
+  int fd;
+
+  if (period <= 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "period_ms=%d", period);
+      return HWTL_ERROR;
+    }
+
+  fd = open(argv[0], O_RDWR);
+  if (fd < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "open %s errno=%d", argv[0], errno);
+      return HWTL_ERROR;
+    }
+
+  hwtl_sig_block(&old);
+
+  memset(&per, 0, sizeof(per));
+  per.pid                = getpid();
+  per.event.sigev_notify = SIGEV_SIGNAL;
+  per.event.sigev_signo  = HWTL_SIGNO;
+  per.period.tv_sec      = period / 1000;
+  per.period.tv_nsec     = (period % 1000) * 1000000;
+
+  if (ioctl(fd, RTC_SET_PERIODIC, (unsigned long)&per) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "periodic errno=%d", errno);
+      close(fd);
+      hwtl_sig_restore(&old);
+      return HWTL_ERROR;
+    }
+
+  count = hwtl_count_signals(ms);
+  ioctl(fd, RTC_CANCEL_PERIODIC, 0);
+  close(fd);
+  hwtl_sig_restore(&old);
+
+  expect = ms / period;
+
+  snprintf(detail, HWTL_DETAIL_MAX, "%s period_ms=%d ms=%d count=%d "
+           "expect=%d", argv[0], period, ms, count, expect);
+  return (count >= expect - 1 && count <= expect + 1) ?
+         HWTL_PASS : HWTL_FAIL;
+#else
+  snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_RTC_PERIODIC");
+  return HWTL_ERROR;
+#endif
 }
 
 /****************************************************************************

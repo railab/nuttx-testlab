@@ -1623,6 +1623,20 @@ the board's entries; a board without entries for a test skips it.
      - Per entry (``<dev> <blocks>``): every 2500-byte block passes the
        FIPS 140-2 monobit and poker tests, no two equal consecutive
        32-bit words in the stream (``CONFIG_DEV_RANDOM``).
+   * - ``test_hw_rtc_alarm``
+     - Per entry (``<dev> <id> <s>``): the alarm is active after it is set
+       and fires not before ``<s>`` and at most 1 s later
+       (``CONFIG_RTC_ALARM``).
+   * - ``test_hw_rtc_cancel``
+     - Per entry (``<dev> <id> <s>``): an alarm cancelled right after it is
+       set is inactive and does not fire (``CONFIG_RTC_ALARM``).
+   * - ``test_hw_rtc_periodic``
+     - Per entry (``<dev> <period_ms> <ms>``): the wakeups counted in
+       ``<ms>`` are within 1 of ``<ms>`` / period (``CONFIG_RTC_PERIODIC``).
+   * - ``test_hw_rtc_time``
+     - Per entry (``<dev> <ms>``): the time set (31 Dec 23:59:58) is read
+       back, and after ``<ms>`` the RTC advanced by the elapsed time
+       within 1 s, across the year rollover (``CONFIG_RTC_DRIVER``).
    * - ``test_hw_timer_period``
      - Per entry (``<dev> <period_us> <ms>``): the expirations counted in
        ``<ms>`` are within 2 % (+1) of ``<ms>`` / period
