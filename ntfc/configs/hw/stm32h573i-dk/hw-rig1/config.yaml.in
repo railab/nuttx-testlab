@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Template rendered by tools/hw/run.sh (@PORT@ console, @PROBE@ ST-LINK serial).
+# Flashed with STM32CubeProgrammer.
+
+config:
+  cwd: './external'
+  build_dir: './build/hw/stm32h573i-dk/hw-rig1'
+
+product:
+  name: "stm32h573i-dk-hw-rig1"
+  cores:
+    core0:
+      name: 'main'
+      device: 'serial'
+      exec_path: '@PORT@'
+      exec_args: '115200,n,8,1'
+      boot_timeout: 15
+      defconfig: '../../boards/arm/stm32h5/stm32h573i-dk/configs/hw-rig1'
+      flash: 'STM32_Programmer_CLI -c port=SWD sn=@PROBE@ mode=UR -d $IMAGE_BIN 0x08000000 -v -rst'
+      reboot: 'STM32_Programmer_CLI -c port=SWD sn=@PROBE@ mode=UR -rst'

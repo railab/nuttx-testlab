@@ -43,8 +43,9 @@ Defconfig ``hw-rig1``: upstream ``nsh`` + ``hwtl``, ``SIG_DEFAULT``,
 ``NSH_MAXARGUMENTS=32``, ``LINE_MAX=256`` and the board devices below,
 registered by the STM32 board common code
 (``BOARD_STM32_COMMON_TIMn_TIMER``/``_ONESHOT``,
-``BOARD_STM32_COMMON_LPTIMn_TIMER``/``_ONESHOT``), and ``/dev/random``
-from ``STM32_RNG`` where listed. Session names are
+``BOARD_STM32_COMMON_LPTIMn_TIMER``/``_ONESHOT``) or, for the RTC, by
+the board bringup, and ``/dev/random`` from ``STM32_RNG`` where listed.
+Session names are
 ``<board>-hw-rig1``. All boards are flashed with ``STM32_Programmer_CLI
 -c port=SWD sn=<probe> mode=UR -d nuttx.bin 0x08000000 -v -rst``.
 
@@ -156,3 +157,10 @@ TIM7 ``/dev/timer7``, LPTIM1 ``/dev/lptimer1``, LPTIM3
 ``/dev/lptimer3``, LPTIM5 ``/dev/lptimer5``. Oneshots: TIM6
 ``/dev/oneshot6``, LPTIM2 ``/dev/lponeshot2``, LPTIM4
 ``/dev/lponeshot4``. RNG ``/dev/random``.
+
+stm32h573i-dk
+-------------
+
+Console USART1 (PA9/PA10, ST-LINK VCP). RTC ``/dev/rtc0`` clocked from
+the LSE (``STM32_RTC``, ``RTC_ALARM`` with alarms A and B,
+``RTC_PERIODIC``).

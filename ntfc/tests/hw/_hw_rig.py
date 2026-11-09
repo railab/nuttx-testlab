@@ -253,6 +253,26 @@ RIGS: Dict[str, Dict[str, List[Any]]] = {
             ("random", "/dev/random 40"),
         ],
     },
+    "stm32h573i-dk": {
+        "rtctime": [
+            ("rtc0-3s", "/dev/rtc0 3000"),
+        ],
+        "rtcalarm": [
+            ("rtc0-a-1s", "/dev/rtc0 0 1"),
+            ("rtc0-a-3s", "/dev/rtc0 0 3"),
+            ("rtc0-b-1s", "/dev/rtc0 1 1"),
+            ("rtc0-b-3s", "/dev/rtc0 1 3"),
+        ],
+        "rtccancel": [
+            ("rtc0-a", "/dev/rtc0 0 2"),
+            ("rtc0-b", "/dev/rtc0 1 2"),
+        ],
+        "rtcperiodic": [
+            ("rtc0-1000ms", "/dev/rtc0 1000 5000"),
+            ("rtc0-250ms", "/dev/rtc0 250 3000"),
+            ("rtc0-100ms", "/dev/rtc0 100 2000"),
+        ],
+    },
     "nucleo-h743zi": {
         "timer": [
             ("timer2-1ms", "/dev/timer2 1000 2000"),
