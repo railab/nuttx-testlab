@@ -1619,6 +1619,10 @@ the board's entries; a board without entries for a test skips it.
      - Per entry (``<dev> <us>``, 0 = half the maximum delay): the delay
        fires, early by at most 1 tick, late by at most 2 ticks + 2 ms
        (``CONFIG_ONESHOT``).
+   * - ``test_hw_rng_fips``
+     - Per entry (``<dev> <blocks>``): every 2500-byte block passes the
+       FIPS 140-2 monobit and poker tests, no two equal consecutive
+       32-bit words in the stream (``CONFIG_DEV_RANDOM``).
    * - ``test_hw_timer_period``
      - Per entry (``<dev> <period_us> <ms>``): the expirations counted in
        ``<ms>`` are within 2 % (+1) of ``<ms>`` / period

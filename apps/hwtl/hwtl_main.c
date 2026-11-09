@@ -51,6 +51,12 @@
 #define HWTL_DETAIL_MAX   96
 #define HWTL_SIGNO        SIGUSR1
 
+/* FIPS 140-2 statistical tests: one block of 20000 bits */
+
+#define HWTL_RNG_BLOCK    2500
+#define HWTL_RNG_ONES_MIN 9726
+#define HWTL_RNG_ONES_MAX 10274
+
 /* Helpers needed only by some subcommands */
 
 #ifdef CONFIG_TIMER
@@ -93,6 +99,7 @@ struct hwtl_cmd_s
 
 static enum hwtl_res_e hwtl_timer(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_oneshot(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_rng(FAR char **argv, FAR char *detail);
 
 /****************************************************************************
  * Private Data
@@ -105,10 +112,17 @@ static const struct hwtl_cmd_s g_hwtl_cmds[] =
   },
   {
     "oneshot", "<dev> <us>", 2, 2, hwtl_oneshot
+  },
+  {
+    "rng", "<dev> <blocks>", 2, 2, hwtl_rng
   }
 };
 
 #define HWTL_NCMDS (sizeof(g_hwtl_cmds) / sizeof(g_hwtl_cmds[0]))
+
+/* One RNG block, too large for the stack */
+
+static uint8_t g_hwtl_rngbuf[HWTL_RNG_BLOCK];
 
 /****************************************************************************
  * Private Functions
@@ -339,6 +353,142 @@ static enum hwtl_res_e hwtl_oneshot(FAR char **argv, FAR char *detail)
   snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_ONESHOT");
   return HWTL_ERROR;
 #endif
+}
+
+/****************************************************************************
+ * Random number generator
+ ****************************************************************************/
+
+/* Read one block, short reads allowed */
+
+static int hwtl_rng_read(int fd, FAR uint8_t *buf, size_t len)
+{
+  ssize_t nread;
+  size_t done = 0;
+
+  while (done < len)
+    {
+      nread = read(fd, buf + done, len - done);
+      if (nread <= 0)
+        {
+          return nread < 0 ? -errno : -EIO;
+        }
+
+      done += nread;
+    }
+
+  return 0;
+}
+
+/* FIPS 140-2 monobit and poker tests of one block */
+
+static bool hwtl_rng_fips(FAR const uint8_t *buf, FAR int *ones,
+                          FAR int *poker)
+{
+  uint32_t freq[16];
+  uint64_t sum = 0;
+  int i;
+
+  memset(freq, 0, sizeof(freq));
+  *ones = 0;
+
+  for (i = 0; i < HWTL_RNG_BLOCK; i++)
+    {
+      *ones += __builtin_popcount(buf[i]);
+      freq[buf[i] & 0x0f]++;
+      freq[buf[i] >> 4]++;
+    }
+
+  /* X = 16 / 5000 * sum(f^2) - 5000 (x100), pass 2.16 < X < 46.17 */
+
+  for (i = 0; i < 16; i++)
+    {
+      sum += (uint64_t)freq[i] * freq[i];
+    }
+
+  *poker = (int)(sum * 16 * 100 / 5000) - 5000 * 100;
+
+  return *ones >= HWTL_RNG_ONES_MIN && *ones <= HWTL_RNG_ONES_MAX &&
+         *poker > 216 && *poker < 4617;
+}
+
+/* <blocks> blocks of /dev/random: FIPS 140-2 monobit and poker tests per
+ * block, no two equal consecutive 32-bit words in the whole stream
+ */
+
+static enum hwtl_res_e hwtl_rng(FAR char **argv, FAR char *detail)
+{
+  uint32_t prev = 0;
+  uint32_t word;
+  int blocks = atoi(argv[1]);
+  int repeats = 0;
+  int bad = 0;
+  int ones = 0;
+  int poker = 0;
+  bool pass;
+  int ret;
+  int o;
+  int p;
+  int fd;
+  int b;
+  int i;
+
+  if (blocks <= 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "blocks=%d", blocks);
+      return HWTL_ERROR;
+    }
+
+  fd = open(argv[0], O_RDONLY);
+  if (fd < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "open %s errno=%d", argv[0], errno);
+      return HWTL_ERROR;
+    }
+
+  for (b = 0; b < blocks; b++)
+    {
+      ret = hwtl_rng_read(fd, g_hwtl_rngbuf, HWTL_RNG_BLOCK);
+      if (ret < 0)
+        {
+          snprintf(detail, HWTL_DETAIL_MAX, "%s block=%d read errno=%d",
+                   argv[0], b, -ret);
+          close(fd);
+          return HWTL_ERROR;
+        }
+
+      /* Report the first failing block, or the last one */
+
+      pass = hwtl_rng_fips(g_hwtl_rngbuf, &o, &p);
+      if (bad == 0)
+        {
+          ones  = o;
+          poker = p;
+        }
+
+      if (!pass)
+        {
+          bad++;
+        }
+
+      for (i = 0; i < HWTL_RNG_BLOCK; i += sizeof(word))
+        {
+          memcpy(&word, &g_hwtl_rngbuf[i], sizeof(word));
+          if ((b > 0 || i > 0) && word == prev)
+            {
+              repeats++;
+            }
+
+          prev = word;
+        }
+    }
+
+  close(fd);
+
+  snprintf(detail, HWTL_DETAIL_MAX, "%s blocks=%d bad=%d repeats=%d "
+           "ones=%d poker=%d.%02d", argv[0], blocks, bad, repeats, ones,
+           poker / 100, poker % 100);
+  return (bad == 0 && repeats == 0) ? HWTL_PASS : HWTL_FAIL;
 }
 
 /****************************************************************************
