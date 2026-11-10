@@ -786,7 +786,9 @@ int fstl_iov(FAR const char *path)
       return fstl_fail("iov", "open", fd);
     }
 
-  /* 1: writev of three areas, the middle one empty, writes them in order */
+  /* 1: writev of three areas, the middle one empty, writes them in order
+   * (steps 2 and 3 read them back up to the end of the file)
+   */
 
   step++;
   fstl_fill(buf, sizeof(buf), 0, 0);
@@ -797,7 +799,7 @@ int fstl_iov(FAR const char *path)
   iov[2].iov_base = buf + 37;
   iov[2].iov_len  = sizeof(buf) - 37;
   ret = writev(fd, iov, 3);
-  if (ret != (ssize_t)sizeof(buf) || fstl_size(fd) != (off_t)sizeof(buf))
+  if (ret != (ssize_t)sizeof(buf))
     {
       goto fail;
     }
