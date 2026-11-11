@@ -32,19 +32,6 @@ FAT = "/mnt/fat"
 RAMDISK_MINOR = 7
 RAMDISK_SECTORS = 2048  # 1 MiB of 512-byte sectors
 
-FAT_EXTEND_BUG = (
-    "fs/fat/fs_fat32util.c fat_dirextend(): the zero-fill of an "
-    "ftruncate() extension starts at the open file's current sector "
-    "(ff_currentsector), not at the end of the file, so after a seek to "
-    "the start the extension overwrites the file's data"
-)
-FAT_STAT_SIZE_BUG = (
-    "fs/fat/fs_fat32.c fat_fstat(): the size of an open file comes from "
-    "its directory entry (fat_stat_file), which is written only by "
-    "fat_sync(), so fstat() after a write that extended the file reports "
-    "the old size (0 for a new file); POSIX fstat(): st_size is the "
-    "file size in bytes"
-)
 FAT_RMDIR_BUG = (
     "fs/fat/fs_fat32dirent.c fat_remove(): a directory whose last cluster "
     "is full of deleted entries (no DIR0_ALLEMPTY entry) is scanned to "
@@ -333,7 +320,6 @@ def test_fat_write_verify(fatdir: str) -> None:
     fstl_pass(f"verify {fatdir}/W.BIN 70000 -s 5")
 
 
-@pytest.mark.xfail(strict=True, reason=FAT_STAT_SIZE_BUG)
 def test_fat_pread_pwrite(fatdir: str) -> None:
     """pread/pwrite, lseek and a write past the end on FAT.
 
@@ -343,7 +329,6 @@ def test_fat_pread_pwrite(fatdir: str) -> None:
     fstl_pass(f"pio {fatdir}/P.BIN")
 
 
-@pytest.mark.xfail(strict=True, reason=FAT_EXTEND_BUG)
 def test_fat_extend_after_seek(fatdir: str) -> None:
     """ftruncate() extension after a seek to the start keeps the data.
 
