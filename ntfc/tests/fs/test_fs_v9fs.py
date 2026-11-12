@@ -61,10 +61,8 @@ EXCL_BUG = (
     "succeeds instead of failing with EEXIST"
 )
 QID_TYPE_BUG = (
-    "fs/v9fs/v9fs.c: open, opendir and walk never look at the qid type: "
-    "O_WRONLY of a directory and opendir() of a file succeed (POSIX: "
-    "EISDIR, ENOTDIR), a file used as a directory gives ENOENT, not "
-    "ENOTDIR"
+    "fs/v9fs/v9fs.c: the walk never looks at the qid type: a file used "
+    "as a directory gives ENOENT, not ENOTDIR"
 )
 SEEK_BUG = (
     "fs/v9fs/v9fs.c: v9fs_vfs_seek() returns a negative resulting offset "
@@ -642,8 +640,8 @@ ERRNO_CASES = [
     ("rename-file-to-dir", "rename", "f", "d", "EISDIR", None),
     ("rename-into-self", "rename", "d", "d/sub", "EINVAL", None),
     ("excl-exists", "excl", "f", None, "EEXIST", EXCL_BUG),
-    ("wronly-dir", "wronly", "d", None, "EISDIR", QID_TYPE_BUG),
-    ("opendir-file", "opendir", "f", None, "ENOTDIR", QID_TYPE_BUG),
+    ("wronly-dir", "wronly", "d", None, "EISDIR", None),
+    ("opendir-file", "opendir", "f", None, "ENOTDIR", None),
     ("open-below-file", "open", "f/x", None, "ENOTDIR", QID_TYPE_BUG),
 ]
 
