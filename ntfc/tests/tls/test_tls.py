@@ -40,7 +40,6 @@ from _tls_common import (
     VERSION_NAMES,
     HeapCheck,
     Pki,
-    PortInUse,
     SessionHung,
     TlsServer,
     client,
@@ -99,12 +98,6 @@ CONNECT_RACE_BUG = (
     "registered under conn_dev_lock(); a device poll from another "
     "thread in between sends the SYN, the handshake completes unseen "
     "and connect() waits forever (since 5032377c346); in some runs only"
-)
-
-REUSEADDR_BUG = (
-    "net/tcp/tcp_conn.c tcp_listener(): bind() treats a TIME_WAIT "
-    "connection on the port as in use and never checks SO_REUSEADDR, so "
-    "a restarted server gets EADDRINUSE for TCP_TIME_WAIT_TIMEOUT (2 min)"
 )
 
 
@@ -431,7 +424,6 @@ def test_tls_concurrent_sessions(
     net_leak.check()
 
 
-@pytest.mark.xfail(strict=True, raises=PortInUse, reason=REUSEADDR_BUG)
 def test_tls_server_restart(node: Pki) -> None:
     """A TLS server restarted at once binds its port again.
 
