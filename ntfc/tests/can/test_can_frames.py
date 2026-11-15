@@ -23,10 +23,9 @@ CAN FD length (0..8, 12..64 = DLC 0..15) and BRS/ESI combination.
 """
 
 import pytest
+from _can_common import CTUCANFD_TX_BUSY_BUG
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CLASSIC_FRAMES,
-    CTUCANFD_FD_RX_BUG,
-    CTUCANFD_TX_BUG,
     FD_FRAMES,
     MARKER_ID,
     Frame,
@@ -64,7 +63,7 @@ def test_can_tx_frame_types(request: pytest.FixtureRequest) -> None:
 
     :param request: pytest request
     """
-    xfail_on_ctucanfd(request, CTUCANFD_TX_BUG)
+    xfail_on_ctucanfd(request, CTUCANFD_TX_BUSY_BUG, strict=False)
     sock = host_socket()
     try:
         ret = canopt_run(0, "tx can0")
@@ -76,15 +75,12 @@ def test_can_tx_frame_types(request: pytest.FixtureRequest) -> None:
     assert errors == []
 
 
-def test_can_fd_rx(request: pytest.FixtureRequest) -> None:
+def test_can_fd_rx() -> None:
     """A CAN_RAW_FD_FRAMES socket receives both tables from the host.
 
     CAN FD frames read as CANFD_MTU with length and BRS/ESI intact,
     classic frames as CAN_MTU.
-
-    :param request: pytest request
     """
-    xfail_on_ctucanfd(request, CTUCANFD_FD_RX_BUG)
     canopt_start(0, "fdrx can0")
     host_send(interleaved_frames() + [Frame(MARKER_ID, 1)])
     ret = canopt_verdict(0)

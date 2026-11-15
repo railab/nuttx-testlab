@@ -52,20 +52,6 @@ KICK_ID = 0x7FD
 VERDICT_RE = r"canopt: (PASS|FAIL)[^\r\n]*[\r\n]"
 READY = "canopt: ready"
 
-CTUCANFD_TX_BUG = (
-    "drivers/can/ctucanfd_pci.c: ctucanfd_sock_transmit() stores "
-    "can_id & CAN_RTR_FLAG and flags & CANFD_ESI in 1-bit bitfields (RTR and "
-    "ESI always go out as 0) and drops 29-bit ID bits; drivers/can/"
-    "can_common.c: can_bytes2dlc()/can_dlc2bytes() map CAN FD lengths above "
-    "8 only with CONFIG_CAN_FD, so a SocketCAN-only build sends and receives "
-    "them as 8 bytes"
-)
-CTUCANFD_FD_RX_BUG = (
-    "drivers/can/ctucanfd_pci.c drops the upper 11 bits of 29-bit CAN IDs; "
-    "drivers/can/can_common.c: can_dlc2bytes() maps CAN FD DLC 9..15 to 8 "
-    "bytes unless CONFIG_CAN_FD (character driver) is set"
-)
-
 # (node, deadline) of background canopt checks that may still run
 
 _PENDING: List[Tuple[int, float]] = []
