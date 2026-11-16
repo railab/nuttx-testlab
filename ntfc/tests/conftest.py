@@ -34,12 +34,19 @@ from _ptp_common import ptptl_cleanup  # noqa: E402
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item) -> Iterator[None]:
-    """Keep the call phase report as ``item.rep_call`` for fixtures.
+    """Fail every XPASS and keep the call report as ``item.rep_call``.
+
+    An xfail that passes means the bug is gone: the xfail must be
+    removed, so the run fails whatever ``strict`` says.
 
     :param item: test item
     """
     outcome = yield
     report = outcome.get_result()  # type: ignore[attr-defined]
+    if report.passed and hasattr(report, "wasxfail"):
+        report.outcome = "failed"
+        report.longrepr = f"[XPASS] {report.wasxfail}"
+        del report.wasxfail
     if report.when == "call":
         item.rep_call = report  # type: ignore[attr-defined]
 

@@ -63,7 +63,7 @@ def test_can_tx_frame_types(request: pytest.FixtureRequest) -> None:
 
     :param request: pytest request
     """
-    xfail_on_ctucanfd(request, CTUCANFD_TX_BUSY_BUG, strict=False)
+    xfail_on_ctucanfd(request, CTUCANFD_TX_BUSY_BUG)
     sock = host_socket()
     try:
         ret = canopt_run(0, "tx can0")

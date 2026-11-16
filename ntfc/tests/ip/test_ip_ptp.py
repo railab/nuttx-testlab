@@ -481,7 +481,7 @@ def test_ptp_stop_restart(
     """
     if pytest.products[0].core(0).conf.kv_check("CONFIG_ARCH_X86_64"):
         request.applymarker(
-            pytest.mark.xfail(strict=False, reason=X86_HEAP_SETTLE)
+            pytest.mark.xfail(strict=True, reason=X86_HEAP_SETTLE)
         )
     heap = HeapCheck()
     for _ in range(3):

@@ -388,7 +388,7 @@ def test_drv_tcp_write_under_udp_rx(
         pytest.skip("CONFIG_IOB_THROTTLE is 0")
     request.applymarker(
         pytest.mark.xfail(
-            strict=False, raises=TimeoutError, reason=TCP_SEND_RETRY_BUG
+            strict=True, raises=TimeoutError, reason=TCP_SEND_RETRY_BUG
         )
     )
     nbytes = (

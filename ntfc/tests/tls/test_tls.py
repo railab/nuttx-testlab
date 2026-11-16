@@ -388,7 +388,7 @@ def test_tls_concurrent_sessions(
     if role == "client":
         request.applymarker(
             pytest.mark.xfail(
-                strict=False,
+                strict=True,
                 raises=SessionHung,
                 reason=CONNECT_RACE_BUG,
             )

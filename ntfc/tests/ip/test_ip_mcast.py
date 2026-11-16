@@ -88,7 +88,7 @@ LIFETIME_FAMILIES = [
     pytest.param(
         False,
         id="v4",
-        marks=pytest.mark.xfail(strict=False, reason=IGMP_REJOIN_BUG),
+        marks=pytest.mark.xfail(strict=True, reason=IGMP_REJOIN_BUG),
     ),
     FAMILIES[1],
 ]

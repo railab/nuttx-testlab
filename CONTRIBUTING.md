@@ -11,3 +11,5 @@ Contributions are welcome: new test scenarios, new targets, fixes.
 4. If a test exposes a NuttX bug, report it upstream at
    <https://github.com/apache/nuttx/issues> and link the issue in the test's
    `xfail` reason. Never delete a test to make CI green.
+5. Every `xfail` is strict and must fail reliably: an XPASS fails the run
+   (`ntfc/tests/conftest.py`), so drop the `xfail` once the bug is fixed.

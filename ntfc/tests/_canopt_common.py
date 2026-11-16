@@ -161,17 +161,14 @@ def filter_match(can_id: int, filters: List[Tuple[int, int]]) -> bool:
     return False
 
 
-def xfail_on_ctucanfd(
-    request: pytest.FixtureRequest, reason: str, strict: bool = True
-) -> None:
+def xfail_on_ctucanfd(request: pytest.FixtureRequest, reason: str) -> None:
     """Mark the running test xfail if node 0 uses the CTU CAN FD driver.
 
     :param request: pytest request of the running test
     :param reason: xfail reason
-    :param strict: strict xfail
     """
     if ctucanfd_node(0):
-        request.applymarker(pytest.mark.xfail(strict=strict, reason=reason))
+        request.applymarker(pytest.mark.xfail(strict=True, reason=reason))
 
 
 def chardev_node(node: int) -> bool:

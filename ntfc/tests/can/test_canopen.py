@@ -555,7 +555,7 @@ def test_canopen_node_to_node(
 
     if kvaser_node(1):
         request.applymarker(
-            pytest.mark.xfail(strict=False, reason=KVASER_RX_BUG)
+            pytest.mark.xfail(strict=True, reason=KVASER_RX_BUG)
         )
 
     mark = bus.log.mark()

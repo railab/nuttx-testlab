@@ -64,7 +64,7 @@ def concurrent_workers_xfail(request: Any) -> None:
     nthreads = core().conf.kv_check("CONFIG_SCHED_HPNTHREADS")
     if int(nthreads or 1) > 1:
         request.applymarker(
-            pytest.mark.xfail(strict=False, reason=IPFWD_LOCK_BUG)
+            pytest.mark.xfail(strict=True, reason=IPFWD_LOCK_BUG)
         )
 
 

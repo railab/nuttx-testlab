@@ -27,12 +27,10 @@ vcan ``can0``, so this module runs unmodified against either.
 
 import pytest
 from _can_common import (
-    CAN_CHARDEV,
     CAN_ID_ALT,
     CAN_ID_DEFAULT,
     CAN_IFNAME,
     CTUCANFD_TX_BUSY_BUG,
-    KVASER_RX_BUG,
     can_endpoint,
     canfd_supported,
     cantl_receiver_start,
@@ -42,7 +40,6 @@ from _can_common import (
     host_can_send,
     host_can_socket,
     host_can_verify,
-    kvaser_node,
 )
 
 # Gap between frames the host or a node sends. 1 ms is ~8x a classic
@@ -129,7 +126,7 @@ def test_can_node_to_host() -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-def test_can_filter(request: pytest.FixtureRequest) -> None:
+def test_can_filter() -> None:
     """A receiver's exact-ID filter rejects frames on another CAN ID.
 
     Node 0 and the host both send: node 0 sends the frames the receiver
@@ -137,13 +134,7 @@ def test_can_filter(request: pytest.FixtureRequest) -> None:
     frames on ``CAN_ID_ALT`` before, during and after. The receiver's
     exact-ID filter (hardware, or software when the driver has none)
     must pass only the matching ID.
-
-    :param request: pytest request
     """
-    if kvaser_node(1) and can_endpoint(1) == CAN_CHARDEV:
-        request.applymarker(
-            pytest.mark.xfail(strict=False, reason=KVASER_RX_BUG)
-        )
     count = 20
     cantl_receiver_start(1, count, can_id=CAN_ID_DEFAULT)
 
@@ -164,7 +155,7 @@ def test_can_node_burst_to_host(request: pytest.FixtureRequest) -> None:
     """
     if ctucanfd_node(0):
         request.applymarker(
-            pytest.mark.xfail(strict=False, reason=CTUCANFD_TX_BUSY_BUG)
+            pytest.mark.xfail(strict=True, reason=CTUCANFD_TX_BUSY_BUG)
         )
 
     count = 200

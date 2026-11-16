@@ -74,12 +74,6 @@ APPEND_BUG = (
     "so after a seek the file offset is wrong (POSIX: each write first "
     "moves the offset to the end of the file)"
 )
-LSTAT_BUG = (
-    "fs/v9fs/v9fs.c: v9fs_vfs_lstat() does not clear the stat buffer, so "
-    "st_dev is stack garbage; rename() between two hard links of one file "
-    "then sees two files and removes the old name (passes only by chance, "
-    "e.g. with CONFIG_STACK_COLORATION)"
-)
 WALK_BUG = (
     "fs/v9fs/client.c: v9fs_client_walk() sends all path elements in one "
     "Twalk; 9P allows at most 16 (MAXWELEM), so paths with more than 16 "
@@ -435,7 +429,6 @@ def test_v9fs_rename_replace(work: Tuple[Path, str]) -> None:
     assert (host / "b").read_bytes() == b"new contents"
 
 
-@pytest.mark.xfail(strict=False, reason=LSTAT_BUG)
 def test_v9fs_rename_hardlink(work: Tuple[Path, str]) -> None:
     """rename() between two links of one file does nothing (POSIX)."""
     host, node = work
