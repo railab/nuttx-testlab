@@ -80,22 +80,11 @@ ETIMEDOUT = 110
 EHOSTUNREACH = 113
 EINPROGRESS = 115
 
-RESOLVE_ERRNO_BUG = (
-    "net/icmp/icmp_sendmsg.c, net/icmpv6/icmpv6_sendmsg.c, "
-    "net/tcp/tcp_conn.c tcp_connect(): a failed address resolution of an "
-    'address on the local subnet is returned as ENETUNREACH ("No route '
-    'to the network is present")'
-)
 NONBLOCK_CONNECT_BUG = (
     "net/tcp/tcp_conn.c tcp_connect(): connect() resolves the address "
     "with arp_send()/icmpv6_neighbor() before sending the SYN, also on a "
     "nonblocking socket, and fails with ENETUNREACH instead of "
     "EINPROGRESS"
-)
-ND_RATE_BUG = (
-    "net/icmpv6/icmpv6_neighbor.c: Neighbor Solicitations are "
-    "retransmitted every CONFIG_ICMPv6_NEIGHBOR_DELAYMSEC (default 20 ms), "
-    "not at most once per RetransTimer (RFC 4861 RETRANS_TIMER 1 s)"
 )
 
 
@@ -344,7 +333,6 @@ def test_arp_no_flood(capture: Capture, host_neigh: str) -> None:
     assert len(times) < sent / 10, (len(times), sent)
 
 
-@pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
 def test_arp_unreachable(capture: Capture) -> None:
     """A ping to an address that never answers ARP fails with EHOSTUNREACH.
 
@@ -360,7 +348,6 @@ def test_arp_unreachable(capture: Capture) -> None:
     assert _ping_errno(out) == EHOSTUNREACH, out
 
 
-@pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
 @pytest.mark.cmd_check("nettl_main")
 def test_arp_unreachable_connect() -> None:
     """A blocking connect() to an unanswered address fails, not ENETUNREACH.
@@ -437,7 +424,6 @@ def test_arp_connect_nonblock(cached: bool) -> None:
     assert "nettl: PASS" in out, out
 
 
-@pytest.mark.xfail(strict=True, reason=RESOLVE_ERRNO_BUG)
 @pytest.mark.dep_config("CONFIG_NET_ICMPv6_NEIGHBOR")
 @pytest.mark.cmd_check("ping6_main")
 def test_nd_unreachable() -> None:
@@ -454,7 +440,6 @@ def test_nd_unreachable() -> None:
     assert _ping_errno(out) == EHOSTUNREACH, out
 
 
-@pytest.mark.xfail(strict=True, reason=ND_RATE_BUG)
 @pytest.mark.dep_config("CONFIG_NET_ICMPv6_NEIGHBOR")
 @pytest.mark.cmd_check("ping6_main")
 def test_nd_solicit_rate(capture: Capture) -> None:
