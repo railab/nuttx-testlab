@@ -220,6 +220,7 @@ def iperf_client(
     port: int,
     seconds: int,
     reverse: bool = False,
+    streams: int = 1,
 ) -> "subprocess.Popen[str]":
     """Start an iperf2 TCP client on a host.
 
@@ -228,10 +229,11 @@ def iperf_client(
     :param port: server port
     :param seconds: test duration
     :param reverse: the server sends (``-R``)
+    :param streams: parallel TCP streams (``-P``)
     :return: running client; pass it to :func:`iperf_mbps`
     """
     args = ["iperf", "-c", addr, "-p", str(port), "-t", str(seconds)]
-    args += ["-y", "C"] + (["-R"] if reverse else [])
+    args += ["-y", "C", "-P", str(streams)] + (["-R"] if reverse else [])
     return ns_popen(side, args)
 
 

@@ -1584,9 +1584,10 @@ high-priority work queue threads).
      - As ``test_nat_ping``: 4 concurrent connections from A echo 64 KiB
        each intact; B sees 4 different ports of ``10.52.0.10``.
    * - ``test_router_duplex``
-     - With MASQUERADE, A runs an iperf2 client sending to B and one
-       receiving from B (``-R``) at the same time for 40 s. Then both
-       node addresses answer, A pings B and ``ifconfig`` returns.
+     - With MASQUERADE, three rounds: A runs an iperf2 client sending
+       to B and one receiving from B (``-R``), 4 streams each, at the
+       same time for 20 s; after each round both node addresses answer
+       and A pings B. Then ``ifconfig`` returns.
    * - ``test_router_ifdown_ifup``
      - Each side: after ``ifdown`` the side's host gets no reply from
        the node and A cannot reach B; after ``ifup`` and readdressing

@@ -43,8 +43,14 @@ from _router_common import (
     ping_ok,
 )
 
-#: Length of the duplex load in seconds.
-DUPLEX_TIME = 40
+#: Length of one round of duplex load in seconds.
+DUPLEX_TIME = 20
+
+#: Rounds of duplex load, each followed by a forwarding check.
+DUPLEX_ROUNDS = 3
+
+#: Parallel TCP streams in each direction.
+DUPLEX_STREAMS = 4
 
 IPFWD_LOCK_BUG = (
     "net/ipforward/ipfwd_forward.c: ipfwd_forward() runs in the ingress "
@@ -57,7 +63,7 @@ IPFWD_LOCK_BUG = (
 
 @pytest.fixture
 def concurrent_workers_xfail(request: Any) -> None:
-    """Expect the duplex test to fail now and then with two HP workers.
+    """Expect the duplex test to fail with two HP workers.
 
     :param request: pytest request of the test
     """
@@ -68,34 +74,44 @@ def concurrent_workers_xfail(request: Any) -> None:
         )
 
 
+def _duplex_round(rnd: int) -> None:
+    """Run one round of duplex iperf load from host A to host B.
+
+    :param rnd: round number, for the report
+    """
+    port = 5750 + rnd
+    with iperf_server(1, port):
+        time.sleep(0.5)
+        args = (HOSTS[1], port, DUPLEX_TIME)
+        up = iperf_client(0, *args, streams=DUPLEX_STREAMS)
+        down = iperf_client(0, *args, reverse=True, streams=DUPLEX_STREAMS)
+        print(
+            f"duplex {rnd}: A->B {iperf_mbps(up, DUPLEX_TIME + 30):.1f}, "
+            f"B->A {iperf_mbps(down, DUPLEX_TIME + 30):.1f} Mbit/s"
+        )
+
+
 @pytest.mark.dep_config("CONFIG_NET_NAT44")
 @pytest.mark.usefixtures("concurrent_workers_xfail")
 def test_router_duplex(router_ifs: List[str]) -> None:
     """The node keeps forwarding after duplex TCP load through NAT.
 
-    Host A runs two iperf clients against host B at once, one sending
-    and one receiving (``-R``), for :data:`DUPLEX_TIME` seconds, with
-    MASQUERADE on the B interface. Then both node addresses answer, A
-    reaches B again and ``ifconfig`` returns.
+    :data:`DUPLEX_ROUNDS` times: host A runs two iperf clients against
+    host B at once, one sending and one receiving (``-R``), each with
+    :data:`DUPLEX_STREAMS` streams, for :data:`DUPLEX_TIME` seconds,
+    with MASQUERADE on the B interface. After each round both node
+    addresses answer, A reaches B again and ``ifconfig`` returns.
     """
     rule = f"-t nat -A POSTROUTING -o {router_ifs[1]} -j MASQUERADE"
     iptables(rule)
     ns_run(1, ["ip", "route", "del", *B_ROUTE])
     healthy = False
     try:
-        port = 5750
-        with iperf_server(1, port):
-            time.sleep(0.5)
-            up = iperf_client(0, HOSTS[1], port, DUPLEX_TIME)
-            down = iperf_client(0, HOSTS[1], port, DUPLEX_TIME, reverse=True)
-            print(
-                f"duplex: A->B {iperf_mbps(up, DUPLEX_TIME + 30):.1f}, "
-                f"B->A {iperf_mbps(down, DUPLEX_TIME + 30):.1f} Mbit/s"
-            )
-
-        assert ping_ok(0, NODES[0])
-        assert ping_ok(1, NODES[1])
-        assert ping_ok(0, HOSTS[1])
+        for rnd in range(DUPLEX_ROUNDS):
+            _duplex_round(rnd)
+            assert ping_ok(0, NODES[0]), f"round {rnd}"
+            assert ping_ok(1, NODES[1]), f"round {rnd}"
+            assert ping_ok(0, HOSTS[1]), f"round {rnd}"
         assert all(name in nsh("ifconfig", timeout=10) for name in router_ifs)
         healthy = True
     finally:
