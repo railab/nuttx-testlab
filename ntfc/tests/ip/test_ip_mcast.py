@@ -49,6 +49,8 @@ pytestmark = [
 
 BRIDGE = "tl-br0"
 GROUPS = {False: "239.42.0.1", True: "ff12::42"}
+# Joined by no other test, so no other node holds it.
+LIFETIME_GROUPS = {False: "239.42.0.2", True: "ff12::43"}
 ALL_NODES = "ff02::1"
 SERVER_VERDICT_RE = r"nettl: (PASS|FAIL) rx=\d+ err=\d+"
 MEMBERSHIP_S = 15  # mcast_membership_interval in testenv/ip-pair.sh
@@ -187,7 +189,7 @@ def test_mcast_membership_lifetime(ipv6: bool) -> None:
     node removes the group.
     """
     _skip_unless(ipv6)
-    group = GROUPS[ipv6]
+    group = LIFETIME_GROUPS[ipv6]
     addr = NODE_IP6S[0] if ipv6 else NODE_IPS[0]
     nettl_server(0, True, 5232, addr, ipv6=ipv6, group=group)
     assert _wait_member(group, True, 10), "no membership report"

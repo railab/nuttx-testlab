@@ -253,7 +253,8 @@ test. Same sessions as the ``ip`` module.
 ----------------
 
 Source: ``ntfc/tests/ip/test_ip_mcast.py``. IPv4 (IGMP, group
-``239.42.0.1``) and IPv6 (MLD, group ``ff12::42``) variants. The host
+``239.42.0.1``) and IPv6 (MLD, group ``ff12::42``) variants; the
+membership lifetime test uses ``239.42.0.2`` and ``ff12::43``. The host
 bridge is the querier (General Query every 5 s, membership timeout
 15 s); its group table (``bridge mdb``) shows the node reports. Same
 sessions as the ``ip`` module.
