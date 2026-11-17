@@ -40,7 +40,6 @@ from _tls_common import (
     VERSION_NAMES,
     HeapCheck,
     Pki,
-    SessionHung,
     TlsServer,
     client,
     core,
@@ -90,14 +89,6 @@ RST_BUG = (
     "net/tcp/tcp_monitor.c tcp_close_connection(): TCP_ABORT (peer RST) "
     "sets _SF_CLOSED like a graceful close, so recv() after poll() "
     "returns 0 (end of file) instead of failing with ECONNRESET"
-)
-
-CONNECT_RACE_BUG = (
-    "net/tcp/tcp_connect.c psock_tcp_connect(): tcp_connect() puts the "
-    "connection on the active list before the TCP_CONNECTED callback is "
-    "registered under conn_dev_lock(); a device poll from another "
-    "thread in between sends the SYN, the handshake completes unseen "
-    "and connect() waits forever (since 5032377c346); in some runs only"
 )
 
 
@@ -372,7 +363,6 @@ def test_tls_handshake_lossy(node: Pki, role: str, version: int) -> None:
 
 @pytest.mark.parametrize("role", ["client", "server"])
 def test_tls_concurrent_sessions(
-    request: pytest.FixtureRequest,
     net_leak: Any,
     node: Pki,
     heap: HeapCheck,
@@ -386,13 +376,6 @@ def test_tls_concurrent_sessions(
     sessions = 16
     count = 32 * 1024
     if role == "client":
-        request.applymarker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=SessionHung,
-                reason=CONNECT_RACE_BUG,
-            )
-        )
         with TlsServer(node.path("valid.pem"), node.path("valid.key")) as srv:
             verdict = client(
                 f"-n {count} -r {sessions} -N 4 -t 30", timeout=150

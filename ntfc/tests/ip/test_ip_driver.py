@@ -65,12 +65,6 @@ UDP_READAHEAD_THROTTLE_BUG = (
     "read-ahead queue without honoring CONFIG_IOB_THROTTLE, so a flood "
     "empties the pool and blocks throttled writers such as sendto()"
 )
-TCP_SEND_RETRY_BUG = (
-    "net/tcp/tcp_send_buffered.c: when devif_iob_send() finds no free IOB "
-    "for a segment the window allows and nothing is in flight, no timer "
-    "or poll is armed again (the window update cleared the zero window "
-    "probe), so the writer stalls for good"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -368,9 +362,7 @@ def _drain(sock: socket.socket, nbytes: int) -> None:
 
 
 @pytest.mark.parametrize("mode", ["poll", "blocking"])
-def test_drv_tcp_write_under_udp_rx(
-    request: pytest.FixtureRequest, net_leak: LeakCheck, mode: str
-) -> None:
+def test_drv_tcp_write_under_udp_rx(net_leak: LeakCheck, mode: str) -> None:
     """A TCP writer delivers its whole stream while UDP is received.
 
     RFC 9293, 3.1: "TCP provides a reliable, in-order, byte-stream
@@ -379,18 +371,12 @@ def test_drv_tcp_write_under_udp_rx(
     socket on the node receives datagrams (waiting in ``poll()`` or in
     ``recv()``).  PASS: the host then reads the whole stream intact.
 
-    :param request: pytest request
     :param net_leak: IOB leak check
     :param mode: ``poll`` (``nettl -L 1``) or ``blocking`` (``nettl -S``)
     """
     thr = _iob_conf("CONFIG_IOB_THROTTLE")
     if thr == 0:
         pytest.skip("CONFIG_IOB_THROTTLE is 0")
-    request.applymarker(
-        pytest.mark.xfail(
-            strict=True, raises=TimeoutError, reason=TCP_SEND_RETRY_BUG
-        )
-    )
     nbytes = (
         2 * _iob_conf("CONFIG_IOB_NBUFFERS") * _iob_conf("CONFIG_IOB_BUFSIZE")
     )
