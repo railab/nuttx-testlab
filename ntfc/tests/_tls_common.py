@@ -761,7 +761,7 @@ def _ncpus() -> int:
     return int(core().conf.kv_check("CONFIG_SMP_NCPUS") or 1)
 
 
-def pin_shell() -> None:
+def pin_shell(mask: int = 1) -> None:
     """Keep the node shell, and so every program it starts, on CPU 0.
 
     Only on SMP nodes.  A task's stack is freed while the task switches
@@ -769,9 +769,13 @@ def pin_shell() -> None:
     its next allocation (``free`` runs ``mallinfo()``, which empties the
     list of the calling CPU only).  With all programs on the shell's CPU,
     ``free`` sees every block they freed as free.
+
+    :param mask: CPU affinity mask, 0 for all CPUs
     """
-    if _ncpus() == 1:
+    ncpus = _ncpus()
+    if ncpus == 1:
         return
+    mask = mask or (1 << ncpus) - 1
     ret = core().sendCommandReadUntilPattern(
         "ps", pattern=r"nsh> ", timeout=10
     )
@@ -782,9 +786,9 @@ def pin_shell() -> None:
     )
     assert found, f"no running shell: {ret.output}"
     ret = core().sendCommandReadUntilPattern(
-        f"taskset -p 1 {found.group(1)}", pattern=r"nsh> ", timeout=10
+        f"taskset -p {mask} {found.group(1)}", pattern=r"nsh> ", timeout=10
     )
-    assert "mask: 0x1" in str(ret.output), str(ret.output)
+    assert f"mask: {mask:#x}" in str(ret.output), str(ret.output)
 
 
 def heap_used() -> int:

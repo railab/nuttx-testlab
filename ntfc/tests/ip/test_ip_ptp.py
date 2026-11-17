@@ -57,7 +57,7 @@ from _ptp_common import (
     ptptl_start,
     ptptl_wait,
 )
-from _tls_common import HeapCheck
+from _tls_common import HeapCheck, pin_shell
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NETUTILS_PTPD")]
 
@@ -89,13 +89,6 @@ NODE_CLASS = 248
 # ptp4l port states of the slave branch (1588 9.2.5 Figure 23): a
 # free-running ptp4l stays UNCALIBRATED because its servo never locks.
 SLAVE_STATES = {"UNCALIBRATED", "SLAVE"}
-
-X86_HEAP_SETTLE = (
-    "qemu-intel64: after three ptptl runs inside a full ip-pair session "
-    "the heap stays 17 KiB (two task stacks) above the baseline for more "
-    "than HEAP_SETTLE_S; alone or with only the PTP module it returns at "
-    "once; not isolated"
-)
 
 PTPD_TIMEOUT_BUG = (
     "netutils/ptpd: a lost master is noticed after the fixed "
@@ -468,9 +461,19 @@ def test_ptp_node_to_node(sniffer: PtpSniffer) -> None:
     assert abs(diff) <= SYNC_BOUND_MS, (off1, off0)
 
 
-def test_ptp_stop_restart(
-    request: pytest.FixtureRequest, net_leak: LeakCheck
-) -> None:
+@pytest.fixture
+def shell_on_cpu0() -> Iterator[None]:
+    """Run the node shell and its programs on CPU 0 during the test.
+
+    See :func:`pin_shell`: then ``free`` counts their freed memory.
+    """
+    pin_shell()
+    yield
+    pin_shell(0)
+
+
+@pytest.mark.usefixtures("shell_on_cpu0")
+def test_ptp_stop_restart(net_leak: LeakCheck) -> None:
     """Starting and stopping the daemon three times leaks nothing.
 
     ``include/netutils/ptpd.h`` ptpd_stop(): "On success, returns OK".
@@ -479,10 +482,6 @@ def test_ptp_stop_restart(
     ``exit=0``, and the heap (``free``) and the IOB and connection
     counters are back at the values before the test.
     """
-    if pytest.products[0].core(0).conf.kv_check("CONFIG_ARCH_X86_64"):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=X86_HEAP_SETTLE)
-        )
     heap = HeapCheck()
     for _ in range(3):
         verdict, _status = ptptl_run(0, "", runtime=5)
