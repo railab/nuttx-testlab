@@ -34,6 +34,7 @@ from typing import Iterator
 
 import pytest
 from _net_common import (
+    HOST_IP,
     NODE_IP6S,
     NODE_IPS,
     host_udp_echo_check,
@@ -57,10 +58,14 @@ MLD_REPORT_BUG = (
     "sources, which means not listening (RFC 3810)"
 )
 
-IGMP_REJOIN_BUG = (
-    "net/igmp/igmp_input.c creates a group for a Group-Specific Query "
-    "of a group the host left, and reports it again (timing dependent)"
+IGMP_QUERY_BUG = (
+    "net/igmp/igmp_input.c: igmp_grpallocfind() creates a group for every "
+    "Group-Specific Query, so the node reports groups it is not a member of"
 )
+NOT_MEMBER_GROUP = "239.42.0.9"
+ALL_SYSTEMS = "224.0.0.1"
+IGMP_QUERY = 0x11
+IP_ROUTER_ALERT = b"\x94\x04\x00\x00"
 
 FAMILIES = [
     pytest.param(False, id="v4"),
@@ -82,16 +87,6 @@ def _querier(on: bool) -> None:
         + ["1" if on else "0"],
         check=True,
     )
-
-
-LIFETIME_FAMILIES = [
-    pytest.param(
-        False,
-        id="v4",
-        marks=pytest.mark.xfail(strict=True, reason=IGMP_REJOIN_BUG),
-    ),
-    FAMILIES[1],
-]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -182,12 +177,14 @@ def test_mcast_node_to_node(ipv6: bool) -> None:
     assert verdict.startswith("nettl: PASS"), verdict
 
 
-@pytest.mark.parametrize("ipv6", LIFETIME_FAMILIES)
+@pytest.mark.parametrize("ipv6", FAMILIES)
 def test_mcast_membership_lifetime(ipv6: bool) -> None:
     """A membership survives General Queries and ends when the node leaves.
 
     The node must answer the bridge queries for longer than the
     membership interval, and leave the group when the socket closes.
+    The querier is off for the leave, so only the leave report of the
+    node removes the group.
     """
     _skip_unless(ipv6)
     group = GROUPS[ipv6]
@@ -196,8 +193,54 @@ def test_mcast_membership_lifetime(ipv6: bool) -> None:
     assert _wait_member(group, True, 10), "no membership report"
     time.sleep(MEMBERSHIP_S + 5)
     assert _member(group), "membership expired: queries not answered"
-    _end_server(addr, 5232)
-    assert _wait_member(group, False, 10), "group not left on close"
+    _querier(False)
+    try:
+        _end_server(addr, 5232)
+        assert _wait_member(group, False, 10), "group not left on close"
+    finally:
+        _querier(True)
+
+
+def _igmp_group_query(group: str) -> None:
+    """Send an IGMPv2 Group-Specific Query for ``group`` to 224.0.0.1.
+
+    :param group: queried IPv4 group
+    """
+    msg = struct.pack(">BBH4s", IGMP_QUERY, 10, 0, socket.inet_aton(group))
+    words = struct.unpack(">4H", msg)
+    csum = sum(words)
+    csum = (csum & 0xFFFF) + (csum >> 16)
+    msg = msg[:2] + struct.pack(">H", ~csum & 0xFFFF) + msg[4:]
+    with socket.socket(
+        socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IGMP
+    ) as sock:
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_OPTIONS, IP_ROUTER_ALERT)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
+        sock.setsockopt(
+            socket.IPPROTO_IP,
+            socket.IP_MULTICAST_IF,
+            socket.inet_aton(HOST_IP),
+        )
+        sock.sendto(msg, (ALL_SYSTEMS, 0))
+
+
+@pytest.mark.xfail(strict=True, reason=IGMP_QUERY_BUG)
+def test_mcast_igmp_query_not_member() -> None:
+    """No report for a Group-Specific Query of a group the node never joined.
+
+    RFC 2236, 3: "When a host receives a Group-Specific Query, it sets a
+    delay timer to a random value selected from the range (0, Max
+    Response Time] as above for the group being queried if it is a member
+    on the interface from which it received the query."
+    """
+    _skip_unless(False)
+    assert not _member(NOT_MEMBER_GROUP)
+    for _ in range(3):
+        _igmp_group_query(NOT_MEMBER_GROUP)
+        time.sleep(0.2)
+    assert not _wait_member(
+        NOT_MEMBER_GROUP, True, 3
+    ), "report for a group the node is not a member of"
 
 
 def test_mcast_all_nodes_join_leave() -> None:

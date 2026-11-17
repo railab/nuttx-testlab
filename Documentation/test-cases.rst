@@ -272,7 +272,12 @@ sessions as the ``ip`` module.
        ``nettl: PASS``.
    * - ``test_mcast_membership_lifetime``
      - node0's membership is still in the bridge table 20 s after the
-       join, and is gone within 10 s after its socket closes.
+       join, and is gone within 10 s after its socket closes (querier
+       off for the leave).
+   * - ``test_mcast_igmp_query_not_member``
+     - Three host IGMPv2 Group-Specific Queries (to 224.0.0.1) for a
+       group node0 never joined: no report, the group is not in the
+       bridge table 3 s later.
    * - ``test_mcast_all_nodes_join_leave``
      - Two cycles of node0 joining ff02::1, echoing 20 host datagrams
        sent to ff02::1 and leaving on close; both server verdicts
