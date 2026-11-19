@@ -202,6 +202,11 @@ Verdict line (always exactly one, to stdout) and process exit code:
      - no socket error and ``err == 0`` (``err`` also counts, per
        listener, any datagram not received by the ``-t`` timeout)
 
+- ``-V`` (``CONFIG_NET_VSOCK``): vsock stream instead of TCP; ``-c``
+  takes a CID, ``-p`` is the vsock port. Not with ``-u``, ``-6``,
+  ``-g``, ``-k``, ``-C``, ``-N``, ``-X``. A vsock server sets
+  ``SO_REUSEADDR`` only with ``-A``.
+
 Any FAIL condition, or a socket/connect/bind/accept error, makes the
 process exit ``EXIT_FAILURE`` (``1``); a usage error (bad option, bad
 numeric argument, both/neither of ``-s``/``-c``, or a UDP ``-l`` out of

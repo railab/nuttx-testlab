@@ -45,6 +45,10 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 
+#ifdef CONFIG_NET_VSOCK
+#  include <sys/vm_sockets.h>
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -75,6 +79,8 @@ struct nettl_args_s
   bool        udp;
   bool        write_only;
   bool        ipv6;
+  bool        vsock;
+  bool        reuseaddr;
   bool        epoll;
   FAR char   *addr;
   FAR char   *group;
@@ -211,6 +217,25 @@ static socklen_t nettl_sockaddr(FAR const struct nettl_args_s *args,
 
   memset(ss, 0, sizeof(*ss));
 
+#ifdef CONFIG_NET_VSOCK
+  if (args->vsock)
+    {
+      FAR struct sockaddr_vm *svm = (FAR struct sockaddr_vm *)ss;
+      unsigned long cid = VMADDR_CID_ANY;
+
+      if (!args->server &&
+          !nettl_parse_uint(args->addr, 0, UINT32_MAX, &cid))
+        {
+          return 0;
+        }
+
+      svm->svm_family = AF_VSOCK;
+      svm->svm_port   = args->port;
+      svm->svm_cid    = (unsigned int)cid;
+      return sizeof(*svm);
+    }
+#endif
+
 #ifdef CONFIG_NET_IPv6
   if (args->ipv6)
     {
@@ -307,7 +332,19 @@ static int nettl_socket(FAR const struct nettl_args_s *args,
     {
       int on = 1;
 
-      setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+      /* IP servers always allow address reuse; a vsock server only with
+       * -A.
+       */
+
+      if ((!args->vsock || args->reuseaddr) &&
+          setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 &&
+          args->reuseaddr)
+        {
+          printf("nettl: setsockopt SO_REUSEADDR failed %d\n", errno);
+          close(sd);
+          return -1;
+        }
+
       if (bind(sd, (FAR struct sockaddr *)ss, *salen) < 0)
         {
           printf("nettl: bind failed %d\n", errno);
@@ -1518,6 +1555,12 @@ static void nettl_usage(FAR const char *progname)
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
          "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-X] [-I]\n", progname);
   printf("       %s -B ifname\n", progname);
+#ifdef CONFIG_NET_VSOCK
+  printf("       %s -V -s [-A] [-p port] [-n count] [-t sec] [-w]\n",
+         progname);
+  printf("       %s -V -c cid [-p port] [-n count] [-t sec] [-d]\n",
+         progname);
+#endif
 }
 
 /****************************************************************************
@@ -1534,8 +1577,8 @@ int main(int argc, FAR char *argv[])
   args.len     = NETTL_UDP_LEN_DEFAULT;
   args.timeout = NETTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IB:"))
-         != ERROR)
+  while ((opt = getopt(argc, argv,
+                       "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IB:VA")) != ERROR)
     {
       unsigned long val;
 
@@ -1555,6 +1598,14 @@ int main(int argc, FAR char *argv[])
           case 'u':
             args.udp = true;
             break;
+#ifdef CONFIG_NET_VSOCK
+          case 'V':
+            args.vsock = true;
+            break;
+          case 'A':
+            args.reuseaddr = true;
+            break;
+#endif
           case 'g':
             args.group = optarg;
             break;
@@ -1697,6 +1748,19 @@ int main(int argc, FAR char *argv[])
     }
 
   if (args.server == (args.addr != NULL))
+    {
+      nettl_usage(argv[0]);
+      return EXIT_FAILURE;
+    }
+
+  /* -V is a stream transport of its own: no UDP, IPv6, multicast, TCP
+   * keepalive or multi-connection options; -A is a -V server option.
+   */
+
+  if ((args.vsock && (args.udp || args.ipv6 || args.group != NULL ||
+                      args.keepidle > 0 || args.conns > 0 ||
+                      args.nbconnect || args.peerclosed)) ||
+      (args.reuseaddr && (!args.vsock || !args.server)))
     {
       nettl_usage(argv[0]);
       return EXIT_FAILURE;

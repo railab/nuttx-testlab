@@ -9,7 +9,7 @@ config TESTLAB_NETTL
 	depends on NET_TCP || NET_UDP
 	---help---
 		Client/server tool that echoes a deterministic data pattern
-		over TCP or UDP and prints a PASS/FAIL verdict line.
+		over TCP, UDP or vsock and prints a PASS/FAIL verdict line.
 
 if TESTLAB_NETTL
 
