@@ -232,6 +232,17 @@ sets a flag that the parent reads (flat build: shared memory).
   ``waitpid()`` must return a child's exit status 7. Verdict
   ``exittl: PASS|FAIL wait``.
 
+``apps/inputtl``
+~~~~~~~~~~~~~~~~
+
+``inputtl -m|-k|-t -d dev [-n count] [-T sec]`` (``CONFIG_TESTLAB_INPUTTL``)
+opens a mouse, keyboard or touchscreen device nonblocking, prints
+``inputtl: ready <dev>``, then one line per report read
+(``inputtl: mouse buttons= x= y=``, ``inputtl: key type= code=``,
+``inputtl: touch npoints= flags=0x.. x= y=``). Verdict ``inputtl: PASS
+n=<count>`` when ``count`` reports (default 1) arrived within ``sec``
+seconds (default 10), else ``inputtl: FAIL n=<got>``.
+
 ``apps/cantl``
 ~~~~~~~~~~~~~~
 

@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_INPUTTL
+	tristate "inputtl: input device event reader test tool"
+	default n
+	depends on INPUT
+	---help---
+		Opens a mouse (-m), keyboard (-k) or touchscreen (-t) device,
+		prints "inputtl: ready" and then one line per report read, and
+		ends with a PASS verdict line when the requested number of
+		reports arrived within the timeout.
+
+if TESTLAB_INPUTTL
+
+config TESTLAB_INPUTTL_PROGNAME
+	string "Program name"
+	default "inputtl"
+
+config TESTLAB_INPUTTL_PRIORITY
+	int "inputtl task priority"
+	default 100
+
+config TESTLAB_INPUTTL_STACKSIZE
+	int "inputtl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
