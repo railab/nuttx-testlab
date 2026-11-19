@@ -173,8 +173,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Load CAN kernel modules
-        run: sudo tools/ci/load-can-modules.sh
+      - name: Load host kernel modules
+        run: sudo tools/ci/load-modules.sh
 
       - name: Compute default image name
         id: image_name
