@@ -34,3 +34,12 @@ sessions:
     confpath: ntfc/configs/rv-virt/tls/config.yaml
     testpath: ntfc/tests/tls
     resources: [tl-br0]
+  - name: "rv-virt-vsock"
+    confpath: ntfc/configs/rv-virt/vsock/config.yaml
+    testpath: ntfc/tests/vsock
+  - name: "rv-virt-virtio-input"
+    confpath: ntfc/configs/rv-virt/virtio-input/config.yaml
+    testpath: ntfc/tests/input
+  - name: "rv-virt-virtio-input-tablet"
+    confpath: ntfc/configs/rv-virt/virtio-input-tablet/config.yaml
+    testpath: ntfc/tests/input

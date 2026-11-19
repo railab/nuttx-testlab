@@ -1221,6 +1221,87 @@ the host is ``10.0.2.2`` for the node. Sessions ``rv-virt-python`` and
    * - ``test_python_socket_host``
      - A Python TCP client echoes 64 KiB with a host server intact.
 
+``vsock`` module
+----------------
+
+Source: ``ntfc/tests/vsock/test_vsock.py``. One node with a QEMU
+``vhost-vsock`` device (``guest-cid=`` in the QEMU arguments, unique on
+the host) and ``nettl -V`` on the node; the host end is an ``AF_VSOCK``
+socket in the test process (CID 2). Needs ``/dev/vhost-vsock`` on the
+host. Sessions ``qemu-armv8a-vsock``, ``rv-virt-vsock`` and
+``qemu-intel64-vsock`` (``vhost-vsock-pci``).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_vsock_guest_connect_echo``
+     - Node connects to the host, 64 KiB echo intact; the host sees the
+       connection from the configured guest CID.
+   * - ``test_vsock_host_connect_echo``
+     - Host connects to the node server, 32 KiB lock-step echo intact;
+       the node server sees end of stream and reports all bytes.
+   * - ``test_vsock_host_bulk_flow_control``
+     - Host sends 512 KiB without waiting for the echo; the echo is
+       intact (credit-based flow control, no data dropped).
+   * - ``test_vsock_guest_close_eof``
+     - Node server writes 64 KiB and closes; the host reads exactly that
+       data, then end of stream.
+   * - ``test_vsock_host_connect_refused``
+     - Host connect to a node port without listener is rejected at once
+       (node sends ``VIRTIO_VSOCK_OP_RST``), no timeout.
+   * - ``test_vsock_guest_connect_refused``
+     - Node connect to a host port without listener fails with
+       ``ECONNREFUSED``.
+   * - ``test_vsock_reuseaddr_server``
+     - Node server with ``SO_REUSEADDR`` (``nettl -V -s -A``) listens
+       and echoes 4 KiB from the host.
+
+``input`` module
+----------------
+
+Source: ``ntfc/tests/input/test_virtio_input.py``. One node with QEMU
+virtio input devices; the test injects events with QMP
+``input-send-event`` (one command is one device update) on the
+``-qmp unix:`` socket of the product, and ``inputtl`` on the node prints
+the reports it reads. Sessions ``qemu-armv8a-virtio-input``,
+``rv-virt-virtio-input`` and ``qemu-intel64-virtio-input`` (keyboard and
+mouse), ``qemu-armv8a-virtio-input-tablet``,
+``rv-virt-virtio-input-tablet`` and ``qemu-intel64-virtio-input-tablet``
+(keyboard and tablet), all with defconfig ``virtio-input`` (PCI devices
+on ``qemu-intel64``); a mouse or tablet test is skipped
+without that device.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_input_registered``
+     - ``/dev`` has ``kbd0`` and ``mouse0`` or ``input0`` for the
+       mouse or tablet.
+   * - ``test_virtio_input_key_press_release``
+     - ``a`` press and release give ``KEYBOARD_PRESS`` and
+       ``KEYBOARD_RELEASE`` with code ``'a'``.
+   * - ``test_virtio_input_special_key``
+     - Up arrow gives ``KEYBOARD_SPECPRESS``/``KEYBOARD_SPECREL`` with
+       ``KEYCODE_UP``.
+   * - ``test_virtio_input_bracket_keys``
+     - The ``[`` and ``]`` keys give codes ``'['`` and ``']'``.
+   * - ``test_virtio_input_keys_one_update``
+     - Two keys pressed (then released) in one update give two press
+       (then two release) events.
+   * - ``test_virtio_input_mouse_motion_button``
+     - Motion (10, -5) with left button down gives one report with
+       ``MOUSE_BUTTON_1`` and that motion; the release gives buttons 0,
+       no motion.
+   * - ``test_virtio_input_tablet_touch``
+     - Touch, move, release give ``TOUCH_DOWN``, ``TOUCH_MOVE`` (with
+       the absolute positions) and ``TOUCH_UP``.
+
 ``fs`` module
 -------------
 

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/rv-virt/virtio-input'
+
+product:
+  name: "rv-virt-virtio-input"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      line_buffered: true
+      exec_path: 'qemu-system-riscv32'
+      exec_args: '-semihosting -M virt,aclint=on -cpu rv32 -smp 1
+                 -bios none -nographic
+                 -global virtio-mmio.force-legacy=false
+                 -device virtio-keyboard-device -device virtio-mouse-device
+                 -qmp unix:/tmp/tl-qmp-rv-virt.sock,server=on,wait=off'
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/virtio-input'

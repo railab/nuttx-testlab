@@ -34,3 +34,12 @@ sessions:
     confpath: ntfc/configs/qemu-armv8a/tls/config.yaml
     testpath: ntfc/tests/tls
     resources: [tl-br0]
+  - name: "qemu-armv8a-vsock"
+    confpath: ntfc/configs/qemu-armv8a/vsock/config.yaml
+    testpath: ntfc/tests/vsock
+  - name: "qemu-armv8a-virtio-input"
+    confpath: ntfc/configs/qemu-armv8a/virtio-input/config.yaml
+    testpath: ntfc/tests/input
+  - name: "qemu-armv8a-virtio-input-tablet"
+    confpath: ntfc/configs/qemu-armv8a/virtio-input-tablet/config.yaml
+    testpath: ntfc/tests/input

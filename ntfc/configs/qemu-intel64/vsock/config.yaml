@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-intel64/vsock'
+
+product:
+  name: "qemu-intel64-vsock"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      exec_path: 'qemu-system-x86_64'
+      exec_args: '-m 1G -cpu host -enable-kvm -nographic -serial mon:stdio
+                 -device vhost-vsock-pci,guest-cid=105'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/vsock'

@@ -57,3 +57,12 @@ sessions:
     confpath: ntfc/configs/qemu-intel64/tls/config.yaml
     testpath: ntfc/tests/tls
     resources: [tl-br0]
+  - name: "qemu-intel64-vsock"
+    confpath: ntfc/configs/qemu-intel64/vsock/config.yaml
+    testpath: ntfc/tests/vsock
+  - name: "qemu-intel64-virtio-input"
+    confpath: ntfc/configs/qemu-intel64/virtio-input/config.yaml
+    testpath: ntfc/tests/input
+  - name: "qemu-intel64-virtio-input-tablet"
+    confpath: ntfc/configs/qemu-intel64/virtio-input-tablet/config.yaml
+    testpath: ntfc/tests/input
