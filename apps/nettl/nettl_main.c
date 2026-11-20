@@ -64,6 +64,7 @@
 #define NETTL_UDP_COUNT_MAX    0xfffffffeu
 #define NETTL_UDP_HDR          4
 #define NETTL_BUFSIZE          CONFIG_TESTLAB_NETTL_BUFSIZE
+#define NETTL_IOBUFSIZE        (NETTL_BUFSIZE + NETTL_UDP_HDR)
 #define NETTL_UDP_LEN_DEFAULT  (NETTL_UDP_LEN < NETTL_BUFSIZE ? \
                                  NETTL_UDP_LEN : NETTL_BUFSIZE)
 #define NETTL_REUSE_MAX        4
@@ -102,14 +103,14 @@ struct nettl_args_s
   bool        sink;
   int         rate;
   int         rcvbuf;
+  FAR uint8_t *txbuf;
+  FAR uint8_t *rxbuf;
 };
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
-static uint8_t g_txbuf[NETTL_BUFSIZE + NETTL_UDP_HDR];
-static uint8_t g_rxbuf[NETTL_BUFSIZE + NETTL_UDP_HDR];
 static volatile sig_atomic_t g_nettl_sigpipe;
 
 /****************************************************************************
@@ -379,8 +380,8 @@ static int nettl_tcp_server_write(int cd,
           chunk = NETTL_BUFSIZE;
         }
 
-      nettl_fill(g_txbuf, tx, chunk);
-      if (nettl_sendall(cd, g_txbuf, chunk) < 0)
+      nettl_fill(args->txbuf, tx, chunk);
+      if (nettl_sendall(cd, args->txbuf, chunk) < 0)
         {
           err++;
           break;
@@ -434,11 +435,11 @@ static int nettl_tcp_server(FAR const struct nettl_args_s *args)
       return nettl_tcp_server_write(cd, args);
     }
 
-  while ((ret = recv(cd, g_rxbuf, NETTL_BUFSIZE, 0)) > 0)
+  while ((ret = recv(cd, args->rxbuf, NETTL_BUFSIZE, 0)) > 0)
     {
-      err += nettl_check(g_rxbuf, rx, ret);
+      err += nettl_check(args->rxbuf, rx, ret);
       rx  += ret;
-      if (nettl_sendall(cd, g_rxbuf, (size_t)ret) < 0)
+      if (nettl_sendall(cd, args->rxbuf, (size_t)ret) < 0)
         {
           err++;
           break;
@@ -525,13 +526,13 @@ static int nettl_tcp_server_multi(FAR const struct nettl_args_s *args)
               continue;
             }
 
-          ret = recv(fds[i].fd, g_rxbuf, NETTL_BUFSIZE, 0);
+          ret = recv(fds[i].fd, args->rxbuf, NETTL_BUFSIZE, 0);
           if (ret > 0)
             {
-              err      += nettl_check(g_rxbuf, rx[i - 1], ret);
+              err      += nettl_check(args->rxbuf, rx[i - 1], ret);
               rx[i - 1] += ret;
               total    += ret;
-              if (nettl_sendall(fds[i].fd, g_rxbuf, (size_t)ret) < 0)
+              if (nettl_sendall(fds[i].fd, args->rxbuf, (size_t)ret) < 0)
                 {
                   err++;
                 }
@@ -628,7 +629,7 @@ static int nettl_keepalive_idle(int sd, FAR const struct nettl_args_s *args)
       return -1;
     }
 
-  ret = recv(sd, g_rxbuf, NETTL_BUFSIZE, 0);
+  ret = recv(sd, args->rxbuf, NETTL_BUFSIZE, 0);
   if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
     {
       printf("nettl: idle ok\n");
@@ -675,9 +676,9 @@ static int nettl_iov_overflow(FAR const struct nettl_args_s *args)
       return EXIT_FAILURE;
     }
 
-  iov[0].iov_base = g_txbuf;
+  iov[0].iov_base = args->txbuf;
   iov[0].iov_len  = SSIZE_MAX;
-  iov[1].iov_base = g_txbuf;
+  iov[1].iov_base = args->txbuf;
   iov[1].iov_len  = 16;
 
   memset(&msg, 0, sizeof(msg));
@@ -859,7 +860,7 @@ static int nettl_tcp_peerclosed(FAR const struct nettl_args_s *args)
 
   /* The peer closes at once: recv() returns 0 at its FIN */
 
-  ret = recv(sd, g_rxbuf, sizeof(g_rxbuf), 0);
+  ret = recv(sd, args->rxbuf, NETTL_IOBUFSIZE, 0);
   if (ret != 0)
     {
       printf("nettl: no FIN, recv %zd errno %d\n", ret,
@@ -871,7 +872,7 @@ static int nettl_tcp_peerclosed(FAR const struct nettl_args_s *args)
 
   while (first == 0 && tx < args->timeout * 10)
     {
-      if (send(sd, g_txbuf, 1, MSG_NOSIGNAL) < 0)
+      if (send(sd, args->txbuf, 1, MSG_NOSIGNAL) < 0)
         {
           first = errno;
         }
@@ -882,7 +883,7 @@ static int nettl_tcp_peerclosed(FAR const struct nettl_args_s *args)
         }
     }
 
-  again = send(sd, g_txbuf, 1, MSG_NOSIGNAL) < 0 ? errno : 0;
+  again = send(sd, args->txbuf, 1, MSG_NOSIGNAL) < 0 ? errno : 0;
 
   memset(&act, 0, sizeof(act));
   act.sa_handler = nettl_sigpipe;
@@ -890,7 +891,7 @@ static int nettl_tcp_peerclosed(FAR const struct nettl_args_s *args)
   sigaction(SIGPIPE, &act, NULL);
 
   g_nettl_sigpipe = 0;
-  sig = send(sd, g_txbuf, 1, 0) < 0 ? errno : 0;
+  sig = send(sd, args->txbuf, 1, 0) < 0 ? errno : 0;
   close(sd);
 
   pass = (first == EPIPE || first == ECONNRESET) && again == EPIPE &&
@@ -940,8 +941,8 @@ static int nettl_tcp_client(FAR const struct nettl_args_s *args)
           chunk = NETTL_BUFSIZE;
         }
 
-      nettl_fill(g_txbuf, tx, chunk);
-      if (nettl_sendall(sd, g_txbuf, chunk) < 0)
+      nettl_fill(args->txbuf, tx, chunk);
+      if (nettl_sendall(sd, args->txbuf, chunk) < 0)
         {
           printf("nettl: send failed %d\n", errno);
           err++;
@@ -954,7 +955,7 @@ static int nettl_tcp_client(FAR const struct nettl_args_s *args)
 
       for (got = 0; got < chunk; got += ret)
         {
-          ret = recv(sd, g_rxbuf + got, chunk - got, 0);
+          ret = recv(sd, args->rxbuf + got, chunk - got, 0);
           if (ret <= 0)
             {
               printf("nettl: recv failed %d\n", ret < 0 ? errno : 0);
@@ -963,7 +964,7 @@ static int nettl_tcp_client(FAR const struct nettl_args_s *args)
             }
         }
 
-      err += nettl_check(g_rxbuf, rx, got);
+      err += nettl_check(args->rxbuf, rx, got);
       rx  += got;
     }
 
@@ -1010,13 +1011,13 @@ static int nettl_udp_server(FAR const struct nettl_args_s *args)
 
   for (; ; )
     {
-      /* recvfrom() never stores more than sizeof(g_rxbuf) bytes, i.e.
+      /* recvfrom() never stores more than NETTL_IOBUFSIZE bytes, i.e.
        * NETTL_BUFSIZE + NETTL_UDP_HDR, so a datagram longer than that
        * cannot be observed here; no MSG_TRUNC-style check is needed.
        */
 
       fromlen = sizeof(from);
-      ret = recvfrom(sd, g_rxbuf, sizeof(g_rxbuf), 0,
+      ret = recvfrom(sd, args->rxbuf, NETTL_IOBUFSIZE, 0,
                      (FAR struct sockaddr *)&from, &fromlen);
       if (ret < NETTL_UDP_HDR)
         {
@@ -1025,17 +1026,17 @@ static int nettl_udp_server(FAR const struct nettl_args_s *args)
           break;
         }
 
-      seq = nettl_get32(g_rxbuf);
+      seq = nettl_get32(args->rxbuf);
       if (seq == NETTL_UDP_END)
         {
           break;
         }
 
-      err += nettl_check(g_rxbuf + NETTL_UDP_HDR,
+      err += nettl_check(args->rxbuf + NETTL_UDP_HDR,
                          (size_t)seq * (ret - NETTL_UDP_HDR),
                          ret - NETTL_UDP_HDR);
       rx++;
-      sendto(sd, g_rxbuf, ret, 0, (FAR struct sockaddr *)&from, fromlen);
+      sendto(sd, args->rxbuf, ret, 0, (FAR struct sockaddr *)&from, fromlen);
     }
 
   close(sd);
@@ -1088,7 +1089,7 @@ static int nettl_udp_sink(FAR const struct nettl_args_s *args)
 
   for (; ; )
     {
-      ret = recv(sd, g_rxbuf, sizeof(g_rxbuf), 0);
+      ret = recv(sd, args->rxbuf, NETTL_IOBUFSIZE, 0);
       if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
           break;
@@ -1101,13 +1102,13 @@ static int nettl_udp_sink(FAR const struct nettl_args_s *args)
           break;
         }
 
-      seq = nettl_get32(g_rxbuf);
+      seq = nettl_get32(args->rxbuf);
       if (seq == NETTL_UDP_END)
         {
           break;
         }
 
-      err += nettl_check(g_rxbuf + NETTL_UDP_HDR,
+      err += nettl_check(args->rxbuf + NETTL_UDP_HDR,
                          (size_t)seq * (ret - NETTL_UDP_HDR),
                          ret - NETTL_UDP_HDR);
       rx++;
@@ -1162,10 +1163,10 @@ static int nettl_udp_flood(FAR const struct nettl_args_s *args)
           usleep(1000);
         }
 
-      nettl_put32(g_txbuf, seq);
-      nettl_fill(g_txbuf + NETTL_UDP_HDR, (size_t)seq * args->len,
+      nettl_put32(args->txbuf, seq);
+      nettl_fill(args->txbuf + NETTL_UDP_HDR, (size_t)seq * args->len,
                  args->len);
-      if (sendto(sd, g_txbuf, args->len + NETTL_UDP_HDR, 0,
+      if (sendto(sd, args->txbuf, args->len + NETTL_UDP_HDR, 0,
                  (FAR struct sockaddr *)&sa, salen) < 0)
         {
           if (errno == EAGAIN || errno == ENOMEM || errno == ENOBUFS)
@@ -1186,10 +1187,10 @@ static int nettl_udp_flood(FAR const struct nettl_args_s *args)
   /* Let the receiver drain, then send the end marker */
 
   usleep(500000);
-  nettl_put32(g_txbuf, NETTL_UDP_END);
+  nettl_put32(args->txbuf, NETTL_UDP_END);
   for (i = 0; i < NETTL_UDP_RETRIES; i++)
     {
-      sendto(sd, g_txbuf, NETTL_UDP_HDR, 0,
+      sendto(sd, args->txbuf, NETTL_UDP_HDR, 0,
              (FAR struct sockaddr *)&sa, salen);
     }
 
@@ -1243,8 +1244,8 @@ static int nettl_tcp_duplex(int sd, FAR const struct nettl_args_s *args)
               chunk = NETTL_BUFSIZE;
             }
 
-          nettl_fill(g_txbuf, tx, chunk);
-          ret = send(sd, g_txbuf, chunk, 0);
+          nettl_fill(args->txbuf, tx, chunk);
+          ret = send(sd, args->txbuf, chunk, 0);
           if (ret > 0)
             {
               tx += (size_t)ret;
@@ -1258,10 +1259,10 @@ static int nettl_tcp_duplex(int sd, FAR const struct nettl_args_s *args)
 
       if ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0)
         {
-          ret = recv(sd, g_rxbuf, NETTL_BUFSIZE, 0);
+          ret = recv(sd, args->rxbuf, NETTL_BUFSIZE, 0);
           if (ret > 0)
             {
-              err += nettl_check(g_rxbuf, rx, (size_t)ret);
+              err += nettl_check(args->rxbuf, rx, (size_t)ret);
               rx  += (size_t)ret;
             }
           else if (ret == 0 || (errno != EAGAIN && errno != EINTR))
@@ -1401,14 +1402,14 @@ static int nettl_udp_server_reuse(FAR const struct nettl_args_s *args)
               continue;
             }
 
-          ret = recv(sds[i], g_rxbuf, sizeof(g_rxbuf), 0);
+          ret = recv(sds[i], args->rxbuf, NETTL_IOBUFSIZE, 0);
           if (ret < NETTL_UDP_HDR)
             {
               err++;
               continue;
             }
 
-          seq = nettl_get32(g_rxbuf);
+          seq = nettl_get32(args->rxbuf);
           if (seq == NETTL_UDP_END)
             {
               continue;
@@ -1420,7 +1421,7 @@ static int nettl_udp_server_reuse(FAR const struct nettl_args_s *args)
             }
           else
             {
-              err += nettl_check(g_rxbuf + NETTL_UDP_HDR,
+              err += nettl_check(args->rxbuf + NETTL_UDP_HDR,
                                  (size_t)seq * args->len, args->len);
             }
 
@@ -1473,15 +1474,15 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
 
   for (seq = 0; seq < args->count; seq++)
     {
-      nettl_put32(g_txbuf, seq);
-      nettl_fill(g_txbuf + NETTL_UDP_HDR, seq * args->len, args->len);
+      nettl_put32(args->txbuf, seq);
+      nettl_fill(args->txbuf + NETTL_UDP_HDR, seq * args->len, args->len);
 
       matched = false;
       badlen  = false;
 
       for (retry = 0; retry < NETTL_UDP_RETRIES && !matched; retry++)
         {
-          if (sendto(sd, g_txbuf, args->len + NETTL_UDP_HDR, 0,
+          if (sendto(sd, args->txbuf, args->len + NETTL_UDP_HDR, 0,
                      (FAR struct sockaddr *)&sa, salen) < 0)
             {
               continue;  /* send failure consumes this retry */
@@ -1494,14 +1495,14 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
 
           for (stale = 0; stale < NETTL_UDP_STALE_MAX; stale++)
             {
-              ret = recv(sd, g_rxbuf, sizeof(g_rxbuf), 0);
+              ret = recv(sd, args->rxbuf, NETTL_IOBUFSIZE, 0);
               if (ret < 0)
                 {
                   break;  /* timeout/error consumes this retry */
                 }
 
               if ((size_t)ret >= NETTL_UDP_HDR &&
-                  nettl_get32(g_rxbuf) == seq)
+                  nettl_get32(args->rxbuf) == seq)
                 {
                   matched = true;
                   badlen  = (ret != (ssize_t)(args->len + NETTL_UDP_HDR));
@@ -1526,17 +1527,17 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
         }
       else
         {
-          err += nettl_check(g_rxbuf + NETTL_UDP_HDR, seq * args->len,
+          err += nettl_check(args->rxbuf + NETTL_UDP_HDR, seq * args->len,
                              args->len);
         }
 
       rx++;
     }
 
-  nettl_put32(g_txbuf, NETTL_UDP_END);
+  nettl_put32(args->txbuf, NETTL_UDP_END);
   for (retry = 0; retry < NETTL_UDP_RETRIES; retry++)
     {
-      sendto(sd, g_txbuf, NETTL_UDP_HDR, 0,
+      sendto(sd, args->txbuf, NETTL_UDP_HDR, 0,
              (FAR struct sockaddr *)&sa, salen);
     }
 
@@ -1563,6 +1564,48 @@ static void nettl_usage(FAR const char *progname)
 #endif
 }
 
+/* Run the selected mode; the I/O buffers belong to this run, so two
+ * nettl instances of one flat build do not share them
+ */
+
+static int nettl_run(FAR struct nettl_args_s *args)
+{
+  if (args->server)
+    {
+      if (args->udp)
+        {
+          if (args->sink)
+            {
+              return nettl_udp_sink(args);
+            }
+
+          return args->reuse > 0 ? nettl_udp_server_reuse(args) :
+                                    nettl_udp_server(args);
+        }
+
+      return args->conns > 1 ? nettl_tcp_server_multi(args) :
+                               nettl_tcp_server(args);
+    }
+
+  if (args->udp)
+    {
+      if (args->iovcheck)
+        {
+          return nettl_iov_overflow(args);
+        }
+
+      return args->flood ? nettl_udp_flood(args) : nettl_udp_client(args);
+    }
+
+  if (args->peerclosed)
+    {
+      return nettl_tcp_peerclosed(args);
+    }
+
+  return args->nbconnect ? nettl_tcp_nbconnect(args) :
+                           nettl_tcp_client(args);
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -1571,6 +1614,7 @@ int main(int argc, FAR char *argv[])
 {
   struct nettl_args_s args;
   int opt;
+  int ret;
 
   memset(&args, 0, sizeof(args));
   args.port    = NETTL_PORT_DEFAULT;
@@ -1816,38 +1860,19 @@ int main(int argc, FAR char *argv[])
       args.count = args.udp ? NETTL_UDP_COUNT : NETTL_TCP_BYTES;
     }
 
-  if (args.server)
+  args.txbuf = malloc(NETTL_IOBUFSIZE);
+  args.rxbuf = malloc(NETTL_IOBUFSIZE);
+  if (args.txbuf == NULL || args.rxbuf == NULL)
     {
-      if (args.udp)
-        {
-          if (args.sink)
-            {
-              return nettl_udp_sink(&args);
-            }
-
-          return args.reuse > 0 ? nettl_udp_server_reuse(&args) :
-                                   nettl_udp_server(&args);
-        }
-
-      return args.conns > 1 ? nettl_tcp_server_multi(&args) :
-                              nettl_tcp_server(&args);
+      printf("nettl: FAIL no memory\n");
+      ret = EXIT_FAILURE;
+    }
+  else
+    {
+      ret = nettl_run(&args);
     }
 
-  if (args.udp)
-    {
-      if (args.iovcheck)
-        {
-          return nettl_iov_overflow(&args);
-        }
-
-      return args.flood ? nettl_udp_flood(&args) : nettl_udp_client(&args);
-    }
-
-  if (args.peerclosed)
-    {
-      return nettl_tcp_peerclosed(&args);
-    }
-
-  return args.nbconnect ? nettl_tcp_nbconnect(&args) :
-                          nettl_tcp_client(&args);
+  free(args.txbuf);
+  free(args.rxbuf);
+  return ret;
 }
