@@ -127,6 +127,24 @@ bridge ``tl-br0`` (see :doc:`architecture`). Sessions:
      - Host client to ``nettl -s -u`` on each node: 100 datagrams echoed
        intact.
 
+``tcplocal`` module
+-------------------
+
+Source: ``ntfc/tests/tcplocal/test_tcp_local.py``. TCP between two
+tasks of node0, in a session of its own because a stalled transfer can
+hang the node. Session: ``sim-ip-pair-local`` (the ``sim-ip-pair``
+configuration).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_tcp_own_address_stream``
+     - ``nettl -s`` and ``nettl -c <node address> -d`` on the same node:
+       128 KiB sent and echoed back intact over the node's own address.
+
 ``ip`` regression tests
 ------------------------
 
