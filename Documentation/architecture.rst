@@ -1039,6 +1039,41 @@ it). Node 0 therefore runs ``sh -c 'rm -f <file>; exec
 qemu-system-aarch64 -kernel $IMAGE_ELF ...'``: each boot starts from a
 new, zeroed file, and node 1, started after node 0, maps that one.
 
+vhost-user devices (i2c, gpio, spi, rpmb)
+-----------------------------------------
+
+The ``virtio-i2c``, ``virtio-gpio``, ``virtio-spi`` and ``virtio-rpmb``
+sessions run
+``python3 ntfc/tests/_vhost_user.py --device i2c|gpio|spi|rpmb --socket S
+--ctl C -- qemu-system-... -kernel $IMAGE_ELF`` as ``exec_path``: the
+script listens on ``S``, starts QEMU with the same stdio and serves the
+emulated VIRTIO device on QEMU's vhost-user connection
+(``-chardev socket,path=S``); it exits with QEMU. Guest RAM is a shared
+``memory-backend-memfd``. Tests use ``VhostCtl`` on the JSON-lines
+control socket ``C`` to read the request log and device state and to
+drive GPIO inputs.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Device
+     - QEMU device (mmio, pci)
+     - Emulation
+   * - I2C (ID 34)
+     - ``vhost-user-i2c-device``, ``vhost-user-i2c-pci``
+     - AT24C02-like EEPROMs at 0x50 and 10-bit 0x2a5
+   * - GPIO (ID 41)
+     - ``vhost-user-device``, ``vhost-user-device-pci``
+       (``virtio-id=41``, ``num_vqs=2``, ``config_size=8``)
+     - 8 named lines, ``VIRTIO_GPIO_F_IRQ``, inputs driven by the test
+   * - SPI (ID 45)
+     - ``vhost-user-spi-device``, ``vhost-user-spi-pci``
+     - 2 chip selects, MISO wired to MOSI
+   * - RPMB (ID 28)
+     - ``vhost-user-device``, ``vhost-user-device-pci``
+       (``virtio-id=28``, ``config_size=3``)
+     - 128 KiB, HMAC-SHA256 MACs; the test can reset it to factory state
+
 Hardware sessions
 -----------------
 
