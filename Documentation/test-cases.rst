@@ -1683,6 +1683,29 @@ sessions as the ``fs`` module.
      - ``statfs`` of the FAT volume: a block size that is a multiple of
        512, at most 2048 blocks, ``bfree`` not above ``blocks``.
 
+``fs`` record locks
+-------------------
+
+Source: ``ntfc/tests/fs/test_fs_lock.py``. POSIX ``fcntl()`` record
+locks on a tmpfs file, checked by ``fstl lock <case>`` in one process.
+Same sessions as the ``fs`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_tmpfs_lock_getlk_own``
+     - ``F_GETLK`` of the lock owner reports ``F_UNLCK``.
+   * - ``test_tmpfs_lock_wrong_access_mode``
+     - A shared lock on a write-only and an exclusive lock on a
+       read-only descriptor fail with ``EBADF`` (``F_SETLK``,
+       ``F_SETLKW``).
+   * - ``test_tmpfs_lock_einval``
+     - An invalid ``l_type`` (``F_SETLK``, ``F_GETLK``) and ranges
+       before the file start fail with ``EINVAL``.
+
 ``sixlowpan`` module
 --------------------
 
