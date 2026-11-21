@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       targets:
-        description: "Targets to run: all, sim, qemu-armv8a, rv-virt, qemu-intel64"
+        description: "Targets to run: all, sim, qemu-armv8a, rv-virt, rv-virt64, qemu-intel64"
         type: string
         default: all
       session:
@@ -59,6 +59,7 @@ on:
           - sim
           - qemu-armv8a
           - rv-virt
+          - rv-virt64
           - qemu-intel64
       session:
         description: "Manifest session to run (e.g. sim-smoke); empty runs the whole manifest"
@@ -120,7 +121,7 @@ jobs:
           targets_value="${TARGETS:-all}"
 
           case "$targets_value" in
-            all|sim|qemu-armv8a|rv-virt|qemu-intel64) ;;
+            all|sim|qemu-armv8a|rv-virt|rv-virt64|qemu-intel64) ;;
             *)
               echo "::error::unknown target: $targets_value"
               exit 1
@@ -135,10 +136,11 @@ jobs:
 
             # Session names are <target>-<scenario>; try the longest
             # known target prefix first (qemu-armv8a and qemu-intel64
-            # both start with "qemu-").
+            # both start with "qemu-", rv-virt64 with "rv-virt").
             case "$SESSION" in
               qemu-intel64-*) session_target=qemu-intel64 ;;
               qemu-armv8a-*)  session_target=qemu-armv8a ;;
+              rv-virt64-*)    session_target=rv-virt64 ;;
               rv-virt-*)      session_target=rv-virt ;;
               sim-*)          session_target=sim ;;
               *)
@@ -156,7 +158,7 @@ jobs:
           fi
 
           if [ "$targets_value" = "all" ]; then
-            echo 'targets=["sim","qemu-armv8a","rv-virt","qemu-intel64"]' >> "$GITHUB_OUTPUT"
+            echo 'targets=["sim","qemu-armv8a","rv-virt","rv-virt64","qemu-intel64"]' >> "$GITHUB_OUTPUT"
           else
             echo "targets=[\"$targets_value\"]" >> "$GITHUB_OUTPUT"
           fi

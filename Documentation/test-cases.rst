@@ -48,6 +48,10 @@ Targets, build and manifest sessions:
      - ``ntfc/configs/rv-virt/smoke-smp/config.yaml``
      - ``rv-virt-smoke-smp``
      - ``ntfc/manifest-ci-rv-virt.yaml``
+   * - rv-virt64
+     - ``ntfc/configs/rv-virt64/smoke/config.yaml``
+     - ``rv-virt64-smoke``
+     - ``ntfc/manifest-ci-rv-virt64.yaml``
    * - qemu-intel64
      - ``ntfc/configs/qemu-intel64/smoke/config.yaml``
      - ``qemu-intel64-smoke``
@@ -185,6 +189,7 @@ signals use ``SIGRTMIN`` with an ``SA_SIGINFO`` handler.
 Source: ``ntfc/tests/ip/test_ip_pair.py``. Two nodes and the host on
 bridge ``tl-br0`` (see :doc:`architecture`). Sessions:
 ``sim-ip-pair``, ``qemu-armv8a-ip-pair``, ``rv-virt-ip-pair``,
+``rv-virt64-ip-pair``, ``rv-virt64-ip-pair-knsh`` (kernel build),
 ``qemu-intel64-ip-pair``.
 
 .. list-table::
@@ -230,7 +235,8 @@ configuration).
 
 Source: ``ntfc/tests/ip/test_ip_regress.py``. Same topology and
 sessions as the ``ip`` module above (``sim-ip-pair``,
-``qemu-armv8a-ip-pair``, ``rv-virt-ip-pair``, ``qemu-intel64-ip-pair``).
+``qemu-armv8a-ip-pair``, ``rv-virt-ip-pair``, ``rv-virt64-ip-pair``,
+``rv-virt64-ip-pair-knsh``, ``qemu-intel64-ip-pair``).
 
 .. list-table::
    :header-rows: 1
@@ -603,7 +609,7 @@ TCP floors in Mbit/s (``FLOORS`` in the test module):
      - 60
      - 80
      - 60
-   * - rv-virt
+   * - rv-virt, rv-virt64
      - 50
      - 70
      - 50
@@ -1301,7 +1307,7 @@ one node and pymodbus on the host over a serial line (see
 ``nxmbserver`` slave (unit 1) and ``nxmbclient`` master at 19200 baud,
 register maps as in `ip Modbus TCP`_. Sessions: ``sim-modbus-rtu``,
 ``qemu-armv8a-modbus-rtu``, ``rv-virt-modbus-rtu``,
-``qemu-intel64-modbus-rtu``.
+``rv-virt64-modbus-rtu``, ``qemu-intel64-modbus-rtu``.
 
 .. list-table::
    :header-rows: 1
@@ -1515,8 +1521,9 @@ an empty directory ``tl/t<hash>`` created on the host and checks file
 contents, names and modes on the host directly. Data is the ``fstl``
 pattern; ``bin/`` holds the loadable programs ``elftl`` and ``elfsym``
 of the build and is in the node's ``PATH``. Sessions:
-``qemu-armv8a-v9fs``, ``rv-virt-v9fs``, ``qemu-intel64-v9fs`` (flat
-builds), ``qemu-armv8a-v9fs-knsh`` and ``qemu-intel64-v9fs-knsh``
+``qemu-armv8a-v9fs``, ``rv-virt-v9fs``, ``rv-virt64-v9fs``,
+``qemu-intel64-v9fs`` (flat builds), ``qemu-armv8a-v9fs-knsh``,
+``rv-virt64-v9fs-knsh`` and ``qemu-intel64-v9fs-knsh``
 (kernel builds, every program a file on 9P).
 
 .. list-table::
@@ -1846,8 +1853,9 @@ Sources: ``ntfc/tests/router/test_router_*.py``, helpers
 ``ntfc/tests/_router_common.py``. One node forwards between host A and
 host B (see :doc:`architecture`); ``router_ifs`` addresses both node
 interfaces once per module. Sessions: ``qemu-armv8a-router``,
-``rv-virt-router``, ``qemu-intel64-router`` (all tests);
-``qemu-armv8a-router-hp2``, ``rv-virt-router-hp2``,
+``rv-virt-router``, ``rv-virt64-router``, ``qemu-intel64-router`` (all
+tests); ``qemu-armv8a-router-hp2``, ``rv-virt-router-hp2``,
+``rv-virt64-router-hp2``,
 ``qemu-intel64-router-hp2`` (``test_router_duplex`` only, two
 high-priority work queue threads).
 
@@ -1915,7 +1923,7 @@ node clock is set from a host SNTP server, unless it is within 60 s,
 and the node has at least 6 free TCP connections (TIME_WAIT of earlier
 tests expired).
 Sessions: ``sim-tls``, ``qemu-armv8a-tls``, ``rv-virt-tls``,
-``qemu-intel64-tls``. "Heap freed": ``free`` reports no more used
+``rv-virt64-tls``, ``qemu-intel64-tls``. "Heap freed": ``free`` reports no more used
 bytes than before the test (10 s settle time); "no IOB leaked": the
 ``net_leak`` check of the ``ip`` driver tests.
 

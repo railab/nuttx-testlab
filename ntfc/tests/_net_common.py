@@ -38,6 +38,14 @@ HOST_IP6 = "fc00::1"
 NODE_IP6S = ("fc00::10", "fc00::11")
 UDP_END = 0xFFFFFFFF
 
+ACCEPT_ADDR_BUG = (
+    "net/tcp/tcp_accept.c: a blocking accept() keeps the caller's addr "
+    "and addrlen, and accept_eventhandler() (tcp_accept.c:167) fills them "
+    "in from the network work queue; in a kernel build they are user "
+    "addresses of another address environment, so accept_tcpsender() "
+    "(tcp_accept.c:103) faults in that kernel thread"
+)
+
 
 def pattern(offset: int, length: int) -> bytes:
     """Return the nettl data pattern.

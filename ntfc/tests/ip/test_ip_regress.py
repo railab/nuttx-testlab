@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 from _net_common import (
+    ACCEPT_ADDR_BUG,
     HOST_IP,
     NODE_IPS,
     host_tcp_echo_check,
@@ -128,6 +129,10 @@ def test_tcp_rst_after_handshake() -> None:
     """
     port = 5400
     core = _core(0)
+    if core.conf.kv_check("CONFIG_BUILD_KERNEL"):
+        # The blocked accept() faults the node: the next tests would fail
+
+        pytest.skip(ACCEPT_ADDR_BUG)
     ret = core.sendCommand(
         f"nettl -s -w -D 2 -p {port} &", "listening", timeout=10
     )

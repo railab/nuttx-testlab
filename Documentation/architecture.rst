@@ -510,6 +510,15 @@ that differ get one defconfig each, e.g. ``ip-pair-node0`` and
 ``ip-pair-node1`` for the two `Host network (ip-pair)`_ nodes (IPv4,
 IPv6 and, on ``sim``, MAC address).
 
+``rv-virt64`` (64-bit, ``ARCH_CHIP_QEMU_RV64``) uses the same upstream
+board directory as ``rv-virt``, so its defconfigs put ``64`` after the
+scenario name: ``smoke64``, ``ip-pair64-node0``, ``modbus-rtu64``,
+``v9fs64``, ``v9fs64-knsh``, ``router64``, ``router64-hp2``, ``tls64``.
+Each is the ``rv-virt`` defconfig with the sizes of the upstream
+``*64`` configurations (``IOB_BUFSIZE=1534``, ``NET_LL_GUARDSIZE=32``)
+and twice its stack sizes (``DEFAULT_TASK_STACKSIZE=4096`` where
+``rv-virt`` keeps the default 2048).
+
 Every flat-build defconfig enables stack overflow detection
 (``CONFIG_STACK_COLORATION``, ``CONFIG_DEBUG_ASSERTIONS``,
 ``CONFIG_STACKCHECK_MARGIN``): a thread that writes into the last
@@ -541,6 +550,11 @@ thread cannot step over it without writing into it.
      - ``qemu`` / ``qemu-system-riscv32``
      - ``-semihosting -M virt,aclint=on -cpu rv32 -smp 1 -bios none
        -nographic``
+   * - ``rv-virt64``
+     - ``boards/risc-v/qemu-rv/rv-virt/configs/smoke64``
+     - ``qemu`` / ``qemu-system-riscv64``
+     - ``-semihosting -M virt,aclint=on -cpu rv64 -smp 1 -bios none
+       -nographic``
    * - ``qemu-intel64``
      - ``boards/x86_64/qemu/qemu-intel64/configs/smoke``
      - ``qemu`` / ``qemu-system-x86_64``
@@ -550,20 +564,21 @@ Manifests
 ---------
 
 ``ntfc/manifest-ci-<target>.yaml`` (one per target: ``sim``,
-``qemu-armv8a``, ``rv-virt``, ``qemu-intel64``) lists ``options:``
+``qemu-armv8a``, ``rv-virt``, ``rv-virt64``, ``qemu-intel64``) lists
+``options:``
 (``fail_fast: false``, ``parallel: false``) and ``sessions:``, each a
 ``name``, a ``confpath`` (the target's ``config.yaml``) and a
 ``testpath`` (a test module or directory). Every manifest has three
 sessions: ``<target>-smoke`` (``ntfc/tests/smoke``),
 ``<target>-ip-pair`` (``ntfc/tests/ip``, ``resources: [tl-br0]``) and
 ``<target>-modbus-rtu`` (``ntfc/tests/modbus``, ``resources:
-[ttyTL0]``, see `Host serial line (modbus-rtu)`_). ``sim`` and
+[ttyTL0]``, see `Host serial line (modbus-rtu)`_). ``rv-virt64`` also has
+``<target>-ip-pair-knsh``, a kernel build of the ``ip-pair`` nodes. ``sim`` and
 ``qemu-intel64`` also have ``<target>-can-bus`` and ``<target>-can-char``
 (``ntfc/tests/can``, ``resources: [can0]``, see `Host SocketCAN bus
-(can-bus)`_). ``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64`` also have
-``<target>-v9fs``, and ``qemu-armv8a`` and ``qemu-intel64`` have
-``<target>-v9fs-knsh`` (``ntfc/tests/fs``, see `Host share (v9fs)`_). ``qemu-armv8a``,
-``rv-virt`` and ``qemu-intel64`` also have ``<target>-router``
+(can-bus)`_). All QEMU targets also have ``<target>-v9fs``, and all but
+``rv-virt`` have ``<target>-v9fs-knsh`` (``ntfc/tests/fs``, see `Host
+share (v9fs)`_). All QEMU targets also have ``<target>-router``
 (``ntfc/tests/router``) and ``<target>-router-hp2`` (its
 ``test_router_duplex``), both ``resources: [tl-rbr0]``, see
 `Routed networks (router)`_. Every manifest also has ``<target>-tls``
@@ -616,9 +631,22 @@ itself reports none.
    * - ``rv-virt``
      - ``boards/risc-v/qemu-rv/rv-virt/configs/ip-pair-node0``, ``-node1``
      - ``virtio-net-device``
+   * - ``rv-virt64``
+     - ``boards/risc-v/qemu-rv/rv-virt/configs/ip-pair64-node0``,
+       ``-node1``; kernel build ``ip-pair64-knsh-node0``, ``-node1``
+     - ``virtio-net-device``
    * - ``qemu-intel64``
      - ``boards/x86_64/qemu/qemu-intel64/configs/ip-pair-node0``, ``-node1``
      - ``e1000``
+
+The ``ip-pair64-knsh`` nodes load every program from their build
+directory over 9P, as ``v9fs64-knsh`` (see `Host share (v9fs)`_), with a
+6 MiB kernel heap (the kernel page tables map 8 MiB of kernel text and
+data), a 16 MiB page pool for the processes, the kernel stacks of
+``v9fs64-knsh`` and ``TLS_LOG2_MAXSTACK=15`` for the 16 KiB Paho MQTT
+stacks. They leave out what does not build in a kernel build: the NTP
+client, the ``ftpd`` example and ``ptptl`` with the PTP daemon
+(``task_create()``) and MQTT-C.
 
 Driver tests check for buffer leaks: the ``net_leak`` fixture
 (``_netleak.py``) reads ``/proc/iobinfo`` on every node before a test; the
@@ -694,7 +722,7 @@ target, ``/dev/ttyTL1`` by the tests.
      - virtio-serial, ``/dev/ttyS2`` (``ttyS1`` is the PL011 console)
      - ``-device virtio-serial-device -chardev
        serial,id=mb0,path=/dev/ttyTL0 -device virtconsole,chardev=mb0``
-   * - ``rv-virt``
+   * - ``rv-virt``, ``rv-virt64``
      - virtio-serial, ``/dev/ttyS1``
      - as ``qemu-armv8a``
    * - ``qemu-intel64``
@@ -725,7 +753,7 @@ session and copy the build's loadable programs to ``bin/``.
    * - ``qemu-armv8a``
      - ``virtio-9p-device``
      - virtio-mmio (``DRIVERS_VIRTIO_MMIO``)
-   * - ``rv-virt``
+   * - ``rv-virt``, ``rv-virt64``
      - ``virtio-9p-device``
      - virtio-mmio
    * - ``qemu-intel64``
@@ -738,8 +766,8 @@ system symbol table (``EXECFUNCS_HAVE_SYMTAB``,
 ``EXECFUNCS_SYSTEM_SYMTAB``), ``NSH_FILE_APPS`` and
 ``PATH_INITIAL="/mnt/v9fs/bin"``. NSH starts directly
 (``INIT_ENTRYPOINT="nsh_main"``). ``qemu-armv8a`` and ``qemu-intel64``
-set ``FS_LARGEFILE`` (64-bit ``off_t``); ``rv-virt`` keeps the default
-32-bit ``off_t``.
+set ``FS_LARGEFILE`` (64-bit ``off_t``); ``rv-virt`` and ``rv-virt64``
+keep the default 32-bit ``off_t``.
 
 ``boards/arm64/qemu/qemu-armv8a/configs/v9fs-knsh`` is a kernel build
 (upstream ``knsh``) with no programs in the image: a second 9P device,
@@ -757,6 +785,15 @@ devices on PCI). As upstream ``knsh_romfs_pci`` it sets
 ``DEV_SIMPLE_ADDRENV``, which gives the virtio drivers
 ``up_addrenv_pa_to_va()`` (x86_64 has no own one), and leaves
 ``TLS_ALIGNED`` off, so the stack size has no power-of-two limit.
+
+``boards/risc-v/qemu-rv/rv-virt/configs/v9fs64-knsh`` is the same for
+``rv-virt64`` (upstream ``knsh64``, ``DEV_SIMPLE_ADDRENV``). It runs in
+S-mode under QEMU's default OpenSBI (no ``-bios none``), keeps
+``RISCV_SEMIHOSTING_HOSTFS`` (without it the board registers a ROMFS
+image for ``/system``) and doubles the upstream kernel stacks
+(``DEFAULT_TASK_STACKSIZE=4096`` for the kernel threads,
+``ARCH_KERNEL_STACKSIZE=6144`` for system calls): loading a program
+from 9P needs more than the upstream sizes.
 
 6LoWPAN loopback (sixlowpan, pktradio)
 --------------------------------------
@@ -821,7 +858,7 @@ the work of both NICs can run at the same time.
    * - ``qemu-armv8a``
      - ``e1000`` (PCI, GICv2 with ``ARM64_GICV2M`` MSI), ``virtio-net-device``
      - ``virtio-net-device``, ``virtio-net-device``
-   * - ``rv-virt``
+   * - ``rv-virt``, ``rv-virt64``
      - ``virtio-net-device``, ``virtio-net-device``
      - ``virtio-net-device``, ``virtio-net-device``
    * - ``qemu-intel64``
@@ -847,7 +884,7 @@ starts at ``CONFIG_START_YEAR`` until NTP sets it).
      - Entropy (``/dev/urandom``)
    * - ``sim``
      - ``DEV_URANDOM_XORSHIFT128``
-   * - ``qemu-armv8a``, ``rv-virt``
+   * - ``qemu-armv8a``, ``rv-virt``, ``rv-virt64``
      - ``virtio-rng-device`` (``DRIVERS_VIRTIO_RNG``)
    * - ``qemu-intel64``
      - RDRAND (``DEV_URANDOM_ARCH``)
@@ -891,7 +928,8 @@ CI, the default) and riscv-collab's ``riscv32-unknown-elf`` (built with
 its thread state in ``__thread``: the defconfig sets
 ``RISCV_TOOLCHAIN_GNU_RV32`` and ``SCHED_THREAD_LOCAL``, and
 ``config.yaml`` hides the xPack directory from CMake
-(``dcmake: CMAKE_IGNORE_PATH``). The entrypoint is ``/usr/local/bin/testlab-entrypoint``
+(``dcmake: CMAKE_IGNORE_PATH``). ``rv-virt64`` has no ``python``
+session: the image has no 64-bit RISC-V toolchain with native TLS. The entrypoint is ``/usr/local/bin/testlab-entrypoint``
 (``entrypoint.sh``), working directory ``/work``.
 
 ``tools/docker/run.sh``::
@@ -951,7 +989,8 @@ CI workflows
   changed.
 - ``tests.yml`` (reusable, ``workflow_call``/``workflow_dispatch``):
   inputs ``targets`` (``all`` or one of ``sim``, ``qemu-armv8a``,
-  ``rv-virt``, ``qemu-intel64``), ``session``, ``testpath``, ``image``,
+  ``rv-virt``, ``rv-virt64``, ``qemu-intel64``), ``session``,
+  ``testpath``, ``image``,
   ``build_image``, ``nuttx_repo``/``nuttx_ref``/``apps_repo``/
   ``apps_ref``. For each target in the matrix it loads the host
   ``can``, ``can_raw``, ``vcan`` and ``vhost_vsock`` modules with

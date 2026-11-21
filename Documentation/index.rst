@@ -5,7 +5,8 @@ nuttx-testlab
 
 ``nuttx-testlab`` builds Apache NuttX and runs runtime tests against it
 on the ``sim`` target and under QEMU (``qemu-armv8a``, ``rv-virt``,
-``qemu-intel64``) and on real boards (:doc:`hardware`), driven by
+``rv-virt64``, ``qemu-intel64``) and on real boards (:doc:`hardware`),
+driven by
 `NTFC <https://github.com/apache/nuttx-ntfc>`_.
 
 This documentation describes what is in the repository: the build and

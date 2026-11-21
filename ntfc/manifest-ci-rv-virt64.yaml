@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+
+options:
+  fail_fast: false
+  parallel: false
+
+sessions:
+  - name: "rv-virt64-smoke"
+    confpath: ntfc/configs/rv-virt64/smoke/config.yaml
+    testpath: ntfc/tests/smoke
+  - name: "rv-virt64-ip-pair"
+    confpath: ntfc/configs/rv-virt64/ip-pair/config.yaml
+    testpath: ntfc/tests/ip
+    resources: [tl-br0]
+  - name: "rv-virt64-ip-pair-knsh"
+    confpath: ntfc/configs/rv-virt64/ip-pair-knsh/config.yaml
+    testpath: ntfc/tests/ip
+    resources: [tl-br0]
+  - name: "rv-virt64-modbus-rtu"
+    confpath: ntfc/configs/rv-virt64/modbus-rtu/config.yaml
+    testpath: ntfc/tests/modbus
+    resources: [ttyTL0]
+  - name: "rv-virt64-v9fs"
+    confpath: ntfc/configs/rv-virt64/v9fs/config.yaml
+    testpath: ntfc/tests/fs
+  - name: "rv-virt64-v9fs-knsh"
+    confpath: ntfc/configs/rv-virt64/v9fs-knsh/config.yaml
+    testpath: ntfc/tests/fs
+  - name: "rv-virt64-router"
+    confpath: ntfc/configs/rv-virt64/router/config.yaml
+    testpath: ntfc/tests/router
+    resources: [tl-rbr0]
+  - name: "rv-virt64-router-hp2"
+    confpath: ntfc/configs/rv-virt64/router-hp2/config.yaml
+    testpath: ntfc/tests/router/test_router_stress.py::test_router_duplex
+    resources: [tl-rbr0]
+  - name: "rv-virt64-tls"
+    confpath: ntfc/configs/rv-virt64/tls/config.yaml
+    testpath: ntfc/tests/tls
+    resources: [tl-br0]

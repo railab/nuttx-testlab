@@ -28,7 +28,7 @@ pip install -r ntfc/requirements.txt ./external/nuttx-ntfc
 python -m ntfc test --manifest ntfc/manifest-ci-sim.yaml
 ```
 
-Manifests: `ntfc/manifest-ci-{sim,qemu-armv8a,rv-virt,qemu-intel64}.yaml`.
+Manifests: `ntfc/manifest-ci-{sim,qemu-armv8a,rv-virt,rv-virt64,qemu-intel64}.yaml`.
 
 ## Testing a fork
 

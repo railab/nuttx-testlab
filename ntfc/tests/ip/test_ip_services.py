@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 from _host_services import DnsServer, HttpServer, SntpServer, TftpServer
-from _net_common import HOST_IP, NODE_IPS, pattern
+from _net_common import ACCEPT_ADDR_BUG, HOST_IP, NODE_IPS, pattern
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_TCP", "CONFIG_NET_UDP"),
@@ -176,11 +176,17 @@ def _telnet_read_until(sock: socket.socket, token: bytes) -> bytes:
 
 
 @pytest.mark.cmd_check("telnetd_main")
-def test_host_telnet_to_node() -> None:
+def test_host_telnet_to_node(request: pytest.FixtureRequest) -> None:
     """Host runs an nsh command over the node telnet daemon.
 
     The output line must end with CR LF, the telnet end of line (RFC 854).
+
+    :param request: pytest request, to mark the expected failure
     """
+    if _core().conf.kv_check("CONFIG_BUILD_KERNEL"):
+        request.applymarker(
+            pytest.mark.xfail(strict=True, reason=ACCEPT_ADDR_BUG)
+        )
     _core().sendCommand("telnetd &", timeout=10)
     with socket.create_connection((NODE_IPS[NODE], 23), timeout=10) as s:
         _telnet_read_until(s, b"nsh>")
