@@ -1468,6 +1468,103 @@ host. Sessions ``qemu-armv8a-vsock``, ``rv-virt-vsock`` and
      - Node server with ``SO_REUSEADDR`` (``nettl -V -s -A``) listens
        and echoes 4 KiB from the host.
 
+``rpmsg`` module
+----------------
+
+Source: ``ntfc/tests/rpmsg/test_rpmsg_*.py``. Session
+``qemu-armv8a-rpmsg``: two QEMU nodes share an ivshmem region (rptun,
+node 0 master ``server``, node 1 ``proxy``). Socket tests run
+``rpsocktl`` (``apps/rpsocktl``), server on node 0, client on node 1.
+Node 1 mounts node 0's ``/tmp/rfs`` at ``/mnt/rfs`` (rpmsgfs); file
+tests run ``fstl`` on both sides. Node 1 logs through
+``SYSLOG_RPMSG``, node 0 prints the log on its console.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_rpsock_errno``
+     - Without a peer: listen() of a datagram socket ``EOPNOTSUPP``,
+       of an unbound socket ``EDESTADDRREQ``; listen() with backlog 0
+       succeeds; accept() of a socket not listening ``EINVAL``; recv(),
+       send(), getpeername(), shutdown() unconnected ``ENOTCONN``.
+   * - ``test_rpsock_eof_after_close``
+     - Server sends 1000 bytes and closes; the client reads them all,
+       then 0.
+   * - ``test_rpsock_eof_after_shutdown``
+     - As above with shutdown(``SHUT_WR``) instead of close().
+   * - ``test_rpsock_select_eof``
+     - After the peer's shutdown(``SHUT_WR``), select() reports the
+       socket readable and recv() returns 0.
+   * - ``test_rpsock_select_listen``
+     - select() reports the listening socket readable once a client
+       connected.
+   * - ``test_rpsock_readv``
+     - readv() into 40 + 60 byte buffers returns the 100 bytes sent, in
+       order.
+   * - ``test_rpsock_peer_address``
+     - Client getpeername(): ``AF_RPMSG``, server CPU and name; accept()
+       and getpeername() on the server: client CPU.
+   * - ``test_rpsock_connect_twice``
+     - A second connect() fails with ``EISCONN``.
+   * - ``test_rpsock_send_after_shutdown``
+     - send() after shutdown(``SHUT_WR``) fails with ``EPIPE``.
+   * - ``test_rpsock_connect_refused``
+     - connect() to a name nobody listens on fails with
+       ``ECONNREFUSED``.
+   * - ``test_rpsock_dgram_boundaries``
+     - Datagrams of 1 to 1000 bytes are each echoed whole, one per
+       recv().
+   * - ``test_rpsock_dgram_truncate``
+     - A 200-byte datagram read into 50 bytes returns 50 with
+       ``MSG_TRUNC``; the next datagram arrives whole.
+   * - ``test_rpsock_dgram_too_long``
+     - A 64 KiB datagram is sent whole or fails with ``EMSGSIZE``; a
+       small one still gets through.
+   * - ``test_rpmsgfs_client_to_server``
+     - 200003 bytes written on node 1 verify on node 0.
+   * - ``test_rpmsgfs_server_to_client``
+     - 150001 bytes written on node 0 verify on node 1.
+   * - ``test_rpmsgfs_pread_pwrite``
+     - ``fstl pio`` passes on node 1.
+   * - ``test_rpmsgfs_append``
+     - ``fstl append`` passes; node 0 reads the 1500 bytes.
+   * - ``test_rpmsgfs_truncate``
+     - ``fstl trunc`` passes; node 0 sees size 0.
+   * - ``test_rpmsgfs_extend_after_seek``
+     - ``fstl extend`` passes (hole reads as zeros).
+   * - ``test_rpmsgfs_readv_writev``
+     - ``fstl iov`` passes.
+   * - ``test_rpmsgfs_fsync``
+     - ``fstl sync`` passes; node 0 reads the data.
+   * - ``test_rpmsgfs_stat_fields``
+     - Size, mode, mtime and atime from node 1 equal node 0's; utime()
+       from node 1 is seen on node 0.
+   * - ``test_rpmsgfs_statfs``
+     - Block size, block and file counts equal node 0's.
+   * - ``test_rpmsgfs_readdir``
+     - ``fstl ls`` lists the four entries node 0 made.
+   * - ``test_rpmsgfs_rename_unlink``
+     - rename() and unlink() on node 1 change node 0's directory; the
+       data moves with the name.
+   * - ``test_rpmsgfs_nested_dirs``
+     - A file 12 directories deep, written on node 1, verifies on
+       node 0.
+   * - ``test_rpmsgfs_concurrent_threads``
+     - ``fstl conc`` with four threads passes.
+   * - ``test_rpmsgfs_errno``
+     - Failing calls (missing file, existing name, non-empty directory,
+       file/directory mismatch, rename into itself, wrong access mode)
+       return the POSIX errno; node 0's files are unchanged.
+   * - ``test_syslog_rpmsg_lines``
+     - Five lines written to ``/dev/log`` on node 1 show up once each,
+       in order, on node 0.
+   * - ``test_syslog_rpmsg_burst``
+     - 40 lines (2000 bytes) written to ``/dev/log`` at once show up on
+       node 0 in order and intact.
+
 ``input`` module
 ----------------
 

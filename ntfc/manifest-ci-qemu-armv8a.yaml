@@ -52,3 +52,6 @@ sessions:
   - name: "qemu-armv8a-virtio-input-tablet"
     confpath: ntfc/configs/qemu-armv8a/virtio-input-tablet/config.yaml
     testpath: ntfc/tests/input
+  - name: "qemu-armv8a-rpmsg"
+    confpath: ntfc/configs/qemu-armv8a/rpmsg/config.yaml
+    testpath: ntfc/tests/rpmsg

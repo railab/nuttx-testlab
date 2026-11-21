@@ -518,6 +518,38 @@ check per call on a mounted file system::
 - SQLite's error log goes to the console as ``sqltl: log <rc> <msg>``.
 - Verdict: ``sqltl: PASS|FAIL <check> ...``; exit 0 on PASS.
 
+``apps/rpsocktl``
+~~~~~~~~~~~~~~~~~
+
+``rpsocktl`` (``CONFIG_TESTLAB_RPSOCKTL``, needs ``NET_RPMSG``) runs one
+``AF_RPMSG`` socket check per call::
+
+   rpsocktl -s [-m echo|send|close|select] [-n bytes] [-t sec] name
+   rpsocktl -s -u -c cpu [-t sec] name
+   rpsocktl -c cpu [-u] [-m check] [-n bytes] [-t sec] name
+   rpsocktl -e check
+
+- Server (``-s``): stream socket bound to ``name`` (any CPU), prints
+  ``rpsocktl: listening name=<name>`` and accepts one connection.
+  ``echo`` echoes until end of stream; ``send`` sends ``-n`` bytes,
+  shutdown(``SHUT_WR``), waits for end of stream; ``close`` sends ``-n``
+  bytes and closes; ``select`` first waits in select() on the listener.
+  ``-u``: datagram socket connected to ``cpu``, echoes each datagram
+  until ``-t`` s pass without one. Verdict ``rpsocktl: PASS|FAIL server
+  mode=<m> rx= tx= sel= peer=<accept() CPU> peer2=<getpeername() CPU>
+  errno=``.
+- Client (``-c``): connects to ``name`` on ``cpu`` (bounded by ``-t``,
+  default 10 s, with ``SIGALRM``), then one check: ``eof``,
+  ``selecteof``, ``readv``, ``peer``, ``isconn``, ``epipe``,
+  ``refused`` (stream); ``bounds``, ``trunc``, ``msgsize`` (``-u``).
+  ``eof``, ``selecteof`` and ``readv`` wait 1 s before reading.
+- Local (``-e``): one call on a socket without a peer: ``dgramlisten``,
+  ``unboundlisten``, ``listen0``, ``acceptnl``, ``recvnc``, ``sendnc``,
+  ``peernc``, ``shutnc``.
+- Data byte ``off`` of a stream or datagram is ``(off * 31 + 7 + seed)
+  & 0xff``. Verdict ``rpsocktl: PASS|FAIL <check> ...``; exit 0 on PASS.
+  See :doc:`test-cases` for what each check expects.
+
 NTFC configs
 ------------
 
@@ -626,6 +658,8 @@ targets also have ``<target>-router``
 ``test_router_duplex``), both ``resources: [tl-rbr0]``, see
 `Routed networks (router)`_. Every manifest also has ``<target>-tls``
 (``ntfc/tests/tls``, ``resources: [tl-br0]``), see `TLS (tls)`_.
+``qemu-armv8a`` also has ``qemu-armv8a-rpmsg`` (``ntfc/tests/rpmsg``),
+see `RPMSG pair (rpmsg)`_.
 
 Host network (ip-pair)
 ----------------------
@@ -975,6 +1009,35 @@ sees the stacks of exited programs released.
 ``test_tls_handshake_lossy`` adds a netem qdisc to ``tl-br0`` (host to
 node) and redirects the bridge's ingress (node to host) to ``ifb``
 device ``tl-ifb0`` with the same netem qdisc.
+
+RPMSG pair (rpmsg)
+------------------
+
+Two ``qemu-armv8a`` nodes map one file, ``/dev/shm/tl-rpmsg-armv8a``,
+as ivshmem (``ivshmem-plain``, ``memory-backend-file,share=yes``, 4
+MiB) and talk over rptun (``RPTUN_IVSHMEM``, polled, no interrupts).
+Defconfigs ``boards/arm64/qemu/qemu-armv8a/configs/rpmsg-node0`` (CPU
+``server``, rptun master, ``RPTUN_IVSHMEM_NAME="0:proxy:m"``) and
+``rpmsg-node1`` (CPU ``proxy``, ``"0:server:s"``, ``RAM_START``
+``0x40200000``), derived from upstream ``rpserver``/``rpproxy``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Node
+     - Services
+   * - node0
+     - ``NET_RPMSG``, ``FS_RPMSGFS_SERVER``, ``SYSLOG_RPMSG_SERVER``,
+       ``DRIVERS_VIRTIO_RPMSG``
+   * - node1
+     - ``NET_RPMSG``, ``FS_RPMSGFS``, ``SYSLOG_RPMSG`` (4 KiB buffer,
+       server ``server``), ``SYSLOG_CHARDEV``, ``DRIVERS_VHOST_RPMSG``
+
+The rptun handshake in the shared memory does not survive a reboot of
+the pair, and NTFC boots every node twice per session (once to probe
+it). Node 0 therefore runs ``sh -c 'rm -f <file>; exec
+qemu-system-aarch64 -kernel $IMAGE_ELF ...'``: each boot starts from a
+new, zeroed file, and node 1, started after node 0, maps that one.
 
 Hardware sessions
 -----------------
