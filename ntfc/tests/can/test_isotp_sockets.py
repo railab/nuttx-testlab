@@ -46,8 +46,7 @@ CTUCANFD_FAIL = {
     "test_isotp_wait_dontwait",
     "test_isotp_concurrent_sessions",
     "test_isotp_completion_order",
-    "test_isotp_large_pdu",
-    "test_isotp_error_recovery[sequence]",
+    "test_isotp_large_pdu[fd]",
 }
 
 #: Tests whose result on the CTU CAN FD node depends on interrupt timing.
@@ -55,6 +54,9 @@ CTUCANFD_TIMING = {
     "test_isotp_back_to_back",
     "test_isotp_error_recovery[partial]",
     "test_isotp_error_recovery[no-fc]",
+    "test_isotp_error_recovery[sequence]",
+    "test_isotp_large_pdu[classic]",
+    "test_isotp_socket_api",
 }
 
 

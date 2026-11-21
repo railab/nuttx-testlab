@@ -31,14 +31,13 @@ from _can_common import (
     CAN_ID_ALT,
     CAN_ID_DEFAULT,
     CAN_IFNAME,
-    CTUCANFD_TX_BUSY_BUG,
     KVASER_RX_BUG,
     can_endpoint,
     canfd_supported,
     cantl_receiver_start,
     cantl_receiver_verdict,
     cantl_sender,
-    ctucanfd_node,
+    ctucanfd_rx_bug,
     host_can_send,
     host_can_socket,
     host_can_verify,
@@ -92,13 +91,16 @@ def test_can_node_to_node(fd: bool) -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-def test_can_host_to_nodes() -> None:
+def test_can_host_to_nodes(request: pytest.FixtureRequest) -> None:
     """Host sends; every node's receiver gets every frame intact.
 
     The host paces its frames like a real CAN bus would: a back-to-back
     burst from vcan overflows the small RX FIFO of emulated controllers
     (e.g. the SJA1000 on QEMU kvaser_pci holds 64 bytes, ~5 frames).
+
+    :param request: pytest request
     """
+    ctucanfd_rx_bug(request)
     count = 20
     cantl_receiver_start(0, count)
     cantl_receiver_start(1, count)
@@ -157,16 +159,8 @@ def test_can_filter(request: pytest.FixtureRequest) -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-def test_can_node_burst_to_host(request: pytest.FixtureRequest) -> None:
-    """Node 0 sends back-to-back; the host verifies every frame intact.
-
-    :param request: pytest request
-    """
-    if ctucanfd_node(0):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=CTUCANFD_TX_BUSY_BUG)
-        )
-
+def test_can_node_burst_to_host() -> None:
+    """Node 0 sends back-to-back; the host verifies every frame intact."""
     count = 200
     sock = host_can_socket(can_id=CAN_ID_DEFAULT, timeout=10.0)
     try:

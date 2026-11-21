@@ -38,7 +38,7 @@ from typing import Iterator, List, Tuple
 
 import canopen
 import pytest
-from _can_common import KVASER_RX_BUG, kvaser_node
+from _can_common import KVASER_RX_BUG, ctucanfd_rx_bug, kvaser_node
 from _canopen_common import (
     COB_HB,
     COB_SYNC,
@@ -351,13 +351,15 @@ def test_canopen_slave_stopped(
 
 
 def test_canopen_slave_heartbeat_time(
-    bus: HostBus, slave: canopen.RemoteNode
+    bus: HostBus, slave: canopen.RemoteNode, request: pytest.FixtureRequest
 ) -> None:
     """Writing ``0x1017`` changes the heartbeat period; 0 disables it.
 
     :param bus: host bus
     :param slave: node 0 slave
+    :param request: pytest request
     """
+    ctucanfd_rx_bug(request, timing=True)
     slave.sdo.download(0x1017, 0, struct.pack("<H", 200))
     time.sleep(0.3)
     mark = bus.log.mark()

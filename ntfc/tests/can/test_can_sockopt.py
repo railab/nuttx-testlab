@@ -26,6 +26,7 @@ import re
 from typing import List, Tuple
 
 import pytest
+from _can_common import ctucanfd_rx_bug
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CAN_EFF_FLAG,
     CAN_EFF_MASK,
@@ -177,13 +178,16 @@ def test_can_loopback(loopback: int, recv_own: int) -> None:
     assert ret.startswith("canopt: PASS loopback"), ret
 
 
-def test_can_nonblock_poll() -> None:
+def test_can_nonblock_poll(request: pytest.FixtureRequest) -> None:
     """Nonblocking I/O, poll() and select() on a CAN socket.
 
     EAGAIN on an empty socket (O_NONBLOCK and MSG_DONTWAIT), poll() idle
     timeout and POLLOUT, a nonblocking write that reaches the host, then
     select() and poll() wake-ups for two host frames.
+
+    :param request: pytest request
     """
+    ctucanfd_rx_bug(request)
     sock = host_socket()
     try:
         canopt_start(0, "poll can0")

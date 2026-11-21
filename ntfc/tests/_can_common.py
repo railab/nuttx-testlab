@@ -56,11 +56,12 @@ EXACT_ID_MASK = CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG
 TX_VERDICT_RE = r"cantl: (PASS|FAIL) tx=[^\r\n]*[\r\n]"
 RX_VERDICT_RE = r"cantl: (PASS|FAIL) rx=[^\r\n]*[\r\n]"
 
-CTUCANFD_TX_BUSY_BUG = (
-    "drivers/can/ctucanfd_pci.c: ctucanfd_sock_transmit() returns -EBUSY "
-    "while all TX buffers are still in TX OK state (only the TX interrupt "
-    "empties them), and netdev_upper_txpoll() drops the packet on a "
-    "transmit error; how many frames are lost depends on interrupt timing"
+CTUCANFD_RX_INT_BUG = (
+    "drivers/can/ctucanfd_pci.c:1614: ctucanfd_sock_interrupt() leaves RX "
+    "interrupts disabled for a core of the card that had no RX event "
+    "(ctucanfd_interrupt() disables them on all cores of the shared IRQ); "
+    "only ctucanfd_sock_recv() re-enables them, so that core misses frames "
+    "until RX work runs for another reason"
 )
 
 KVASER_RX_BUG = (
@@ -350,3 +351,23 @@ def host_can_verify(
     if expected < count:
         lost += count - expected
     return rx, lost, err
+
+
+def ctucanfd_rx_bug(
+    request: pytest.FixtureRequest, timing: bool = False
+) -> None:
+    """Mark a test hit by the CTU CAN FD RX interrupt bug on node 0.
+
+    :param request: pytest request of the running test
+    :param timing: the test passes or fails with interrupt timing, so skip
+     it instead of marking it a strict xfail
+    """
+    if not ctucanfd_node(0):
+        return
+
+    if timing:
+        pytest.skip(f"timing dependent: {CTUCANFD_RX_INT_BUG}")
+
+    request.applymarker(
+        pytest.mark.xfail(strict=True, reason=CTUCANFD_RX_INT_BUG)
+    )

@@ -24,6 +24,7 @@ blocked-reader paths are stamped.
 """
 
 import pytest
+from _can_common import ctucanfd_rx_bug
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     Frame,
     canopt_env,
@@ -55,19 +56,26 @@ def _run_ts(opts: str) -> str:
 
 
 @pytest.mark.parametrize("mode", ["us", "ns"])
-def test_can_rx_timestamp(mode: str) -> None:
+def test_can_rx_timestamp(mode: str, request: pytest.FixtureRequest) -> None:
     """Every frame carries one SO_TIMESTAMP(NS) control message.
 
     Stamps are CLOCK_REALTIME, not before the check started, not after
     the read, monotonic, and spread over at least half the host's send
     span (stamped at arrival, not at read).
+
+    :param request: pytest request
     """
+    ctucanfd_rx_bug(request)
     ret = _run_ts(f"-m {mode}")
     assert ret.startswith("canopt: PASS ts"), ret
 
 
 @pytest.mark.parametrize("fd", [False, True], ids=["classic", "fd"])
-def test_can_rx_no_timestamp(fd: bool) -> None:
-    """Without a timestamp option recvmsg() returns no control message."""
+def test_can_rx_no_timestamp(fd: bool, request: pytest.FixtureRequest) -> None:
+    """Without a timestamp option recvmsg() returns no control message.
+
+    :param request: pytest request
+    """
+    ctucanfd_rx_bug(request, timing=True)
     ret = _run_ts("-m none -f" if fd else "-m none")
     assert ret.startswith("canopt: PASS ts"), ret

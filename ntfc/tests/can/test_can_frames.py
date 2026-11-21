@@ -23,7 +23,7 @@ CAN FD length (0..8, 12..64 = DLC 0..15) and BRS/ESI combination.
 """
 
 import pytest
-from _can_common import CTUCANFD_TX_BUSY_BUG
+from _can_common import ctucanfd_rx_bug
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CLASSIC_FRAMES,
     FD_FRAMES,
@@ -38,7 +38,6 @@ from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     host_send,
     host_socket,
     interleaved_frames,
-    xfail_on_ctucanfd,
 )
 
 #: Classic frames the ``queued`` case sends.  SO_RCVBUF only requests
@@ -54,16 +53,13 @@ pytestmark = [
 ]
 
 
-def test_can_tx_frame_types(request: pytest.FixtureRequest) -> None:
+def test_can_tx_frame_types() -> None:
     """Node sends both tables; the host receives every frame intact.
 
     Classic frames go out on a classic socket, which must refuse a
     CANFD_MTU write with EINVAL; CAN FD frames on a CAN_RAW_FD_FRAMES
     socket keep their length and BRS/ESI flags.
-
-    :param request: pytest request
     """
-    xfail_on_ctucanfd(request, CTUCANFD_TX_BUSY_BUG)
     sock = host_socket()
     try:
         ret = canopt_run(0, "tx can0")
@@ -75,12 +71,15 @@ def test_can_tx_frame_types(request: pytest.FixtureRequest) -> None:
     assert errors == []
 
 
-def test_can_fd_rx() -> None:
+def test_can_fd_rx(request: pytest.FixtureRequest) -> None:
     """A CAN_RAW_FD_FRAMES socket receives both tables from the host.
 
     CAN FD frames read as CANFD_MTU with length and BRS/ESI intact,
     classic frames as CAN_MTU.
+
+    :param request: pytest request
     """
+    ctucanfd_rx_bug(request)
     canopt_start(0, "fdrx can0")
     host_send(interleaved_frames() + [Frame(MARKER_ID, 1)])
     ret = canopt_verdict(0)
@@ -95,7 +94,9 @@ def test_can_fd_rx() -> None:
     ],
     ids=["blocking", "queued"],
 )
-def test_can_fd_to_classic_socket(queued: bool) -> None:
+def test_can_fd_to_classic_socket(
+    queued: bool, request: pytest.FixtureRequest
+) -> None:
     """A classic socket on a mixed bus sees only classic frames.
 
     The host interleaves both tables. ``blocking``: the reader waits in
@@ -106,7 +107,9 @@ def test_can_fd_to_classic_socket(queued: bool) -> None:
     that blocks despite queued frames still returns.
 
     :param queued: let all frames queue before the first read
+    :param request: pytest request
     """
+    ctucanfd_rx_bug(request)
     if queued:
         canopt_start(0, f"legacy can0 -q -n {QUEUED_CLASSIC}")
         host_send(interleaved_frames(QUEUED_CLASSIC) + [Frame(MARKER_ID, 1)])
