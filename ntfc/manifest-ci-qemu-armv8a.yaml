@@ -61,3 +61,6 @@ sessions:
   - name: "qemu-armv8a-virtio-snd-capture"
     confpath: ntfc/configs/qemu-armv8a/virtio-snd-capture/config.yaml
     testpath: ntfc/tests/sound
+  - name: "qemu-armv8a-virtio-gpu"
+    confpath: ntfc/configs/qemu-armv8a/virtio-gpu/config.yaml
+    testpath: ntfc/tests/gpu

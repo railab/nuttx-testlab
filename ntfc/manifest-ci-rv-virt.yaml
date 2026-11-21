@@ -52,3 +52,6 @@ sessions:
   - name: "rv-virt-virtio-snd-capture"
     confpath: ntfc/configs/rv-virt/virtio-snd-capture/config.yaml
     testpath: ntfc/tests/sound
+  - name: "rv-virt-virtio-gpu"
+    confpath: ntfc/configs/rv-virt/virtio-gpu/config.yaml
+    testpath: ntfc/tests/gpu

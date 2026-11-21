@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_FBTL
+	tristate "fbtl: framebuffer drawing test tool"
+	default n
+	depends on VIDEO_FB && FB_UPDATE
+	---help---
+		Prints the framebuffer video and plane info (-i), fills a
+		rectangle with one color through mmap() or write() and
+		updates it with FBIO_UPDATE (-f), or pans the display
+		(-p), and ends with one PASS/FAIL verdict line.
+
+if TESTLAB_FBTL
+
+config TESTLAB_FBTL_PROGNAME
+	string "Program name"
+	default "fbtl"
+
+config TESTLAB_FBTL_PRIORITY
+	int "fbtl task priority"
+	default 100
+
+config TESTLAB_FBTL_STACKSIZE
+	int "fbtl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

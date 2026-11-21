@@ -574,6 +574,24 @@ drives an audio device with the upper-half ioctls (reserve, configure,
   bytes= nonzero= ms=`` (``ms`` from start to the last buffer back),
   ``sndtl: PASS query|info``, else ``sndtl: FAIL ...``.
 
+``apps/fbtl``
+~~~~~~~~~~~~~
+
+``fbtl`` (``CONFIG_TESTLAB_FBTL``, ``VIDEO_FB`` with ``FB_UPDATE``)::
+
+   fbtl [-d dev] -i
+   fbtl [-d dev] -f x,y,w,h,rgb [-w] [-u]
+   fbtl [-d dev] -p yoffset
+
+- ``-i`` prints ``fbtl: info fmt= xres= yres= bpp= stride= fblen=
+  xvirt= yvirt=``.
+- ``-f`` fills a rectangle (``y`` may reach into the next frames) with
+  ``0xRRGGBB`` in the framebuffer format through ``mmap()``, or
+  ``lseek()``/``write()`` with ``-w``, then ``FBIO_UPDATE`` (not with
+  ``-u``).
+- ``-p`` calls ``FBIOPAN_DISPLAY`` with that ``yoffset``.
+- Verdict ``fbtl: PASS|FAIL``.
+
 NTFC configs
 ------------
 

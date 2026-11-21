@@ -1656,6 +1656,36 @@ tests that need the other audiodev are skipped.
    * - ``test_virtio_snd_capture_rate``
      - 16000 bytes at 8 kHz mono 16 bit take 0.75 to 1.6 s.
 
+``gpu`` module
+--------------
+
+Source: ``ntfc/tests/gpu/test_virtio_gpu.py``. One node with a 320x240
+QEMU ``virtio-gpu`` device (``/dev/fb0``); ``fbtl`` on the node draws
+through the framebuffer interface and the test reads the display with
+QMP ``screendump``. Sessions ``qemu-armv8a-virtio-gpu`` and
+``rv-virt-virtio-gpu``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_gpu_display_info``
+     - ``FBIOGET_VIDEOINFO`` gives 320x240; stride and ``fblen`` cover
+       the virtual frames.
+   * - ``test_virtio_gpu_screen_size``
+     - The screendump is 320x240.
+   * - ``test_virtio_gpu_fill_mmap``
+     - A red rectangle drawn through ``mmap()`` and ``FBIO_UPDATE``
+       shows exactly, its surroundings stay black.
+   * - ``test_virtio_gpu_fill_write``
+     - A green rectangle drawn with ``lseek()``/``write()`` shows
+       exactly in the bottom right corner.
+   * - ``test_virtio_gpu_pan_display``
+     - ``FBIOPAN_DISPLAY`` to the second frame shows its blue fill,
+       back to 0 shows the first frame again.
+
 ``fs`` module
 -------------
 
