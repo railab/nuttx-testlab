@@ -24,7 +24,7 @@ and up again.
 """
 
 import time
-from typing import Any, List
+from typing import List
 
 import pytest
 from _router_common import (
@@ -32,7 +32,6 @@ from _router_common import (
     HOSTS,
     NODES,
     configure,
-    core,
     host_ping,
     iperf_client,
     iperf_mbps,
@@ -51,27 +50,6 @@ DUPLEX_ROUNDS = 3
 
 #: Parallel TCP streams in each direction.
 DUPLEX_STREAMS = 4
-
-IPFWD_LOCK_BUG = (
-    "net/ipforward/ipfwd_forward.c: ipfwd_forward() runs in the ingress "
-    "worker and links its callback into the egress device's devif "
-    "callback lists, then reads the forward state again, without the "
-    "egress device's lock; with a concurrent egress worker callbacks are "
-    "lost (forwarding stops, IOBs held) or freed state is used"
-)
-
-
-@pytest.fixture
-def concurrent_workers_xfail(request: Any) -> None:
-    """Expect the duplex test to fail with two HP workers.
-
-    :param request: pytest request of the test
-    """
-    nthreads = core().conf.kv_check("CONFIG_SCHED_HPNTHREADS")
-    if int(nthreads or 1) > 1:
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=IPFWD_LOCK_BUG)
-        )
 
 
 def _duplex_round(rnd: int) -> None:
@@ -92,7 +70,6 @@ def _duplex_round(rnd: int) -> None:
 
 
 @pytest.mark.dep_config("CONFIG_NET_NAT44")
-@pytest.mark.usefixtures("concurrent_workers_xfail")
 def test_router_duplex(router_ifs: List[str]) -> None:
     """The node keeps forwarding after duplex TCP load through NAT.
 
