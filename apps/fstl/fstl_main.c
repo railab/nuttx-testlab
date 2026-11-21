@@ -117,6 +117,8 @@ static void fstl_usage(FAR const char *progname)
           "  mount  <fstype> <target> <data> <ERRNO|OK>\n"
           "  umount <target> <ERRNO|OK>\n"
           "  exec   <path|name> <status|ERRNO> [args...]\n"
+          "  lock   <case> <path>       fcntl() record locks, case:\n"
+          "         getlkown badf inval\n"
           "  -s seed  pattern seed (default 0)\n"
           "  -b size  I/O buffer size (default %d)\n"
           "  -a       open with O_APPEND\n"
@@ -378,6 +380,10 @@ int main(int argc, FAR char *argv[])
   else if (strcmp(check, "mount") == 0 && nargs == 4)
     {
       ret = fstl_mount(args[0], args[1], args[2], args[3]);
+    }
+  else if (strcmp(check, "lock") == 0 && nargs == 2)
+    {
+      ret = fstl_lock(args[0], args[1]);
     }
   else if (strcmp(check, "umount") == 0 && nargs == 2)
     {

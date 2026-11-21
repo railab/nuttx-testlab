@@ -25,6 +25,7 @@ if(CONFIG_TESTLAB_FSTL)
     fstl_main.c
     fstl_io.c
     fstl_dir.c
+    fstl_lock.c
     STACKSIZE
     ${CONFIG_TESTLAB_FSTL_STACKSIZE}
     PRIORITY

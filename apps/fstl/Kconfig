@@ -11,8 +11,8 @@ config TESTLAB_FSTL
 		File system checks that do not depend on one file system:
 		pattern data I/O, positioned I/O, truncation, directory
 		listing, stat fields, error numbers, concurrent writers,
-		mount and program execution.  Each run prints one PASS/FAIL
-		verdict line.
+		mount, program execution and record locks.  Each run prints
+		one PASS/FAIL verdict line.
 
 if TESTLAB_FSTL
 

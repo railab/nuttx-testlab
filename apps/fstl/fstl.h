@@ -89,4 +89,8 @@ int fstl_mount(FAR const char *fstype, FAR const char *target,
 int fstl_umount(FAR const char *target, FAR const char *expect);
 int fstl_exec(int argc, FAR char *argv[]);
 
+/* Record lock checks (fstl_lock.c) */
+
+int fstl_lock(FAR const char *check, FAR const char *path);
+
 #endif /* __APPS_FSTL_FSTL_H */

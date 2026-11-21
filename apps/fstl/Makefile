@@ -24,7 +24,7 @@ PRIORITY  = $(CONFIG_TESTLAB_FSTL_PRIORITY)
 STACKSIZE = $(CONFIG_TESTLAB_FSTL_STACKSIZE)
 MODULE    = $(CONFIG_TESTLAB_FSTL)
 
-CSRCS   = fstl_io.c fstl_dir.c
+CSRCS   = fstl_io.c fstl_dir.c fstl_lock.c
 MAINSRC = fstl_main.c
 
 include $(APPDIR)/Application.mk
