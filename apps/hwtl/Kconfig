@@ -8,7 +8,8 @@ config TESTLAB_HWTL
 	default n
 	---help---
 		Board device checks: periodic timer, oneshot timer, random number
-		generator and RTC.  Each check prints one PASS/FAIL verdict line.
+		generator and RTC; board clock check.  Each check prints one
+		PASS/FAIL verdict line.
 
 if TESTLAB_HWTL
 

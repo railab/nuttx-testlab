@@ -1784,6 +1784,7 @@ Source: ``ntfc/tests/hw/test_hw_*.py``, board tables in
 run with ``tools/hw/run.sh``. Every test runs one ``hwtl`` subcommand
 (``apps/hwtl``) and passes on ``hwtl: PASS``. Tests are parametrized by
 the board's entries; a board without entries for a test skips it.
+Tests without entries run on every board.
 
 .. list-table::
    :header-rows: 1
@@ -1791,6 +1792,9 @@ the board's entries; a board without entries for a test skips it.
 
    * - Test
      - PASS criterion
+   * - ``test_hw_clock_accuracy``
+     - The board ``CLOCK_MONOTONIC`` time between two newlines that the
+       host sends 20 s apart is within 2 % of the host time.
    * - ``test_hw_oneshot_delay``
      - Per entry (``<dev> <us>``, 0 = half the maximum delay): the delay
        fires, early by at most 1 tick, late by at most 2 ticks + 2 ms

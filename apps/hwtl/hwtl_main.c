@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <time.h>
 
@@ -54,6 +55,7 @@
 
 #define HWTL_DETAIL_MAX   96
 #define HWTL_SIGNO        SIGUSR1
+#define HWTL_CLOCK_WAIT_MS 60000
 
 /* FIPS 140-2 statistical tests: one block of 20000 bits */
 
@@ -122,6 +124,7 @@ static enum hwtl_res_e hwtl_rtctime(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_rtcalarm(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_rtccancel(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_rtcperiodic(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_clock(FAR char **argv, FAR char *detail);
 
 /****************************************************************************
  * Private Data
@@ -149,6 +152,9 @@ static const struct hwtl_cmd_s g_hwtl_cmds[] =
   },
   {
     "rtcperiodic", "<dev> <period_ms> <ms>", 3, 3, hwtl_rtcperiodic
+  },
+  {
+    "clock", "(then two newlines on stdin)", 0, 0, hwtl_clock
   }
 };
 
@@ -836,6 +842,63 @@ static enum hwtl_res_e hwtl_rtcperiodic(FAR char **argv, FAR char *detail)
   snprintf(detail, HWTL_DETAIL_MAX, "no CONFIG_RTC_PERIODIC");
   return HWTL_ERROR;
 #endif
+}
+
+/****************************************************************************
+ * Clock
+ ****************************************************************************/
+
+/* Nanoseconds from t0 to t1 */
+
+static int64_t hwtl_diff_ns(FAR const struct timespec *t0,
+                            FAR const struct timespec *t1)
+{
+  return (int64_t)(t1->tv_sec - t0->tv_sec) * 1000000000 +
+         (t1->tv_nsec - t0->tv_nsec);
+}
+
+/* Wait for a whole line on stdin, stamp its end with CLOCK_MONOTONIC */
+
+static int hwtl_wait_line(FAR struct timespec *ts)
+{
+  struct pollfd pfd;
+  char c = '\0';
+
+  while (c != '\n')
+    {
+      pfd.fd      = STDIN_FILENO;
+      pfd.events  = POLLIN;
+      pfd.revents = 0;
+
+      if (poll(&pfd, 1, HWTL_CLOCK_WAIT_MS) <= 0 ||
+          read(STDIN_FILENO, &c, 1) != 1)
+        {
+          return -1;
+        }
+    }
+
+  return clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
+/* CLOCK_MONOTONIC time between two newlines sent by the host */
+
+static enum hwtl_res_e hwtl_clock(FAR char **argv, FAR char *detail)
+{
+  struct timespec t0;
+  struct timespec t1;
+
+  printf("hwtl: clock ready\n");
+  fflush(stdout);
+
+  if (hwtl_wait_line(&t0) < 0 || hwtl_wait_line(&t1) < 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "no input errno=%d", errno);
+      return HWTL_ERROR;
+    }
+
+  snprintf(detail, HWTL_DETAIL_MAX, "us=%" PRId64,
+           hwtl_diff_ns(&t0, &t1) / 1000);
+  return HWTL_PASS;
 }
 
 /****************************************************************************
