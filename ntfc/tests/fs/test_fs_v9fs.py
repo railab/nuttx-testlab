@@ -79,11 +79,6 @@ WALK_BUG = (
     "Twalk; 9P allows at most 16 (MAXWELEM), so paths with more than 16 "
     "elements below the mount fail with EINVAL"
 )
-SYMTAB_BUG = (
-    "libs/libc/libc.csv: getpid, gettid and putchar are libc functions "
-    "missing from the system symbol table (EXECFUNCS_SYSTEM_SYMTAB), so "
-    "a program that calls them does not load"
-)
 UNAME_BUG = (
     "fs/v9fs/client.c: v9fs_client_init() copies uname=, aname= and "
     "trans= values into fixed buffers with the option length, a uname "
@@ -840,10 +835,8 @@ def test_v9fs_elf_bad_section(share: Path, field: str) -> None:
     fstl_pass(f"exec {MNT}/bin/elftl 0 exit 0")
 
 
-def test_v9fs_elf_symbols(request: pytest.FixtureRequest, share: Path) -> None:
+def test_v9fs_elf_symbols(share: Path) -> None:
     """A program that calls getpid(), gettid() and putchar() runs."""
-    if not kv("CONFIG_BUILD_KERNEL"):
-        request.applymarker(pytest.mark.xfail(strict=True, reason=SYMTAB_BUG))
     _elf(share, "elfsym")
     verdict = _prog(f"{MNT}/bin/elfsym", r"elfsym: \S+.*")
     assert verdict.startswith("elfsym: PASS"), verdict

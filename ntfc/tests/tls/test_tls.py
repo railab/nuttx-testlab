@@ -85,13 +85,6 @@ FUTURE_ALERT_BUG = (
 )
 
 
-RST_BUG = (
-    "net/tcp/tcp_monitor.c tcp_close_connection(): TCP_ABORT (peer RST) "
-    "sets _SF_CLOSED like a graceful close, so recv() after poll() "
-    "returns 0 (end of file) instead of failing with ECONNRESET"
-)
-
-
 @pytest.fixture(scope="module")
 def pki() -> Iterator[Pki]:
     """Generate the test PKI around the host's current time.
@@ -251,15 +244,10 @@ def test_tls_cert_alert(
         raise WrongAlert(str(srv.results))
 
 
-class ResetNotReported(AssertionError):
-    """A peer's RST did not end the session with ``ECONNRESET``."""
-
-
 class WrongAlert(AssertionError):
     """The node sent a different alert than RFC 8446 6.2 names."""
 
 
-@pytest.mark.xfail(strict=True, raises=ResetNotReported, reason=RST_BUG)
 @pytest.mark.parametrize("role", ["client", "server"])
 def test_tls_peer_reset(
     net_leak: Any, node: Pki, heap: HeapCheck, role: str
@@ -285,8 +273,8 @@ def test_tls_peer_reset(
     assert verdict.get("verdict") == "FAIL", verdict
     heap.check()
     net_leak.check()
-    if verdict["end"] != "reset" or verdict["errno"] != ECONNRESET:
-        raise ResetNotReported(verdict["line"])
+    assert verdict["end"] == "reset", verdict["line"]
+    assert verdict["errno"] == ECONNRESET, verdict["line"]
 
 
 @pytest.mark.parametrize("role", ["client", "server"])

@@ -44,12 +44,6 @@ from _net_common import HOST_IP, wait_tcp_room
 pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP")]
 
 
-PAHO_PUB_OPTS_BUG = (
-    "netutils/paho_mqtt: paho_c_pub.c keeps its options in a global "
-    "struct that getopts() only sets, never resets; NuttX does not "
-    "re-initialise .data between runs of a builtin, so -r sticks"
-)
-
 EXIT_SIGTERM_BUG = (
     "sched/group: with GROUP_KILL_CHILDREN_TIMEOUT_MS < 0 (default with "
     "SIG_DEFAULT) exit() sends SIGTERM to the other threads and waits "
@@ -361,7 +355,6 @@ def test_mqtt_pub_retained(broker: MosquittoBroker) -> None:
 
 
 @pytest.mark.cmd_check("mqtt_pub_main")
-@pytest.mark.xfail(strict=True, reason=PAHO_PUB_OPTS_BUG)
 def test_mqtt_pub_not_retained(broker: MosquittoBroker) -> None:
     """``mqtt_pub`` without ``-r`` after a ``-r`` run does not retain.
 
