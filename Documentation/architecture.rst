@@ -243,6 +243,17 @@ opens a mouse, keyboard or touchscreen device nonblocking, prints
 n=<count>`` when ``count`` reports (default 1) arrived within ``sec``
 seconds (default 10), else ``inputtl: FAIL n=<got>``.
 
+``apps/posixtl``
+~~~~~~~~~~~~~~~~
+
+``posixtl`` (``CONFIG_TESTLAB_POSIXTL``, POSIX timers, pthreads, full
+signals) checks POSIX timers, ``setitimer()`` and the ``si_pid`` of
+signals sent by a thread against the POSIX text quoted at each case.
+``posixtl <case>`` runs one case.
+
+- Verdict: ``posixtl: PASS <case>`` or ``posixtl: FAIL <case> <reason>``;
+  exit 0 on PASS.
+
 ``apps/cantl``
 ~~~~~~~~~~~~~~
 

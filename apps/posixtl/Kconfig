@@ -1,0 +1,32 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_POSIXTL
+	tristate "posixtl: POSIX timer and signal test tool"
+	default n
+	depends on !DISABLE_POSIX_TIMERS && !DISABLE_PTHREAD
+	depends on ENABLE_ALL_SIGNALS
+	---help---
+		Checks POSIX timers (timer_settime(), timer_gettime(),
+		timer_getoverrun(), timer_create() from a thread,
+		setitimer()) and the si_pid of signals sent by a thread.
+		"posixtl <case>" runs one case and prints one verdict line
+		"posixtl: PASS <case>" or "posixtl: FAIL <case> <reason>".
+
+if TESTLAB_POSIXTL
+
+config TESTLAB_POSIXTL_PROGNAME
+	string "Program name"
+	default "posixtl"
+
+config TESTLAB_POSIXTL_PRIORITY
+	int "posixtl task priority"
+	default 100
+
+config TESTLAB_POSIXTL_STACKSIZE
+	int "posixtl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
