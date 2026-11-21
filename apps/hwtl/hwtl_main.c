@@ -34,6 +34,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
+#include <sched.h>
 #include <signal.h>
 #include <time.h>
 
@@ -87,6 +89,14 @@
 #define HWTL_RTC_MIN      59
 #define HWTL_RTC_SEC      58
 
+/* SCHED_FIFO check: one CPU, pthreads; window in milliseconds */
+
+#if !defined(CONFIG_SMP) && !defined(CONFIG_DISABLE_PTHREAD)
+#  define HWTL_HAVE_SCHED 1
+#endif
+
+#define HWTL_SCHED_MS     500
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -113,6 +123,16 @@ struct hwtl_cmd_s
   hwtl_check_t    check;
 };
 
+#ifdef HWTL_HAVE_SCHED
+/* One busy thread of the SCHED_FIFO check */
+
+struct hwtl_spin_s
+{
+  volatile uint32_t count;  /* Iterations before g_hwtl_stop */
+  volatile bool     ran;    /* The thread ran */
+};
+#endif
+
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
@@ -125,6 +145,7 @@ static enum hwtl_res_e hwtl_rtcalarm(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_rtccancel(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_rtcperiodic(FAR char **argv, FAR char *detail);
 static enum hwtl_res_e hwtl_clock(FAR char **argv, FAR char *detail);
+static enum hwtl_res_e hwtl_sched(FAR char **argv, FAR char *detail);
 
 /****************************************************************************
  * Private Data
@@ -155,6 +176,9 @@ static const struct hwtl_cmd_s g_hwtl_cmds[] =
   },
   {
     "clock", "(then two newlines on stdin)", 0, 0, hwtl_clock
+  },
+  {
+    "sched", "fifo", 1, 1, hwtl_sched
   }
 };
 
@@ -163,6 +187,12 @@ static const struct hwtl_cmd_s g_hwtl_cmds[] =
 /* One RNG block, too large for the stack */
 
 static uint8_t g_hwtl_rngbuf[HWTL_RNG_BLOCK];
+
+#ifdef HWTL_HAVE_SCHED
+/* Stops the busy threads of the SCHED_FIFO check */
+
+static volatile bool g_hwtl_stop;
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -899,6 +929,119 @@ static enum hwtl_res_e hwtl_clock(FAR char **argv, FAR char *detail)
   snprintf(detail, HWTL_DETAIL_MAX, "us=%" PRId64,
            hwtl_diff_ns(&t0, &t1) / 1000);
   return HWTL_PASS;
+}
+
+/****************************************************************************
+ * Scheduling policy
+ ****************************************************************************/
+
+#ifdef HWTL_HAVE_SCHED
+/* Busy thread: counts its iterations until g_hwtl_stop */
+
+static FAR void *hwtl_spin(FAR void *arg)
+{
+  FAR struct hwtl_spin_s *spin = arg;
+
+  spin->ran = true;
+  while (!g_hwtl_stop)
+    {
+      spin->count++;
+    }
+
+  return NULL;
+}
+#endif
+
+/* Two busy SCHED_FIFO threads A then B, one priority below hwtl; hwtl
+ * sleeps, then reads their counts before it stops them.
+ */
+
+static enum hwtl_res_e hwtl_sched(FAR char **argv, FAR char *detail)
+{
+#ifdef HWTL_HAVE_SCHED
+  struct hwtl_spin_s spin[2];
+  struct sched_param param;
+  struct timespec wait;
+  pthread_attr_t attr;
+  pthread_t tid[2];
+  uint32_t a;
+  bool bran;
+  int policy;
+  int prio;
+  int ret;
+  int n;
+
+  if (strcmp(argv[0], "fifo") != 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "bad arguments");
+      return HWTL_ERROR;
+    }
+
+  ret = pthread_getschedparam(pthread_self(), &policy, &param);
+  if (ret != 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "getschedparam ret=%d", ret);
+      return HWTL_ERROR;
+    }
+
+  prio = param.sched_priority - 1;
+  if (prio < sched_get_priority_min(SCHED_FIFO))
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "prio=%d too low", prio);
+      return HWTL_ERROR;
+    }
+
+  wait.tv_sec  = 0;
+  wait.tv_nsec = HWTL_SCHED_MS * 1000000;
+
+  memset(spin, 0, sizeof(spin));
+  g_hwtl_stop = false;
+
+  param.sched_priority = prio;
+  pthread_attr_init(&attr);
+  pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+  pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+  pthread_attr_setschedparam(&attr, &param);
+
+  for (n = 0; n < 2; n++)
+    {
+      ret = pthread_create(&tid[n], &attr, hwtl_spin, &spin[n]);
+      if (ret != 0)
+        {
+          break;
+        }
+    }
+
+  pthread_attr_destroy(&attr);
+
+  if (n == 2)
+    {
+      nanosleep(&wait, NULL);
+    }
+
+  a    = spin[0].count;
+  bran = spin[1].ran;
+
+  g_hwtl_stop = true;
+  while (n-- > 0)
+    {
+      pthread_join(tid[n], NULL);
+    }
+
+  if (ret != 0)
+    {
+      snprintf(detail, HWTL_DETAIL_MAX, "pthread_create ret=%d", ret);
+      return HWTL_ERROR;
+    }
+
+  snprintf(detail, HWTL_DETAIL_MAX, "fifo prio=%d ms=%d a=%" PRIu32
+           " b_ran=%d", prio, HWTL_SCHED_MS, a, bran);
+
+  return (a > 0 && !bran) ? HWTL_PASS : HWTL_FAIL;
+#else
+  snprintf(detail, HWTL_DETAIL_MAX, "needs one CPU and pthreads");
+  return HWTL_ERROR;
+#endif
 }
 
 /****************************************************************************

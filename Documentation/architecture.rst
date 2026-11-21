@@ -452,7 +452,7 @@ sessions (:doc:`hardware`)::
 
    hwtl <check> <args...>
 
-- Checks: ``timer``, ``oneshot``, ``clock``; ``hwtl`` without arguments prints their arguments.
+- Checks: ``timer``, ``oneshot``, ``clock``, ``sched``; ``hwtl`` without arguments prints their arguments.
   A check whose driver is not configured reports an error.
 - Verdict: ``hwtl: PASS|FAIL <check> <details>``; exit 0 on PASS.
 - ``timer <dev> <period_us> <ms>``: sets the period, counts the
@@ -463,6 +463,9 @@ sessions (:doc:`hardware`)::
   fires early by at most one tick, late by at most two ticks + 2 ms.
 - ``clock``: prints ``hwtl: clock ready``, reports the
   ``CLOCK_MONOTONIC`` time between the next two newlines on stdin.
+- ``sched fifo``: two busy ``SCHED_FIFO`` threads A then B one priority
+  below ``hwtl``; counts read after 500 ms. PASS: A ran, B did not.
+  Needs one CPU (no ``CONFIG_SMP``).
 
 NTFC configs
 ------------

@@ -1817,6 +1817,10 @@ Tests without entries run on every board.
      - Per entry (``<dev> <ms>``): the time set (31 Dec 23:59:58) is read
        back, and after ``<ms>`` the RTC advanced by the elapsed time
        within 1 s, across the year rollover (``CONFIG_RTC_DRIVER``).
+   * - ``test_hw_sched_fifo``
+     - Two busy ``SCHED_FIFO`` threads A then B of equal priority: B does
+       not run within 500 ms (POSIX 2.8.4 thread lists). Skipped with
+       ``CONFIG_DISABLE_PTHREAD`` or ``CONFIG_SMP``.
    * - ``test_hw_timer_period``
      - Per entry (``<dev> <period_us> <ms>``): the expirations counted in
        ``<ms>`` are within 2 % (+1) of ``<ms>`` / period
