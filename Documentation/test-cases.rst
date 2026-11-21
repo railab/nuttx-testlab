@@ -117,7 +117,7 @@ Test functions
 ---------------------
 
 Source: ``ntfc/tests/smoke/test_unix_sockets.py``. AF_UNIX sockets on
-one node, in the four smoke sessions (``CONFIG_NET_LOCAL``,
+one node, in the smoke and smoke-smp sessions (``CONFIG_NET_LOCAL``,
 ``CONFIG_NET_LOCAL_SCM``). Each case runs ``unixtl <case>``
 (``apps/unixtl``); expectations come from POSIX.1-2024, quoted in the
 app. PASS: ``unixtl: PASS <case>``.
