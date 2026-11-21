@@ -592,6 +592,16 @@ drives an audio device with the upper-half ioctls (reserve, configure,
 - ``-p`` calls ``FBIOPAN_DISPLAY`` with that ``yoffset``.
 - Verdict ``fbtl: PASS|FAIL``.
 
+``apps/i2ctl``
+~~~~~~~~~~~~~~
+
+``i2ctl [-d dev] -a addr [-T] {-w hex | -z | -r len}...``
+(``CONFIG_TESTLAB_I2CTL``, ``I2C_DRIVER``) sends the messages in one
+``I2CIOC_TRANSFER`` at 100 kHz: ``-w`` writes the bytes, ``-z`` is a
+zero-length write, ``-r`` reads; ``-T`` uses 10-bit addressing. Prints
+``i2ctl: rx=<hex>`` per read message, verdict ``i2ctl: PASS`` or
+``i2ctl: FAIL errno=<n>``.
+
 NTFC configs
 ------------
 

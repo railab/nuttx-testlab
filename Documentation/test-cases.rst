@@ -1686,6 +1686,48 @@ QMP ``screendump``. Sessions ``qemu-armv8a-virtio-gpu`` and
      - ``FBIOPAN_DISPLAY`` to the second frame shows its blue fill,
        back to 0 shows the first frame again.
 
+``i2c`` module
+--------------
+
+Source: ``ntfc/tests/i2c/test_virtio_i2c.py``. One node with a QEMU
+vhost-user device served by ``ntfc/tests/_vhost_user.py`` (see
+:doc:`architecture`), which logs every request it gets; the tests read
+the log and the device state over its control socket. Sessions
+``<target>-virtio-i2c`` for ``qemu-armv8a``, ``rv-virt`` and
+``qemu-intel64`` (PCI devices on ``qemu-intel64``):
+``qemu-armv8a-virtio-i2c``, ``rv-virt-virtio-i2c`` and
+``qemu-intel64-virtio-i2c``.
+
+I2C: EEPROMs (256 bytes, first written byte is the word address) at
+0x50 and 10-bit 0x2a5, nothing at 0x51; ``i2ctl`` sends one
+``I2CIOC_TRANSFER``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_i2c_registered``
+     - ``/dev`` has ``i2c0``.
+   * - ``test_virtio_i2c_write``
+     - One write request, ``addr`` 0x50 << 1, no flags, header and
+       buffer readable; the EEPROM holds the four bytes.
+   * - ``test_virtio_i2c_write_read``
+     - Write then read: first request ``FAIL_NEXT``, second ``M_RD``
+       with a 3-byte writable buffer; the node reads the EEPROM bytes.
+   * - ``test_virtio_i2c_zero_length``
+     - A zero-length write is sent as out and in header only, and
+       succeeds.
+   * - ``test_virtio_i2c_ten_bit_address``
+     - Both requests carry the 10-bit ``addr`` encoding of 0x2a5; the
+       node reads that EEPROM.
+   * - ``test_virtio_i2c_absent_device``
+     - A write to 0x51 fails with an errno; a following write to 0x50
+       succeeds.
+   * - ``test_virtio_i2c_after_failed_group``
+     - After a failed write-read to 0x51, a write-read to 0x50 succeeds.
+
 ``fs`` module
 -------------
 

@@ -1,0 +1,29 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_I2CTL
+	tristate "i2ctl: I2C transfer test tool"
+	default n
+	depends on I2C_DRIVER
+	---help---
+		Sends one I2CIOC_TRANSFER of the write, zero-length and read
+		messages given on the command line, prints the bytes read and
+		ends with one PASS/FAIL verdict line.
+
+if TESTLAB_I2CTL
+
+config TESTLAB_I2CTL_PROGNAME
+	string "Program name"
+	default "i2ctl"
+
+config TESTLAB_I2CTL_PRIORITY
+	int "i2ctl task priority"
+	default 100
+
+config TESTLAB_I2CTL_STACKSIZE
+	int "i2ctl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

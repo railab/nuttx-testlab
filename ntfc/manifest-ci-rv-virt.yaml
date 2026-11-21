@@ -55,3 +55,6 @@ sessions:
   - name: "rv-virt-virtio-gpu"
     confpath: ntfc/configs/rv-virt/virtio-gpu/config.yaml
     testpath: ntfc/tests/gpu
+  - name: "rv-virt-virtio-i2c"
+    confpath: ntfc/configs/rv-virt/virtio-i2c/config.yaml
+    testpath: ntfc/tests/i2c

@@ -86,3 +86,6 @@ sessions:
   - name: "qemu-intel64-virtio-snd-capture"
     confpath: ntfc/configs/qemu-intel64/virtio-snd-capture/config.yaml
     testpath: ntfc/tests/sound
+  - name: "qemu-intel64-virtio-i2c"
+    confpath: ntfc/configs/qemu-intel64/virtio-i2c/config.yaml
+    testpath: ntfc/tests/i2c

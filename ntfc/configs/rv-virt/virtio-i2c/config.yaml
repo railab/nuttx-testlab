@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/rv-virt/virtio-i2c'
+
+product:
+  name: "rv-virt-virtio-i2c"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      line_buffered: true
+      exec_path: 'python3'
+      exec_args: 'ntfc/tests/_vhost_user.py --device i2c
+                 --socket /tmp/tl-vu-rv-virt-i2c.sock --ctl /tmp/tl-vu-rv-virt-i2c.ctl
+                 -- qemu-system-riscv32
+                 -semihosting -M virt,aclint=on,memory-backend=mem -cpu rv32 -smp 1
+                 -m 128M -object memory-backend-memfd,id=mem,size=128M,share=on
+                 -bios none -nographic
+                 -global virtio-mmio.force-legacy=false
+                 -chardev socket,id=vu,path=/tmp/tl-vu-rv-virt-i2c.sock
+                 -device vhost-user-i2c-device,chardev=vu
+                 -kernel $IMAGE_ELF'
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/virtio-i2c'
