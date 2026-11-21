@@ -135,6 +135,36 @@ app. PASS: ``unixtl: PASS <case>``.
    * - ``test_unix_scm_ctrunc``
      - ``MSG_CTRUNC`` for a short ``SCM_RIGHTS`` control buffer.
 
+``posix timers`` module
+-----------------------
+
+Source: ``ntfc/tests/smoke/test_posix_timers.py``. Same node and
+sessions as the ``smoke`` module. Each test runs ``posixtl <case>``
+(``apps/posixtl``); PASS: ``posixtl: PASS <case>``. The criteria come
+from the POSIX text quoted in ``apps/posixtl/posixtl_main.c``. Timer
+signals use ``SIGRTMIN`` with an ``SA_SIGINFO`` handler.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test (case)
+     - PASS criterion
+   * - ``test_timer_overrun_latched`` (``overrun_latched``)
+     - 50 ms periodic timer, signal blocked for 10 periods and accepted:
+       ``timer_getoverrun()`` unchanged 175 ms later, while the next
+       signal is pending.
+   * - ``test_timer_reload_on_disarm`` (``reload``)
+     - Disarming with it_interval 0 sets the reload value to 0.
+   * - ``test_timer_thread_exit`` (``thread_exit``)
+     - Timer created and armed by a thread that exits: its signal comes
+       to the process.
+   * - ``test_signal_sender_pid`` (``sender_pid``)
+     - ``sigqueue()`` and ``kill()`` from a second thread:
+       ``si_pid == getpid()``.
+   * - ``test_itimer_einval`` (``itimer_einval``)
+     - ``setitimer()`` with tv_usec 1000000 or -1: -1 ``EINVAL``.
+
 ``ip`` module
 -------------
 
