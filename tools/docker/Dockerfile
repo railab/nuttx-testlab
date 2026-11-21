@@ -35,8 +35,9 @@ RUN apt-get update \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz" \
-      | tar -xJ -C /tmp \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tar "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz" \
+    && tar -xJf /tmp/dl.tar -C /tmp \
+    && rm /tmp/dl.tar \
     && cd "/tmp/qemu-${QEMU_VERSION}" \
     && ./configure --prefix=/opt/qemu-11 \
        --target-list=aarch64-softmmu,riscv32-softmmu,x86_64-softmmu \
@@ -101,14 +102,16 @@ RUN apt-get update \
 # ARM (Cortex-M) toolchain for the build-only hardware defconfigs:
 # version/URL per apache/nuttx tools/ci/docker/linux/Dockerfile
 # (nuttx-toolchain-arm stage).
-RUN curl -fsSL "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_TC}/binrel/arm-gnu-toolchain-${ARM_TC}-x86_64-arm-none-eabi.tar.xz" \
-      | tar -xJ -C /opt \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tar "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_TC}/binrel/arm-gnu-toolchain-${ARM_TC}-x86_64-arm-none-eabi.tar.xz" \
+    && tar -xJf /tmp/dl.tar -C /opt \
+    && rm /tmp/dl.tar \
     && ln -s /opt/arm-gnu-toolchain-${ARM_TC}-x86_64-arm-none-eabi /opt/arm-none-eabi
 
 # ARM64 toolchain: version/URL per apache/nuttx
 # tools/ci/docker/linux/Dockerfile (nuttx-toolchain-arm64 stage).
-RUN curl -fsSL "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM64_TC}/binrel/arm-gnu-toolchain-${ARM64_TC}-x86_64-aarch64-none-elf.tar.xz" \
-      | tar -xJ -C /opt \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tar "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM64_TC}/binrel/arm-gnu-toolchain-${ARM64_TC}-x86_64-aarch64-none-elf.tar.xz" \
+    && tar -xJf /tmp/dl.tar -C /opt \
+    && rm /tmp/dl.tar \
     && ln -s /opt/arm-gnu-toolchain-${ARM64_TC}-x86_64-aarch64-none-elf /opt/aarch64-none-elf
 
 # RISC-V toolchain: version/URL per apache/nuttx
@@ -116,8 +119,9 @@ RUN curl -fsSL "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM64_TC
 # arch/risc-v/src/cmake/Toolchain.cmake prefers riscv-none-elf-gcc when it
 # is on PATH over a riscv64-unknown-elf multilib, which is missing libm.a
 # for the rv32ima target used by rv-virt:nsh.
-RUN curl -fsSL "https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${RISCV_TC}/xpack-riscv-none-elf-gcc-${RISCV_TC}-linux-x64.tar.gz" \
-      | tar -xz -C /opt \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tar "https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${RISCV_TC}/xpack-riscv-none-elf-gcc-${RISCV_TC}-linux-x64.tar.gz" \
+    && tar -xzf /tmp/dl.tar -C /opt \
+    && rm /tmp/dl.tar \
     && ln -s /opt/xpack-riscv-none-elf-gcc-${RISCV_TC} /opt/riscv-none-elf
 
 # RISC-V toolchain with native TLS (riscv-collab/riscv-gnu-toolchain,
@@ -126,8 +130,9 @@ RUN curl -fsSL "https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/rele
 # emutls: one instance shared by all threads. Used by scenarios that need
 # __thread (CONFIG_SCHED_THREAD_LOCAL); unused tools are dropped and the
 # host binaries stripped to keep the image small.
-RUN curl -fsSL "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/${RISCV_TLS_TC}/riscv32-elf-ubuntu-24.04-gcc.tar.xz" \
-      | tar -xJ -C /opt \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tar "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/${RISCV_TLS_TC}/riscv32-elf-ubuntu-24.04-gcc.tar.xz" \
+    && tar -xJf /tmp/dl.tar -C /opt \
+    && rm /tmp/dl.tar \
     && mv /opt/riscv /opt/riscv32-elf \
     && cd /opt/riscv32-elf \
     && rm -rf share bin/qemu-* bin/*-gdb* bin/*-gstack bin/*-lto-dump \
