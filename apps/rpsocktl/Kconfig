@@ -1,0 +1,28 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_RPSOCKTL
+	tristate "rpsocktl: RPMSG socket test tool"
+	default n
+	depends on NET_RPMSG
+	---help---
+		Runs one AF_RPMSG socket check per call, as a server or a
+		client of another CPU, and prints a PASS/FAIL verdict line.
+
+if TESTLAB_RPSOCKTL
+
+config TESTLAB_RPSOCKTL_PROGNAME
+	string "Program name"
+	default "rpsocktl"
+
+config TESTLAB_RPSOCKTL_PRIORITY
+	int "rpsocktl task priority"
+	default 100
+
+config TESTLAB_RPSOCKTL_STACKSIZE
+	int "rpsocktl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
