@@ -247,6 +247,29 @@ module.
        fragments, then one after 32 incomplete datagrams, then one after
        the reassembly timeout; each is echoed intact.
 
+``ip`` UDP bind
+---------------
+
+Source: ``ntfc/tests/ip/test_ip_udp_bind.py``. node0 ``nettl -b
+<case>`` runs two bind() calls on one UDP port, IPv4 and IPv6 variants.
+Same sessions as the ``ip`` module.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_udp_bind_inuse``
+     - Wildcard then node address, node address then wildcard: second
+       bind() fails ``EADDRINUSE``.
+   * - ``test_udp_bind_two_specific``
+     - Node address and loopback on one port: both bind() succeed
+       (``CONFIG_NET_LOOPBACK`` only).
+   * - ``test_udp_bind_reuseaddr``
+     - Wildcard and node address, both orders, ``SO_REUSEADDR`` on both:
+       both bind() succeed.
+
 ``ip`` DHCP
 -----------
 
