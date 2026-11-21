@@ -446,6 +446,13 @@ def test_sqlite_crash(
 ) -> None:
     """Power off during transactions; committed ones survive, others not.
 
+    SQLite, "SQLite is Transactional": "All changes within a single
+    transaction in SQLite either occur completely or not at all, even if
+    the act of writing the change out to the disk is interrupted by a
+    program crash, an operating system crash, or a power failure."
+    POSIX fsync(): "all data for the open file descriptor named by
+    fildes is to be transferred to the storage device".
+
     Five rounds, see ``CRASH_POINTS``; after each boot integrity_check
     "ok", whole transactions only, every row reported committed present
     and intact, a transaction stopped before its commit point absent (WAL:
@@ -470,6 +477,11 @@ def test_sqlite_crash(
 @pytest.mark.parametrize("fs", FS_PARAMS)
 def test_sqlite_large(request: pytest.FixtureRequest, fs: str) -> None:
     """A database far larger than the page cache survives power-offs.
+
+    SQLite, "SQLite is Transactional": "All changes within a single
+    transaction in SQLite either occur completely or not at all, even if
+    the act of writing the change out to the disk is interrupted by a
+    program crash, an operating system crash, or a power failure."
 
     8 MiB in 256 transactions with a 16-page cache, power off, check; a
     512-row transaction that spilled pages, power off before its COMMIT:
@@ -504,6 +516,12 @@ def test_sqlite_shrink(
 ) -> None:
     """The database file shrinks and grows again, data intact.
 
+    SQLite PRAGMA auto_vacuum: "When the auto-vacuum mode is 1 or
+    'full', ... the database file is truncated to remove the freelist
+    pages at every transaction commit."  POSIX ftruncate(): "If the size
+    of the file previously exceeded length, the extra data shall no
+    longer be available to reads on the file."
+
     auto_vacuum FULL: a commit deleting half of the rows truncates the
     file, the rows are inserted again; the same with VACUUM.
     """
@@ -519,6 +537,10 @@ def test_sqlite_rollback(
     request: pytest.FixtureRequest, fs: str, sync: str
 ) -> None:
     """ROLLBACK of a transaction that spilled pages restores the database.
+
+    SQLite, "SQLite is Transactional": "All changes within a single
+    transaction in SQLite either occur completely or not at all".  POSIX
+    stat: st_size "For regular files, the file size in bytes."
 
     Holds at any synchronous level: only crash safety depends on it.
     """
@@ -549,6 +571,10 @@ def test_sqlite_conc(
     workers: str,
 ) -> None:
     """8 connections, 50 read-modify-write transactions each.
+
+    SQLite, "Isolation In SQLite": "all transactions in SQLite show
+    'serializable' isolation."  Serialized read-modify-write
+    transactions lose no update.
 
     Threads of one task or tasks of their own. SQLITE_BUSY is retried;
     no lost update, every row once, integrity_check "ok".
@@ -589,6 +615,14 @@ def test_sqlite_visible(
 ) -> None:
     """A connection sees the rows another connection committed.
 
+    SQLite, "Isolation In SQLite": "SQLite provides isolation between
+    operations in separate database connections"; "Partial changes by
+    the writer that have not been committed are invisible to the
+    reader", so committed ones are seen by the next read transaction.
+    POSIX write(): "Any successful read() from each byte position in the
+    file that was modified by that write shall return the data specified
+    by the write() for that position".
+
     Five times: A counts, B inserts a row, A counts again and reads the
     row; in WAL mode five more times with B restarting the WAL first.
     ``fat-root``: the database in the root directory of the volume.
@@ -616,6 +650,13 @@ def test_sqlite_handoff(
 ) -> None:
     """A connection commits once the other readers of the process are done.
 
+    SQLite BEGIN: "An attempt to execute COMMIT might also result in an
+    SQLITE_BUSY return code if another thread or process has an open
+    read connection"; once the readers are done the COMMIT succeeds.
+    POSIX fcntl(): "the previous shared or exclusive lock for each byte
+    in the specified region shall be replaced by the new shared or
+    exclusive lock."
+
     Reader and writer connection in one thread, then the writer in other
     threads.
     """
@@ -630,6 +671,14 @@ def test_sqlite_handoff(
 def test_sqlite_fcntl_lock(request: pytest.FixtureRequest, fs: str) -> None:
     """POSIX record locks belong to the process, as the SQLite VFS needs.
 
+    POSIX fcntl(): F_SETLK on bytes with "previously existing
+    process-owned locks ... shall be replaced by the new shared or
+    exclusive lock"; F_GETLK l_pid is the "Process ID of the process
+    that holds the blocking lock"; "All process-owned locks associated
+    with a file for a given process shall be removed when any file
+    descriptor for that file is closed by that process (even if via a
+    different open file description)".
+
     A second descriptor and another thread replace the process lock,
     another process sees it with the process ID and cannot take it, and
     closing one descriptor releases all of them.
@@ -643,6 +692,9 @@ def test_sqlite_fcntl_lock(request: pytest.FixtureRequest, fs: str) -> None:
 def test_sqlite_shm_map(request: pytest.FixtureRequest, fs: str) -> None:
     """A shared file mapping is shared between tasks, as the WAL index needs.
 
+    POSIX mmap(): "If MAP_SHARED is specified, write references shall
+    change the underlying object."
+
     A byte stored through the mapping of one task is seen through the
     mapping of another task and the other way round.
     """
@@ -654,6 +706,10 @@ def test_sqlite_shm_map(request: pytest.FixtureRequest, fs: str) -> None:
 @pytest.mark.parametrize("fs", FS_PARAMS)
 def test_sqlite_multi(request: pytest.FixtureRequest, fs: str) -> None:
     """Several databases at once stay separate files.
+
+    SQLite ATTACH: "Transactions involving multiple attached databases
+    are atomic".  POSIX <sys/stat.h>: "A file identity is uniquely
+    determined by the combination of st_dev and st_ino."
 
     One transaction over two attached databases commits; a connection
     opened while another one reads keeps to its own file.
@@ -669,6 +725,13 @@ def test_sqlite_multi(request: pytest.FixtureRequest, fs: str) -> None:
 @pytest.mark.parametrize("journal", ["delete", "wal"])
 def test_sqlite_full(request: pytest.FixtureRequest, journal: str) -> None:
     """Transactions on a full volume fail with SQLITE_FULL, data intact.
+
+    SQLite result codes: "The SQLITE_FULL result code indicates that a
+    write could not complete because the disk is full."  POSIX write():
+    "[ENOSPC] There was no free space remaining on the device containing
+    the file."  POSIX munmap(): "shall remove any mappings for those
+    entire pages containing any part of the address space of the process
+    starting at addr and continuing for len bytes."
 
     On a freshly formatted volume, with 0, 1, 4 and 16 free blocks; the
     database recovers once space is freed, also after reopening.
