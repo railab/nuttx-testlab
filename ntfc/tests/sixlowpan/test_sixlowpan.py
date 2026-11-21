@@ -74,17 +74,6 @@ LOOPBACK_SADDR_BUG = (
     "IPHC-compressed packet as not destined for us"
 )
 
-TCP_TAIL_BUG = (
-    "net/sixlowpan/sixlowpan_tcpsend.c, net/tcp/tcp_input.c: a TCP echo of "
-    "4096 bytes over the loopback radio returns the 814-byte second "
-    "segment of the second 2048-byte write with wrong data (nettl "
-    "err=814) while the server received all 4096 bytes intact; writes up "
-    "to 3000 bytes and UDP datagrams of the same sizes are intact; both "
-    "814-byte segments are read-ahead buffered by tcp_datahandler() and "
-    "sent with the right sndseq, so the wrong bytes come from the "
-    "receive side; not isolated further"
-)
-
 BURST_HANG_BUG = (
     "wireless/ieee802154/mac802154_loopback.c, net/sixlowpan: with the "
     "lo_addr2ip() byte-order bug (LOOPBACK_SADDR_BUG) every "
@@ -350,16 +339,8 @@ def test_sixlowpan_udp_over_mtu(
     "nbytes",
     [
         pytest.param(3000, id="3000"),
-        pytest.param(
-            4096,
-            id="4096",
-            marks=pytest.mark.xfail(strict=True, reason=TCP_TAIL_BUG),
-        ),
-        pytest.param(
-            65536,
-            id="65536",
-            marks=pytest.mark.xfail(strict=True, reason=TCP_TAIL_BUG),
-        ),
+        pytest.param(4096, id="4096"),
+        pytest.param(65536, id="65536"),
     ],
 )
 def test_sixlowpan_tcp_echo(

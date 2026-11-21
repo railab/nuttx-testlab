@@ -126,6 +126,11 @@ def test_tcp_rst_after_handshake() -> None:
     runs; ``-w`` makes the server send (not echo), so it is the one
     that observes the dead connection. PASS: a verdict line (FAIL is
     expected, since send() fails) appears within 15 s, i.e. no hang.
+
+    POSIX accept() may also drop the reset connection and keep waiting:
+    "If the listen queue is empty of connection requests ... accept()
+    shall block until a connection is present." A second connection,
+    closed at once, gives accept() a connection in that case too.
     """
     port = 5400
     core = _core(0)
@@ -146,6 +151,9 @@ def test_tcp_rst_after_handshake() -> None:
         )
     finally:
         sock.close()  # SO_LINGER(1, 0): close() sends RST, not FIN
+    time.sleep(0.5)
+    with socket.create_connection((NODE_IPS[0], port), timeout=10):
+        pass
 
     result = core.readUntilPattern(SERVER_VERDICT_RE, timeout=15)
     found = re.search(SERVER_VERDICT_RE, result.output)

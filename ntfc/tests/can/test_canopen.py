@@ -231,11 +231,6 @@ def test_canopen_slave_frame_burst(
     :param bus: host bus
     :param slave: node 0 slave
     """
-    if _is_chardev(0):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=CHARDEV_RECV_BUG)
-        )
-
     for _ in range(3):
         bus.nmt(NMT_PREOP, SLAVE_ID)
         assert bus.last_state(SLAVE_ID) == STATE_PREOP

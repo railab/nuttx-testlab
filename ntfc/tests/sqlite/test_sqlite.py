@@ -554,8 +554,9 @@ def test_sqlite_conc(
         known = TASKS_SIGNATURE if known or journal == "wal" else ""
         flags += " -p"
     db = f"{_workdir(request, MOUNTS[fs])}/conc.db"
+    # Retries are silent: stay below the 180 s NTFC busy-loop limit.
     sqltl_pass(
-        f"conc {db} 8 50 -j {journal} {flags} -t 240",
+        f"conc {db} 8 50 -j {journal} {flags} -t 150",
         timeout=600,
         known=known,
     )

@@ -28,6 +28,7 @@ from typing import Any, List
 import pytest
 from _host_services import TcpEchoServer
 from _net_common import (
+    ACCEPT_ADDR_BUG,
     HOST_IP,
     NODE_IPS,
     VERDICT_RE,
@@ -187,6 +188,8 @@ def test_tcp_churn_node_server() -> None:
 
     The host closes first.
     """
+    if _core().conf.kv_check("CONFIG_BUILD_KERNEL"):
+        pytest.skip(ACCEPT_ADDR_BUG)
     _churn_node_server(5253)
 
 
