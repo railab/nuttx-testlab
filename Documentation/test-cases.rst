@@ -99,6 +99,42 @@ Test functions
   ``waitpid()`` returns a child's exit status 7. PASS: ``exittl: PASS
   wait``.
 
+``unix`` socket tests
+---------------------
+
+Source: ``ntfc/tests/smoke/test_unix_sockets.py``. AF_UNIX sockets on
+one node, in the four smoke sessions (``CONFIG_NET_LOCAL``,
+``CONFIG_NET_LOCAL_SCM``). Each case runs ``unixtl <case>``
+(``apps/unixtl``); expectations come from POSIX.1-2024, quoted in the
+app. PASS: ``unixtl: PASS <case>``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - Cases
+   * - ``test_unix_dgram_trunc``
+     - ``recvmsg()`` of a long datagram sets ``MSG_TRUNC``.
+   * - ``test_unix_eof``
+     - Stream ``socketpair()``: data, then ``recv()`` returns 0.
+   * - ``test_unix_epipe``
+     - ``epipe_pair``, ``epipe_path``: ``EPIPE``; ``SIGPIPE`` unless
+       ``MSG_NOSIGNAL``.
+   * - ``test_unix_connect_errors``
+     - ``ECONNREFUSED`` (bound, not listening), ``ENOENT`` (stream, no
+       file), ``EPROTOTYPE`` (other socket type).
+   * - ``test_unix_bind_errors``
+     - ``EADDRINUSE`` for a pathname of another socket type or an
+       existing file.
+   * - ``test_unix_poll``
+     - ``POLLIN``/``POLLOUT`` of a stream pair.
+   * - ``test_unix_iov``
+     - ``iov_dgram_recv``: datagram received into 8 iovecs;
+       ``iov_stream``: stream sent from 8 iovecs.
+   * - ``test_unix_scm_ctrunc``
+     - ``MSG_CTRUNC`` for a short ``SCM_RIGHTS`` control buffer.
+
 ``ip`` module
 -------------
 
