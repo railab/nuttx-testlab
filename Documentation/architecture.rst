@@ -602,6 +602,27 @@ zero-length write, ``-r`` reads; ``-T`` uses 10-bit addressing. Prints
 ``i2ctl: rx=<hex>`` per read message, verdict ``i2ctl: PASS`` or
 ``i2ctl: FAIL errno=<n>``.
 
+``apps/gpiotl``
+~~~~~~~~~~~~~~~
+
+``gpiotl`` (``CONFIG_TESTLAB_GPIOTL``, flat build, ``DRIVERS_VIRTIO_GPIO``
+and ``GPIO_LOWER_HALF``)::
+
+   gpiotl -r count
+   gpiotl -d dev [-t type] [-w 0|1] [-R]
+   gpiotl -d dev -i type [-n count] [-T sec]
+
+- ``-r`` registers lines 0 to ``count`` - 1 of the first virtio GPIO
+  device as ``/dev/gpioN`` with ``gpio_lower_half()``, as board code
+  would; verdict ``gpiotl: PASS registered <count>``.
+- ``-t`` sets the pin type (``in``, ``out``, ``high``, ``low``,
+  ``rising``, ``falling``, ``both``), ``-w`` writes, ``-R`` prints
+  ``gpiotl: value=<v>``; verdict ``gpiotl: PASS|FAIL``.
+- ``-i`` sets an interrupt type, registers ``SIGUSR1`` with
+  ``GPIOC_REGISTER``, prints ``gpiotl: ready`` and counts signals until
+  ``count`` (default 1) or ``sec`` (default 10); then unregisters and
+  sets the pin to ``in``. Verdict ``gpiotl: PASS|FAIL irq n=<got>``.
+
 NTFC configs
 ------------
 
@@ -1125,6 +1146,10 @@ drive GPIO inputs.
      - ``vhost-user-device``, ``vhost-user-device-pci``
        (``virtio-id=28``, ``config_size=3``)
      - 128 KiB, HMAC-SHA256 MACs; the test can reset it to factory state
+
+The ``virtio-gpio`` defconfigs enable ``IOEXPANDER_DUMMY``, the only
+driver without hardware that selects ``IOEXPANDER_INT_ENABLE``, which
+the virtio GPIO driver needs for line interrupts.
 
 Hardware sessions
 -----------------

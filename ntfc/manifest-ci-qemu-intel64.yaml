@@ -89,3 +89,6 @@ sessions:
   - name: "qemu-intel64-virtio-i2c"
     confpath: ntfc/configs/qemu-intel64/virtio-i2c/config.yaml
     testpath: ntfc/tests/i2c
+  - name: "qemu-intel64-virtio-gpio"
+    confpath: ntfc/configs/qemu-intel64/virtio-gpio/config.yaml
+    testpath: ntfc/tests/gpio

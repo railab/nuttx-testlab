@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_GPIOTL
+	tristate "gpiotl: virtio GPIO line test tool"
+	default n
+	depends on DRIVERS_VIRTIO_GPIO && GPIO_LOWER_HALF && BUILD_FLAT
+	---help---
+		Registers the lines of the first virtio-gpio device as
+		/dev/gpioN with gpio_lower_half() (-r), then sets the pin type,
+		writes or reads a line, or counts its interrupt signals, with
+		the GPIO character driver ioctls; one PASS/FAIL verdict line.
+
+if TESTLAB_GPIOTL
+
+config TESTLAB_GPIOTL_PROGNAME
+	string "Program name"
+	default "gpiotl"
+
+config TESTLAB_GPIOTL_PRIORITY
+	int "gpiotl task priority"
+	default 100
+
+config TESTLAB_GPIOTL_STACKSIZE
+	int "gpiotl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

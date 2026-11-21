@@ -1686,17 +1686,19 @@ QMP ``screendump``. Sessions ``qemu-armv8a-virtio-gpu`` and
      - ``FBIOPAN_DISPLAY`` to the second frame shows its blue fill,
        back to 0 shows the first frame again.
 
-``i2c`` module
---------------
+``i2c`` and ``gpio`` modules
+----------------------------
 
-Source: ``ntfc/tests/i2c/test_virtio_i2c.py``. One node with a QEMU
-vhost-user device served by ``ntfc/tests/_vhost_user.py`` (see
+Sources: ``ntfc/tests/i2c/test_virtio_i2c.py``,
+``ntfc/tests/gpio/test_virtio_gpio.py``. One node with a QEMU vhost-user
+device served by ``ntfc/tests/_vhost_user.py`` (see
 :doc:`architecture`), which logs every request it gets; the tests read
 the log and the device state over its control socket. Sessions
-``<target>-virtio-i2c`` for ``qemu-armv8a``, ``rv-virt`` and
-``qemu-intel64`` (PCI devices on ``qemu-intel64``):
-``qemu-armv8a-virtio-i2c``, ``rv-virt-virtio-i2c`` and
-``qemu-intel64-virtio-i2c``.
+``<target>-virtio-i2c`` and ``-virtio-gpio`` for ``qemu-armv8a``,
+``rv-virt`` and ``qemu-intel64`` (PCI devices on ``qemu-intel64``):
+``qemu-armv8a-virtio-i2c``, ``qemu-armv8a-virtio-gpio``,
+``rv-virt-virtio-i2c``, ``rv-virt-virtio-gpio``,
+``qemu-intel64-virtio-i2c`` and ``qemu-intel64-virtio-gpio``.
 
 I2C: EEPROMs (256 bytes, first written byte is the word address) at
 0x50 and 10-bit 0x2a5, nothing at 0x51; ``i2ctl`` sends one
@@ -1727,6 +1729,32 @@ I2C: EEPROMs (256 bytes, first written byte is the word address) at
        succeeds.
    * - ``test_virtio_i2c_after_failed_group``
      - After a failed write-read to 0x51, a write-read to 0x50 succeeds.
+
+GPIO: eight lines with interrupts; the test drives the input levels.
+``gpiotl -r 8`` registers them as ``/dev/gpio0..7`` once per session.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_gpio_output``
+     - ``GPIOC_WRITE`` 1, then 0 on an output: the device line is an
+       output with value 1, then 0.
+   * - ``test_virtio_gpio_input``
+     - ``GPIOC_READ`` returns the driven level, 1 then 0.
+   * - ``test_virtio_gpio_irq_rising``
+     - Two rising edges give two signals; trigger type rising.
+   * - ``test_virtio_gpio_irq_falling``
+     - Two falling edges give two signals; trigger type falling.
+   * - ``test_virtio_gpio_irq_both``
+     - Four edges give four signals; trigger type both.
+   * - ``test_virtio_gpio_irq_level_high``
+     - A line held high gives three signals; trigger type level high.
+   * - ``test_virtio_gpio_irq_disabled_after_use``
+     - After unregistering, the line's trigger type is none and no
+       eventq buffer is queued for it.
 
 ``fs`` module
 -------------
