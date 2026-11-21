@@ -49,6 +49,8 @@
 #  include <sys/vm_sockets.h>
 #endif
 
+#include "nettl.h"
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -105,6 +107,7 @@ struct nettl_args_s
   int         rcvbuf;
   FAR uint8_t *txbuf;
   FAR uint8_t *rxbuf;
+  FAR char   *bindcase;
 };
 
 /****************************************************************************
@@ -1562,6 +1565,7 @@ static void nettl_usage(FAR const char *progname)
   printf("       %s -V -c cid [-p port] [-n count] [-t sec] [-d]\n",
          progname);
 #endif
+  printf("       %s -b case [-c addr] [-6] [-p port]\n", progname);
 }
 
 /* Run the selected mode; the I/O buffers belong to this run, so two
@@ -1622,7 +1626,8 @@ int main(int argc, FAR char *argv[])
   args.timeout = NETTL_TIMEOUT;
 
   while ((opt = getopt(argc, argv,
-                       "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IB:VA")) != ERROR)
+                       "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IB:VAb:"))
+         != ERROR)
     {
       unsigned long val;
 
@@ -1656,6 +1661,11 @@ int main(int argc, FAR char *argv[])
           case 'B':
             args.ifname = optarg;
             break;
+#if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
+          case 'b':
+            args.bindcase = optarg;
+            break;
+#endif
           case 'w':
             args.write_only = true;
             break;
@@ -1790,6 +1800,22 @@ int main(int argc, FAR char *argv[])
 
       return nettl_ifbrd(args.ifname);
     }
+
+#if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
+  /* -b is a mode of its own, -c gives the address it uses */
+
+  if (args.bindcase != NULL)
+    {
+      if (args.server || args.udp || args.vsock)
+        {
+          nettl_usage(argv[0]);
+          return EXIT_FAILURE;
+        }
+
+      return nettl_bind_check(args.bindcase, args.addr, args.ipv6,
+                              args.port);
+    }
+#endif
 
   if (args.server == (args.addr != NULL))
     {

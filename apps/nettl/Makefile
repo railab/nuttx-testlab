@@ -26,4 +26,8 @@ MODULE    = $(CONFIG_TESTLAB_NETTL)
 
 MAINSRC = nettl_main.c
 
+ifeq ($(CONFIG_NET_IPv4)$(CONFIG_NET_IPv6),yy)
+CSRCS = nettl_bind.c
+endif
+
 include $(APPDIR)/Application.mk

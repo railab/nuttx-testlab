@@ -18,11 +18,15 @@
 # ##############################################################################
 
 if(CONFIG_TESTLAB_NETTL)
+  set(SRCS nettl_main.c)
+  if(CONFIG_NET_IPv4 AND CONFIG_NET_IPv6)
+    list(APPEND SRCS nettl_bind.c)
+  endif()
   nuttx_add_application(
     NAME
     ${CONFIG_TESTLAB_NETTL_PROGNAME}
     SRCS
-    nettl_main.c
+    ${SRCS}
     STACKSIZE
     ${CONFIG_TESTLAB_NETTL_STACKSIZE}
     PRIORITY
