@@ -1686,19 +1686,22 @@ QMP ``screendump``. Sessions ``qemu-armv8a-virtio-gpu`` and
      - ``FBIOPAN_DISPLAY`` to the second frame shows its blue fill,
        back to 0 shows the first frame again.
 
-``i2c`` and ``gpio`` modules
-----------------------------
+``i2c``, ``gpio`` and ``spi`` modules
+-------------------------------------
 
 Sources: ``ntfc/tests/i2c/test_virtio_i2c.py``,
-``ntfc/tests/gpio/test_virtio_gpio.py``. One node with a QEMU vhost-user
+``ntfc/tests/gpio/test_virtio_gpio.py``,
+``ntfc/tests/spi/test_virtio_spi.py``. One node with a QEMU vhost-user
 device served by ``ntfc/tests/_vhost_user.py`` (see
 :doc:`architecture`), which logs every request it gets; the tests read
 the log and the device state over its control socket. Sessions
-``<target>-virtio-i2c`` and ``-virtio-gpio`` for ``qemu-armv8a``,
-``rv-virt`` and ``qemu-intel64`` (PCI devices on ``qemu-intel64``):
-``qemu-armv8a-virtio-i2c``, ``qemu-armv8a-virtio-gpio``,
-``rv-virt-virtio-i2c``, ``rv-virt-virtio-gpio``,
-``qemu-intel64-virtio-i2c`` and ``qemu-intel64-virtio-gpio``.
+``<target>-virtio-i2c``, ``-virtio-gpio`` and ``-virtio-spi`` for
+``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64`` (PCI devices on
+``qemu-intel64``): ``qemu-armv8a-virtio-i2c``,
+``qemu-armv8a-virtio-gpio``, ``qemu-armv8a-virtio-spi``,
+``rv-virt-virtio-i2c``, ``rv-virt-virtio-gpio``, ``rv-virt-virtio-spi``,
+``qemu-intel64-virtio-i2c``, ``qemu-intel64-virtio-gpio`` and
+``qemu-intel64-virtio-spi``.
 
 I2C: EEPROMs (256 bytes, first written byte is the word address) at
 0x50 and 10-bit 0x2a5, nothing at 0x51; ``i2ctl`` sends one
@@ -1755,6 +1758,36 @@ GPIO: eight lines with interrupts; the test drives the input levels.
    * - ``test_virtio_gpio_irq_disabled_after_use``
      - After unregistering, the line's trigger type is none and no
        eventq buffer is queued for it.
+
+SPI: two chip selects, 8/16-bit words, modes 0-3, 10 MHz maximum,
+MISO wired to MOSI; ``spitl`` sends one ``SPIIOC_TRANSFER``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_spi_registered``
+     - ``/dev`` has ``spi0``.
+   * - ``test_virtio_spi_full_duplex``
+     - The node reads back its five bytes; one request of head, tx, rx
+       (same length) and result.
+   * - ``test_virtio_spi_half_duplex_write``
+     - One request of head, tx and result.
+   * - ``test_virtio_spi_half_duplex_read``
+     - One request of head, rx and result; the node reads the device
+       bytes.
+   * - ``test_virtio_spi_transfer_params``
+     - The head carries chip select 1, 16-bit words, CPHA and CPOL,
+       2 MHz.
+   * - ``test_virtio_spi_freq_limit``
+     - A 20 MHz request is sent at no more than 10 MHz and succeeds.
+   * - ``test_virtio_spi_deselect_between``
+     - Two transfers deselected between: the first has ``cs_change`` 1.
+   * - ``test_virtio_spi_keep_cs_between``
+     - Two transfers kept selected between: the first has ``cs_change``
+       0.
 
 ``fs`` module
 -------------

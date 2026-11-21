@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-armv8a/virtio-spi'
+
+product:
+  name: "qemu-armv8a-virtio-spi"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      line_buffered: true
+      exec_path: 'python3'
+      exec_args: 'ntfc/tests/_vhost_user.py --device spi
+                 --socket /tmp/tl-vu-qemu-armv8a-spi.sock --ctl /tmp/tl-vu-qemu-armv8a-spi.ctl
+                 -- /opt/qemu-11/bin/qemu-system-aarch64
+                 -cpu cortex-a53 -nographic
+                 -machine virt,virtualization=on,gic-version=3,memory-backend=mem
+                 -m 128M -object memory-backend-memfd,id=mem,size=128M,share=on
+                 -net none -chardev stdio,id=con,mux=on
+                 -serial chardev:con -mon chardev=con,mode=readline
+                 -global virtio-mmio.force-legacy=false
+                 -chardev socket,id=vu,path=/tmp/tl-vu-qemu-armv8a-spi.sock
+                 -device vhost-user-spi-device,chardev=vu
+                 -kernel $IMAGE_ELF'
+      defconfig: '../../boards/arm64/qemu/qemu-armv8a/configs/virtio-spi'

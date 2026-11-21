@@ -61,3 +61,6 @@ sessions:
   - name: "rv-virt-virtio-gpio"
     confpath: ntfc/configs/rv-virt/virtio-gpio/config.yaml
     testpath: ntfc/tests/gpio
+  - name: "rv-virt-virtio-spi"
+    confpath: ntfc/configs/rv-virt/virtio-spi/config.yaml
+    testpath: ntfc/tests/spi

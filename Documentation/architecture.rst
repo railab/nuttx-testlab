@@ -623,6 +623,18 @@ and ``GPIO_LOWER_HALF``)::
   ``count`` (default 1) or ``sec`` (default 10); then unregisters and
   sets the pin to ``in``. Verdict ``gpiotl: PASS|FAIL irq n=<got>``.
 
+``apps/spitl``
+~~~~~~~~~~~~~~
+
+``spitl [-d dev] [-c cs] [-m mode] [-b bits] [-f hz] [-K]
+{-x hex | -w hex | -r len}...`` (``CONFIG_TESTLAB_SPITL``,
+``SPI_DRIVER``) sends one ``SPIIOC_TRANSFER`` sequence to device
+``SPIDEV_ID(SPIDEVTYPE_USER, cs)`` (default mode 0, 8 bits, 1 MHz):
+``-x`` full duplex, ``-w`` transmit only, ``-r`` receive only. Each
+transfer is deselected after it, with ``-K`` only the last one. Prints
+``spitl: rx<i>=<hex>`` per receiving transfer, verdict ``spitl: PASS``
+or ``spitl: FAIL errno=<n>``.
+
 NTFC configs
 ------------
 
@@ -1146,6 +1158,10 @@ drive GPIO inputs.
      - ``vhost-user-device``, ``vhost-user-device-pci``
        (``virtio-id=28``, ``config_size=3``)
      - 128 KiB, HMAC-SHA256 MACs; the test can reset it to factory state
+
+The SPI device model is not in Ubuntu 24.04's QEMU 8.2: the
+``virtio-spi`` sessions run ``/opt/qemu-11/bin/qemu-system-*``, a QEMU
+11.1 the Docker image builds for these targets only.
 
 The ``virtio-gpio`` defconfigs enable ``IOEXPANDER_DUMMY``, the only
 driver without hardware that selects ``IOEXPANDER_INT_ENABLE``, which

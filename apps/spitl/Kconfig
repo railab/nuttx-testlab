@@ -1,0 +1,29 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_SPITL
+	tristate "spitl: SPI transfer test tool"
+	default n
+	depends on SPI_DRIVER
+	---help---
+		Sends one SPIIOC_TRANSFER sequence of the full-duplex, write
+		and read transfers given on the command line, prints the bytes
+		read and ends with one PASS/FAIL verdict line.
+
+if TESTLAB_SPITL
+
+config TESTLAB_SPITL_PROGNAME
+	string "Program name"
+	default "spitl"
+
+config TESTLAB_SPITL_PRIORITY
+	int "spitl task priority"
+	default 100
+
+config TESTLAB_SPITL_STACKSIZE
+	int "spitl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
