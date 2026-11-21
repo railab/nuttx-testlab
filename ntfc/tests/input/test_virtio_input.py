@@ -30,12 +30,11 @@ refers to, and the NuttX input interfaces (``keyboard.h``, ``mouse.h``,
 ``touchscreen.h``).
 """
 
-import json
 import re
-import socket
 from typing import Any, Dict, List
 
 import pytest
+from _qmp_common import Qmp
 
 VERDICT_RE = r"inputtl: (PASS|FAIL) n=\d+[\r\n]"
 TIMEOUT = 10
@@ -53,52 +52,6 @@ TOUCH_MOVE = 1 << 1
 TOUCH_UP = 1 << 2
 TOUCH_ID_VALID = 1 << 3
 TOUCH_POS_VALID = 1 << 4
-
-
-class _Qmp:
-    """Minimal QMP client on the product's ``-qmp unix:`` socket."""
-
-    def __init__(self) -> None:
-        """Connect and leave capabilities negotiation mode."""
-        args = str(pytest.product.core(0).conf.exec_args)
-        found = re.search(r"-qmp\s+unix:([^,\s]+)", args)
-        assert found, f"no -qmp unix socket in {args!r}"
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(TIMEOUT)
-        self.sock.connect(found.group(1))
-        self.rfile = self.sock.makefile("r")
-        json.loads(self.rfile.readline())  # greeting
-        self.execute("qmp_capabilities")
-
-    def execute(self, cmd: str, **arguments: Any) -> Dict[str, Any]:
-        """Run one QMP command and return its reply.
-
-        :param cmd: command name
-        :param arguments: command arguments
-        :return: the ``return`` object of the reply
-        """
-        msg: Dict[str, Any] = {"execute": cmd}
-        if arguments:
-            msg["arguments"] = arguments
-        self.sock.sendall(json.dumps(msg).encode() + b"\n")
-        while True:
-            reply = json.loads(self.rfile.readline())
-            if "event" in reply:
-                continue
-            assert "error" not in reply, reply
-            return reply["return"]
-
-    def update(self, events: List[Dict[str, Any]]) -> None:
-        """Send one input device update.
-
-        :param events: ``InputEvent`` objects of the update
-        """
-        self.execute("input-send-event", events=events)
-
-    def close(self) -> None:
-        """Close the QMP connection."""
-        self.rfile.close()
-        self.sock.close()
 
 
 def _key(qcode: str, down: bool) -> Dict[str, Any]:
@@ -152,10 +105,10 @@ def _inject(
         timeout=TIMEOUT,
     )
     assert ret == 0
-    qmp = _Qmp()
+    qmp = Qmp()
     try:
         for events in updates:
-            qmp.update(events)
+            qmp.execute("input-send-event", events=events)
     finally:
         qmp.close()
     out = str(core.readUntilPattern(VERDICT_RE, timeout=TIMEOUT * 2).output)
