@@ -41,6 +41,10 @@ answer to a well-formed message, that answer is checked too.
 - POSIX sendmsg(): "[EINVAL] The sum of the iov_len values overflows an
   ssize_t."
   https://pubs.opengroup.org/onlinepubs/9799919799/functions/sendmsg.html
+- RFC 9293, 3.10.7.4, Table 6: a segment of length 0 with a receive
+  window > 0 is acceptable if "RCV.NXT =< SEG.SEQ < RCV.NXT+RCV.WND";
+  "If an incoming segment is not acceptable, an acknowledgment should
+  be sent in reply".
 """
 
 import re
@@ -48,10 +52,10 @@ import socket
 import struct
 import subprocess
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, NamedTuple, Optional, Tuple
 
 import pytest
-from _net_common import HOST_IP, HOST_IP6, NODE_IP6S
+from _net_common import HOST_IP, HOST_IP6, NODE_IP6S, NODE_IPS, pattern
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_IPv6", "CONFIG_NET_UDP"),
@@ -562,3 +566,296 @@ def test_sendmsg_iov_overflow() -> None:
     verdict = found.group(0)
     assert verdict.startswith("nettl: PASS"), verdict
     assert f"iov={EINVAL}" in verdict, verdict
+
+
+ETH_P_IP = 0x0800
+ETH_P_ARP = 0x0806
+SOL_PACKET = 263
+PACKET_ADD_MEMBERSHIP = 1
+PACKET_MR_PROMISC = 1
+TCP_SYN = 0x02
+TCP_RST = 0x04
+TCP_PSH = 0x08
+TCP_ACK = 0x10
+TCP_PEER_IP = "10.42.0.77"  # no host or node address
+TCP_PEER_MAC = bytes.fromhex("02005e00004d")
+TCP_PEER_ISS = 1000
+TCP_PORT = 5330
+EMPTY_SEG_BUG = (
+    "net/tcp/tcp_input.c: tcp_input() answers an empty segment with "
+    "RCV.NXT < SEG.SEQ < RCV.NXT+RCV.WND with an ACK, as if it were out "
+    "of order"
+)
+
+
+class Segment(NamedTuple):
+    """A TCP segment from the node to the scripted peer."""
+
+    flags: int
+    seq: int
+    ack: int
+    win: int
+    length: int
+
+
+class TcpPeer:
+    """A TCP peer on the bridge with an address the host does not own.
+
+    The host stack never sees its segments, so it sends no RST; the peer
+    answers the node's ARP requests itself.
+    """
+
+    def __init__(self, node_mac: bytes) -> None:
+        """Open a promiscuous capture socket on the bridge.
+
+        :param node_mac: MAC address of node0
+        """
+        self._node_mac = node_mac
+        self._sock = socket.socket(
+            socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003)
+        )
+        self._sock.bind((BRIDGE, 0))
+        mreq = struct.pack(
+            "iHH8s", socket.if_nametoindex(BRIDGE), PACKET_MR_PROMISC, 0, b""
+        )
+        self._sock.setsockopt(SOL_PACKET, PACKET_ADD_MEMBERSHIP, mreq)
+        self._sock.settimeout(0.1)
+
+    def close(self) -> None:
+        """Close the capture socket."""
+        self._sock.close()
+
+    def send(
+        self, seq: int, ack: int, flags: int, payload: bytes = b""
+    ) -> None:
+        """Send a TCP segment to node0.
+
+        :param seq: SEG.SEQ
+        :param ack: SEG.ACK
+        :param flags: TCP flags
+        :param payload: segment data
+        """
+        src = socket.inet_aton(TCP_PEER_IP)
+        dst = socket.inet_aton(NODE_IPS[NODE])
+        tcp = (
+            struct.pack(
+                "!HHIIBBHHH",
+                TCP_PORT + 1,
+                TCP_PORT,
+                seq & 0xFFFFFFFF,
+                ack & 0xFFFFFFFF,
+                5 << 4,
+                flags,
+                65535,
+                0,
+                0,
+            )
+            + payload
+        )
+        pseudo = src + dst + struct.pack("!xBH", socket.IPPROTO_TCP, len(tcp))
+        tcp = tcp[:16] + struct.pack("!H", _csum(pseudo + tcp)) + tcp[18:]
+        ip4 = struct.pack(
+            "!BBHHHBBH4s4s",
+            0x45,
+            0,
+            20 + len(tcp),
+            0,
+            0,
+            64,
+            socket.IPPROTO_TCP,
+            0,
+            src,
+            dst,
+        )
+        ip4 = ip4[:10] + struct.pack("!H", _csum(ip4)) + ip4[12:]
+        eth = self._node_mac + TCP_PEER_MAC + struct.pack("!H", ETH_P_IP)
+        self._sock.send(eth + ip4 + tcp)
+
+    def _arp_reply(self, frame: bytes) -> None:
+        """Answer an ARP request for the peer address.
+
+        :param frame: received Ethernet frame
+        """
+        op, sha, spa, tpa = struct.unpack("!6xH6s4s6x4s", frame[14:42])
+        if op != 1 or socket.inet_ntoa(tpa) != TCP_PEER_IP:
+            return
+        arp = struct.pack(
+            "!HHBBH6s4s6s4s", 1, ETH_P_IP, 6, 4, 2, TCP_PEER_MAC, tpa, sha, spa
+        )
+        self._sock.send(
+            sha + TCP_PEER_MAC + struct.pack("!H", ETH_P_ARP) + arp
+        )
+
+    def _segment(self, frame: bytes) -> Optional[Segment]:
+        """Return the TCP segment of a frame from node0 to the peer.
+
+        :param frame: received Ethernet frame
+        :return: segment, or None for other frames
+        """
+        if (
+            len(frame) < 54
+            or frame[23] != socket.IPPROTO_TCP
+            or socket.inet_ntoa(frame[30:34]) != TCP_PEER_IP
+        ):
+            return None
+        ihl = (frame[14] & 15) * 4
+        (total,) = struct.unpack("!H", frame[16:18])
+        tcp = 14 + ihl
+        sport, seq, ack, off, flags, win = struct.unpack(
+            "!H2xIIBBH", frame[tcp : tcp + 16]
+        )
+        if sport != TCP_PORT:
+            return None
+        return Segment(flags, seq, ack, win, total - ihl - (off >> 4) * 4)
+
+    def receive(
+        self, seconds: float, until: Optional[Callable[[Segment], bool]] = None
+    ) -> List[Segment]:
+        """Collect the segments of node0 for ``seconds``.
+
+        :param seconds: capture time
+        :param until: stop at the first segment for which it is true
+        :return: segments
+        """
+        segs: List[Segment] = []
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            try:
+                frame, addr = self._sock.recvfrom(2048)
+            except socket.timeout:
+                continue
+            if addr[2] == socket.PACKET_OUTGOING or len(frame) < 42:
+                continue
+            (etype,) = struct.unpack("!H", frame[12:14])
+            if etype == ETH_P_ARP:
+                self._arp_reply(frame)
+                continue
+            seg = self._segment(frame) if etype == ETH_P_IP else None
+            if seg is not None:
+                segs.append(seg)
+                if until is not None and until(seg):
+                    break
+        return segs
+
+
+def _tcp_connect(peer: TcpPeer, options: str) -> Tuple[int, int, int]:
+    """Start ``nettl -s`` on node0 and open a connection from the peer.
+
+    :param peer: scripted peer
+    :param options: further ``nettl -s`` options
+    :return: RCV.NXT and SND.NXT of node0 after the handshake, and the
+     window of its SYN-ACK
+    """
+    ret = _core().sendCommand(
+        f"nettl -s -p {TCP_PORT} {options} &", "listening", timeout=10
+    )
+    assert ret == 0
+    peer.send(TCP_PEER_ISS, 0, TCP_SYN)
+    segs = peer.receive(5, lambda s: (s.flags & TCP_SYN) != 0)
+    synack = [s for s in segs if s.flags == TCP_SYN | TCP_ACK]
+    assert synack, f"no SYN-ACK: {segs}"
+    rcv_nxt = TCP_PEER_ISS + 1
+    node_nxt = synack[0].seq + 1
+    peer.send(rcv_nxt, node_nxt, TCP_ACK)
+    peer.receive(1)
+    return rcv_nxt, node_nxt, synack[0].win
+
+
+def _empty_segment_replies(offset: Callable[[int], int]) -> List[Segment]:
+    """Send node0 an empty ACK at RCV.NXT + ``offset(RCV.WND)``.
+
+    A scripted peer connects to ``nettl -s`` on node0, sends the empty
+    segment and resets the connection.
+
+    :param offset: SEG.SEQ - RCV.NXT as a function of RCV.WND
+    :return: segments node0 sent in the second after the segment
+    """
+    peer = TcpPeer(_node_mac())
+    try:
+        rcv_nxt, node_nxt, rcv_wnd = _tcp_connect(peer, "-t 10")
+        assert rcv_wnd > 1000, f"window {rcv_wnd}"
+        peer.send(rcv_nxt + offset(rcv_wnd), node_nxt, TCP_ACK)
+        replies = peer.receive(1)
+        peer.send(rcv_nxt, node_nxt, TCP_RST)
+    finally:
+        peer.close()
+    _assert_alive()
+    return replies
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP")
+@pytest.mark.xfail(strict=True, reason=EMPTY_SEG_BUG)
+def test_tcp_empty_segment_in_window() -> None:
+    """An empty segment inside the receive window gets no ACK.
+
+    RFC 9293, 3.10.7.4, Table 6: a segment of length 0 with a receive
+    window > 0 is acceptable if "RCV.NXT =< SEG.SEQ < RCV.NXT+RCV.WND";
+    only "If an incoming segment is not acceptable, an acknowledgment
+    should be sent in reply".  A scripted peer sends node0 an empty ACK
+    with SEG.SEQ = RCV.NXT + 1000 on an established connection: node0
+    sends nothing within 1 s and still answers ping6.
+    """
+    replies = _empty_segment_replies(lambda wnd: 1000)
+    assert not replies, f"acceptable empty segment answered: {replies}"
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP")
+def test_tcp_empty_segment_beyond_window() -> None:
+    """An empty segment beyond the receive window gets an ACK.
+
+    RFC 9293, 3.10.7.4: "If an incoming segment is not acceptable, an
+    acknowledgment should be sent in reply", <SEQ=SND.NXT><ACK=RCV.NXT>
+    <CTL=ACK>.  A scripted peer sends node0 an empty ACK with SEG.SEQ =
+    RCV.NXT + RCV.WND + 1000: node0 answers with an ACK of RCV.NXT within
+    1 s and still answers ping6.
+    """
+    replies = _empty_segment_replies(lambda wnd: wnd + 1000)
+    acks = [
+        s
+        for s in replies
+        if s.flags & TCP_ACK and s.ack == TCP_PEER_ISS + 1 and s.length == 0
+    ]
+    assert acks, f"no ACK for an unacceptable segment: {replies}"
+
+
+@pytest.mark.dep_config("CONFIG_NET_TCP")
+@pytest.mark.xfail(strict=True, reason=EMPTY_SEG_BUG)
+def test_tcp_empty_segment_acks_data() -> None:
+    """An empty in-window segment that acknowledges data is not answered.
+
+    RFC 9293, 3.10.7.4, Table 6: a segment of length 0 with a receive
+    window > 0 is acceptable if "RCV.NXT =< SEG.SEQ < RCV.NXT+RCV.WND";
+    only "If an incoming segment is not acceptable, an acknowledgment
+    should be sent in reply".  Fifth, check the ACK field: "If SND.UNA <
+    SEG.ACK =< SND.NXT, then set SND.UNA <- SEG.ACK."  "Any segments on
+    the retransmission queue that are thereby entirely acknowledged are
+    removed."  A scripted peer sends 100 bytes to node0 ``nettl -s``,
+    which echoes them; the peer then sends an empty segment with SEG.SEQ
+    = RCV.NXT + 1000 and SEG.ACK = the end of the echo: node0 sends
+    nothing for twice the initial retransmission timeout
+    (``CONFIG_NET_TCP_RTO`` half seconds) and still answers ping6.
+    """
+    rto = int(_core().conf.kv_check("CONFIG_NET_TCP_RTO") or 3) / 2
+    data = pattern(0, 100)
+    peer = TcpPeer(_node_mac())
+    try:
+        rcv_nxt, node_nxt, rcv_wnd = _tcp_connect(peer, "-t 10")
+        assert rcv_wnd > 1100, f"window {rcv_wnd}"
+        peer.send(rcv_nxt, node_nxt, TCP_ACK | TCP_PSH, data)
+        echoed = 0
+        end = time.monotonic() + 5
+        while echoed < len(data) and time.monotonic() < end:
+            for seg in peer.receive(0.5):
+                if seg.length > 0 and seg.seq == node_nxt + echoed:
+                    echoed += seg.length
+        assert echoed == len(data), f"echoed {echoed} of {len(data)}"
+        rcv_nxt += len(data)
+        peer.send(rcv_nxt + 1000, node_nxt + echoed, TCP_ACK)
+        replies = peer.receive(2 * rto)
+        peer.send(rcv_nxt, node_nxt + echoed, TCP_RST)
+    finally:
+        peer.close()
+    _assert_alive()
+    rexmit = [s for s in replies if s.length > 0]
+    assert not rexmit, f"acknowledged data sent again: {rexmit}"
+    assert not replies, f"acceptable empty segment answered: {replies}"

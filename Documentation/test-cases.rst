@@ -694,8 +694,8 @@ Source: ``ntfc/tests/ip/test_ip_robust.py``. The host builds malformed
 packets byte by byte and sends them to node0 on the bridge with an
 ``AF_PACKET`` socket; afterwards node0 must still answer ``ping6`` from
 the host and reach the host itself. Expectations cite RFC 8200, RFC
-4443, RFC 3810, RFC 2131/2132 and POSIX. Same sessions as the ``ip``
-module.
+4443, RFC 3810, RFC 2131/2132, RFC 9293 and POSIX. Same sessions as the
+``ip`` module.
 
 .. list-table::
    :header-rows: 1
@@ -722,6 +722,20 @@ module.
    * - ``test_sendmsg_iov_overflow``
      - node0 ``nettl -c <host> -u -I``: ``sendmsg()`` with iov_len values
        summing past ``SSIZE_MAX`` fails with ``EINVAL``.
+   * - ``test_tcp_empty_segment_in_window``
+     - A scripted TCP peer on the bridge connects to node0 ``nettl -s``
+       and sends an empty ACK with SEG.SEQ = RCV.NXT + 1000 (acceptable,
+       RFC 9293 3.10.7.4): node0 sends nothing within 1 s; node0 still
+       pings.
+   * - ``test_tcp_empty_segment_beyond_window``
+     - The same peer sends an empty ACK with SEG.SEQ = RCV.NXT + RCV.WND
+       + 1000 (not acceptable): node0 answers with an ACK of RCV.NXT
+       within 1 s; node0 still pings.
+   * - ``test_tcp_empty_segment_acks_data``
+     - The peer sends 100 bytes, node0 echoes them, then the peer sends
+       an empty segment with SEG.SEQ = RCV.NXT + 1000 that acknowledges
+       the echo: node0 sends nothing, also no retransmission, for twice
+       ``CONFIG_NET_TCP_RTO``; node0 still pings.
 
 ``can`` module
 ---------------
