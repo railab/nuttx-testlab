@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_UNIXTL
+	tristate "unixtl: Unix domain (local) socket tests"
+	default n
+	depends on NET_LOCAL_STREAM && NET_LOCAL_DGRAM
+	---help---
+		AF_UNIX socket checks: stream and datagram sockets over
+		pathnames and socketpair(), MSG_TRUNC, end-of-file,
+		EPIPE/SIGPIPE, connect() and bind() errors, poll(), iovecs
+		and MSG_CTRUNC.  One verdict line per case.
+
+if TESTLAB_UNIXTL
+
+config TESTLAB_UNIXTL_PROGNAME
+	string "Program name"
+	default "unixtl"
+
+config TESTLAB_UNIXTL_PRIORITY
+	int "unixtl task priority"
+	default 100
+
+config TESTLAB_UNIXTL_STACKSIZE
+	int "unixtl stack size"
+	default 8192
+
+endif
