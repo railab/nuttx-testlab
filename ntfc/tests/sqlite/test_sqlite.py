@@ -66,29 +66,6 @@ FAT_INO_BUG = (
     "SQLITE_BUSY and a new connection reuses the descriptor of another "
     "database file"
 )
-FAT_ENOSPC_BUG = (
-    "fs/fat/fs_fat32.c: fat_get_sectors() returns -EIO when "
-    "fat_extendchain() finds no free cluster, so write() on a full volume "
-    "fails with EIO instead of ENOSPC and SQLite reports "
-    "SQLITE_IOERR_WRITE instead of SQLITE_FULL"
-)
-FAT_FSTAT_BUG = (
-    "fs/fat/fs_fat32.c: fat_fstat() reports the size in the directory "
-    "entry, which only fsync() and close() update, not the size of the "
-    "open file; with synchronous=OFF SQLite reads stale database and "
-    "journal sizes: the database looks malformed and a ROLLBACK after a "
-    "cache spill leaves it corrupt"
-)
-
-FAT_SHRINK_BUG = (
-    "fs/fat: a shrinking ftruncate() breaks the file: fat_truncate() "
-    "(fs_fat32.c) reads the start cluster through a directory entry "
-    "pointer after fat_dirshrink() has loaded a FAT sector into the "
-    "buffer, and fat_dirshrink() (fs_fat32util.c) marks the new last "
-    "cluster free instead of end of chain; later I/O fails with EINVAL or "
-    "EIO and the cluster can go to another file. SQLite truncates the "
-    "database when it rolls back a transaction that grew it"
-)
 FAT_CACHE_BUG = (
     "fs/fat: every descriptor has its own sector cache (ff_buffer) and a "
     "write through one descriptor neither updates nor invalidates the "
@@ -136,19 +113,12 @@ FAT_ROOT_BUG = (
 LOCK_SIGNATURE = r"sqltl: FAIL lock fd=[1-9]"
 HANDOFF_SIGNATURE = r"sqltl: FAIL handoff same=write/5 thread=write/5 check=0"
 INO_SIGNATURE = r"sqltl: FAIL multi attach=5 .* ino=same"
-ENOSPC_SIGNATURE = r"sqltl: FAIL full rows=\d+ fill=5 rc=778 errno=5"
-FSTAT_SIGNATURE = r"sqltl: FAIL \w+ .*rc=11 "
-# SQLITE_CORRUPT or an SQLITE_IOERR code: the broken chain fails a read,
-# a write or a sync, depending on the file
-
-SHRINK_SIGNATURE = (
-    r"sqltl: FAIL (verify step=open|shrink step=\w+) "
-    r"rc=(11|10|266|522|778|1034|1546) "
-)
 CACHE_SIGNATURE = (
     r"sqltl: FAIL (conc w=\d+ step=insert rc=1555|conc rows=\d+ counter=|"
     r"visible round)"
 )
+# LOCK_BUG: SQLITE_BUSY until the run ends
+BUSY_SIGNATURE = r"sqltl: FAIL conc w=\d+ step=\w+ rc=5 "
 REOPEN_SIGNATURE = r"sqltl: FAIL full step=reopen rc=4874 "
 SHM_SIGNATURE = r"sqltl: FAIL shm peer=1 seen=0"
 TASKS_SIGNATURE = r"sqltl: FAIL conc (rows=\d+ counter=|w=\d+ step=task)"
@@ -458,8 +428,6 @@ def test_sqlite_crash(
     and intact, a transaction stopped before its commit point absent (WAL:
     absent or present), one stopped after it present.
     """
-    bug = fs == "fat" and journal != "wal"
-    _xfail(request, bug, FAT_SHRINK_BUG)
     db = f"{_workdir(request, MOUNTS[fs])}/crash.db"
     opts = f"-j {journal} -s {sync}"
     rows = 0
@@ -467,10 +435,7 @@ def test_sqlite_crash(
         seed = f"{request.node.nodeid}-{i}"
         check = _crash_round(db, opts, rows, point, seed)
         _boot()
-        verdict = sqltl_pass(
-            f"verify {db} {check} -r 3",
-            known=SHRINK_SIGNATURE if bug else "",
-        )
+        verdict = sqltl_pass(f"verify {db} {check} -r 3")
         rows = int(verdict["rows"])
 
 
@@ -525,10 +490,8 @@ def test_sqlite_shrink(
     auto_vacuum FULL: a commit deleting half of the rows truncates the
     file, the rows are inserted again; the same with VACUUM.
     """
-    _xfail(request, fs == "fat", FAT_SHRINK_BUG)
-    known = SHRINK_SIGNATURE if fs == "fat" else ""
     db = f"{_workdir(request, MOUNTS[fs])}/shrink.db"
-    sqltl_pass(f"shrink {db} -j {journal}", timeout=300, known=known)
+    sqltl_pass(f"shrink {db} -j {journal}", timeout=300)
 
 
 @pytest.mark.parametrize("fs", FS_PARAMS)
@@ -544,16 +507,13 @@ def test_sqlite_rollback(
 
     Holds at any synchronous level: only crash safety depends on it.
     """
-    bug = fs == "fat" and sync == "off"
-    _xfail(request, bug, f"{FAT_FSTAT_BUG}; then {FAT_SHRINK_BUG}")
-    known = FSTAT_SIGNATURE if bug else ""
     db = f"{_workdir(request, MOUNTS[fs])}/rollback.db"
-    sqltl_pass(f"write {db} 10 -s {sync}", known=known)
+    sqltl_pass(f"write {db} 10 -s {sync}")
     verdict = sqltl_pass(
-        f"big {db} 300 -l 3000 -c 16 -s {sync} -x", timeout=300, known=known
+        f"big {db} 300 -l 3000 -c 16 -s {sync} -x", timeout=300
     )
     assert int(verdict["spill"]) > 0
-    sqltl_pass(f"verify {db} -n 30", known=known)
+    sqltl_pass(f"verify {db} -n 30")
 
 
 # Concurrency and locks
@@ -585,7 +545,7 @@ def test_sqlite_conc(
         pytest.skip(WAL_CACHE_SKIP)
     if fs == "fat" and journal == "delete":
         _xfail(request, True, f"{FAT_CACHE_BUG}; {LOCK_BUG}")
-        known = CACHE_SIGNATURE
+        known = f"{CACHE_SIGNATURE}|{BUSY_SIGNATURE}"
     if workers == "tasks":
         if not kv("CONFIG_BUILD_KERNEL"):
             pytest.skip(FLAT_TASKS)
@@ -736,12 +696,10 @@ def test_sqlite_full(request: pytest.FixtureRequest, journal: str) -> None:
     On a freshly formatted volume, with 0, 1, 4 and 16 free blocks; the
     database recovers once space is freed, also after reopening.
     """
-    known = ENOSPC_SIGNATURE
-    reason = FAT_ENOSPC_BUG
+    known = ""
     if journal == "wal" and _big_pagesize():
         known = REOPEN_SIGNATURE
-        reason = f"{FAT_ENOSPC_BUG}; {MUNMAP_BUG}"
-    _xfail(request, True, reason)
+        _xfail(request, True, MUNMAP_BUG)
     run(f"umount {FULL}")
     out = run(f"mkfatfs {_DISK[FULL]}", timeout=120)
     assert "failed" not in out, out
