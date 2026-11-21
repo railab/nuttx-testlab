@@ -46,3 +46,9 @@ sessions:
   - name: "rv-virt-virtio-input-tablet"
     confpath: ntfc/configs/rv-virt/virtio-input-tablet/config.yaml
     testpath: ntfc/tests/input
+  - name: "rv-virt-virtio-snd"
+    confpath: ntfc/configs/rv-virt/virtio-snd/config.yaml
+    testpath: ntfc/tests/sound
+  - name: "rv-virt-virtio-snd-capture"
+    confpath: ntfc/configs/rv-virt/virtio-snd-capture/config.yaml
+    testpath: ntfc/tests/sound

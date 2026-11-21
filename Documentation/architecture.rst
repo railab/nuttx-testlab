@@ -550,6 +550,30 @@ check per call on a mounted file system::
   & 0xff``. Verdict ``rpsocktl: PASS|FAIL <check> ...``; exit 0 on PASS.
   See :doc:`test-cases` for what each check expects.
 
+``apps/sndtl``
+~~~~~~~~~~~~~~
+
+``sndtl`` (``CONFIG_TESTLAB_SNDTL``, ``AUDIO`` without multi-session)
+drives an audio device with the upper-half ioctls (reserve, configure,
+``AUDIOIOC_GETBUFFERINFO``, private buffers, ``AUDIO_MQ_KERNEL``)::
+
+   sndtl -q dev
+   sndtl -i dev [-r rate] [-n ch] [-b bits]
+   sndtl -p|-c dev [-r rate] [-n ch] [-b bits] [-l bytes]
+         [-f byte | -s id] [-P bufs [-W ms]] [-t sec]
+
+- ``-q`` prints ``sndtl: caps type= formats=``, ``subformats=`` and
+  ``channels= rates=`` from ``AUDIOIOC_GETCAPS``; ``-i`` configures and
+  prints ``sndtl: bufinfo nbuffers= size=``.
+- ``-p`` plays ``-l`` bytes (default 48 kHz, 2 channels, 16 bit, 19200
+  bytes): the marker ``SNDTL<id>`` (``-s``, two hex digits) then the
+  nettl pattern, or only ``-f`` bytes; the last buffer holds only the
+  rest. ``-P``/``-W`` pause for ``ms`` after ``bufs`` buffers came back.
+- ``-c`` captures ``-l`` bytes into buffers pre-filled with 0xff.
+- Verdict ``sndtl: PASS play bytes= ms=``, ``sndtl: PASS capture
+  bytes= nonzero= ms=`` (``ms`` from start to the last buffer back),
+  ``sndtl: PASS query|info``, else ``sndtl: FAIL ...``.
+
 NTFC configs
 ------------
 

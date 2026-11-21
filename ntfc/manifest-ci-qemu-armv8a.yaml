@@ -55,3 +55,9 @@ sessions:
   - name: "qemu-armv8a-rpmsg"
     confpath: ntfc/configs/qemu-armv8a/rpmsg/config.yaml
     testpath: ntfc/tests/rpmsg
+  - name: "qemu-armv8a-virtio-snd"
+    confpath: ntfc/configs/qemu-armv8a/virtio-snd/config.yaml
+    testpath: ntfc/tests/sound
+  - name: "qemu-armv8a-virtio-snd-capture"
+    confpath: ntfc/configs/qemu-armv8a/virtio-snd-capture/config.yaml
+    testpath: ntfc/tests/sound

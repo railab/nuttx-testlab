@@ -1,0 +1,30 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_SNDTL
+	tristate "sndtl: audio playback/capture test tool"
+	default n
+	depends on AUDIO && !AUDIO_MULTI_SESSION
+	---help---
+		Plays a deterministic byte pattern to (-p) or captures bytes
+		from (-c) an audio device through the audio upper-half ioctls,
+		or prints its capabilities (-q), and ends with one PASS/FAIL
+		verdict line.
+
+if TESTLAB_SNDTL
+
+config TESTLAB_SNDTL_PROGNAME
+	string "Program name"
+	default "sndtl"
+
+config TESTLAB_SNDTL_PRIORITY
+	int "sndtl task priority"
+	default 100
+
+config TESTLAB_SNDTL_STACKSIZE
+	int "sndtl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

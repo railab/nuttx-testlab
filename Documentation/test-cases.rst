@@ -1608,6 +1608,54 @@ without that device.
      - Touch, move, release give ``TOUCH_DOWN``, ``TOUCH_MOVE`` (with
        the absolute positions) and ``TOUCH_UP``.
 
+``sound`` module
+----------------
+
+Source: ``ntfc/tests/sound/test_virtio_snd.py``. One node with a QEMU
+``virtio-sound`` device (one output, one input stream:
+``/dev/audio/pcm0p``, ``/dev/audio/pcm0c``); ``sndtl`` on the node uses
+the audio ioctls. Sessions ``qemu-armv8a-virtio-snd``,
+``rv-virt-virtio-snd`` and ``qemu-intel64-virtio-snd``: ``wav`` audiodev
+with the mixing engine off, so QEMU appends the raw played bytes to a
+file the test reads; each stream starts with a marker and is followed
+by a filler stream. Sessions ``qemu-armv8a-virtio-snd-capture``,
+``rv-virt-virtio-snd-capture`` and ``qemu-intel64-virtio-snd-capture``:
+``none`` audiodev, the input stream records silence in real time. All
+use defconfig ``virtio-snd`` (``virtio-sound-pci`` on ``qemu-intel64``);
+tests that need the other audiodev are skipped.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_snd_registered``
+     - ``/dev/audio`` has ``pcm0p`` and ``pcm0c``.
+   * - ``test_virtio_snd_stream_directions``
+     - ``AUDIOIOC_GETCAPS`` reports ``AUDIO_TYPE_OUTPUT`` for ``pcm0p``
+       and ``AUDIO_TYPE_INPUT`` for ``pcm0c``.
+   * - ``test_virtio_snd_caps_rates``
+     - After a 48 kHz stream played, the output rates include
+       ``AUDIO_SAMP_RATE_48K``.
+   * - ``test_virtio_snd_play_periods``
+     - Three full buffers at 8 kHz/1 ch/8 bit, 22.05 kHz/1/16,
+       44.1 kHz/2/16 and 48 kHz/2/32 reach the device byte-exact.
+   * - ``test_virtio_snd_play_end_of_stream``
+     - Two and a half buffers reach the device exactly, without the
+       unused end of the last buffer.
+   * - ``test_virtio_snd_play_pause_resume``
+     - Six buffers with a 300 ms pause after two reach the device
+       byte-exact.
+   * - ``test_virtio_snd_play_again``
+     - Two streams played one after the other both reach the device
+       byte-exact.
+   * - ``test_virtio_snd_capture_full_buffers``
+     - Three captured buffers, pre-filled with 0xff, come back full of
+       silence (every byte 0).
+   * - ``test_virtio_snd_capture_rate``
+     - 16000 bytes at 8 kHz mono 16 bit take 0.75 to 1.6 s.
+
 ``fs`` module
 -------------
 
