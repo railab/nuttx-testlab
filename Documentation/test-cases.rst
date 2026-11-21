@@ -1686,22 +1686,24 @@ QMP ``screendump``. Sessions ``qemu-armv8a-virtio-gpu`` and
      - ``FBIOPAN_DISPLAY`` to the second frame shows its blue fill,
        back to 0 shows the first frame again.
 
-``i2c``, ``gpio`` and ``spi`` modules
--------------------------------------
+``i2c``, ``gpio``, ``spi`` and ``rpmb`` modules
+-----------------------------------------------
 
 Sources: ``ntfc/tests/i2c/test_virtio_i2c.py``,
 ``ntfc/tests/gpio/test_virtio_gpio.py``,
-``ntfc/tests/spi/test_virtio_spi.py``. One node with a QEMU vhost-user
+``ntfc/tests/spi/test_virtio_spi.py``,
+``ntfc/tests/rpmb/test_virtio_rpmb.py``. One node with a QEMU vhost-user
 device served by ``ntfc/tests/_vhost_user.py`` (see
 :doc:`architecture`), which logs every request it gets; the tests read
 the log and the device state over its control socket. Sessions
-``<target>-virtio-i2c``, ``-virtio-gpio`` and ``-virtio-spi`` for
-``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64`` (PCI devices on
-``qemu-intel64``): ``qemu-armv8a-virtio-i2c``,
+``<target>-virtio-i2c``, ``-virtio-gpio``, ``-virtio-spi`` and
+``-virtio-rpmb`` for ``qemu-armv8a``, ``rv-virt`` and ``qemu-intel64``
+(PCI devices on ``qemu-intel64``): ``qemu-armv8a-virtio-i2c``,
 ``qemu-armv8a-virtio-gpio``, ``qemu-armv8a-virtio-spi``,
-``rv-virt-virtio-i2c``, ``rv-virt-virtio-gpio``, ``rv-virt-virtio-spi``,
-``qemu-intel64-virtio-i2c``, ``qemu-intel64-virtio-gpio`` and
-``qemu-intel64-virtio-spi``.
+``qemu-armv8a-virtio-rpmb``, ``rv-virt-virtio-i2c``,
+``rv-virt-virtio-gpio``, ``rv-virt-virtio-spi``, ``rv-virt-virtio-rpmb``,
+``qemu-intel64-virtio-i2c``, ``qemu-intel64-virtio-gpio``,
+``qemu-intel64-virtio-spi`` and ``qemu-intel64-virtio-rpmb``.
 
 I2C: EEPROMs (256 bytes, first written byte is the word address) at
 0x50 and 10-bit 0x2a5, nothing at 0x51; ``i2ctl`` sends one
@@ -1788,6 +1790,36 @@ MISO wired to MOSI; ``spitl`` sends one ``SPIIOC_TRANSFER``.
    * - ``test_virtio_spi_keep_cs_between``
      - Two transfers kept selected between: the first has ``cs_change``
        0.
+
+RPMB: 128 KiB, 256-byte half sectors; each test starts from a
+factory-new device (no key, write counter 0). The test computes the
+MACs (HMAC-SHA256, key ``00 01 .. 1f``).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - PASS criterion
+   * - ``test_virtio_rpmb_registered``
+     - ``/dev`` has ``rpmb``.
+   * - ``test_virtio_rpmb_counter_without_key``
+     - Get write counter answers ``NO_AUTH_KEY``; one 512-byte request
+       frame, one 512-byte response.
+   * - ``test_virtio_rpmb_program_key``
+     - Program key with result read answers OK; the device holds the
+       key; two request frames, one response.
+   * - ``test_virtio_rpmb_write_counter``
+     - Counter 0, the nonce echoed, a valid response MAC.
+   * - ``test_virtio_rpmb_authenticated_write``
+     - The write answers OK with a valid MAC; the device holds the data,
+       write counter 1.
+   * - ``test_virtio_rpmb_write_bad_mac``
+     - A corrupted MAC answers ``AUTH_FAILURE``; data and counter
+       unchanged.
+   * - ``test_virtio_rpmb_authenticated_read``
+     - A written half sector reads back with its address, the nonce and
+       a valid MAC.
 
 ``fs`` module
 -------------

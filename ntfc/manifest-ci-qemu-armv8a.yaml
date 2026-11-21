@@ -73,3 +73,6 @@ sessions:
   - name: "qemu-armv8a-virtio-spi"
     confpath: ntfc/configs/qemu-armv8a/virtio-spi/config.yaml
     testpath: ntfc/tests/spi
+  - name: "qemu-armv8a-virtio-rpmb"
+    confpath: ntfc/configs/qemu-armv8a/virtio-rpmb/config.yaml
+    testpath: ntfc/tests/rpmb

@@ -1,0 +1,29 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config TESTLAB_RPMBTL
+	tristate "rpmbtl: RPMB request test tool"
+	default n
+	depends on DRIVERS_VIRTIO_RPMB
+	---help---
+		Sends one RPMB request (program key, get write counter,
+		authenticated write or read) with MMC_IOC_MULTI_CMD, prints the
+		response frame fields and ends with one PASS/FAIL verdict line.
+
+if TESTLAB_RPMBTL
+
+config TESTLAB_RPMBTL_PROGNAME
+	string "Program name"
+	default "rpmbtl"
+
+config TESTLAB_RPMBTL_PRIORITY
+	int "rpmbtl task priority"
+	default 100
+
+config TESTLAB_RPMBTL_STACKSIZE
+	int "rpmbtl stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif

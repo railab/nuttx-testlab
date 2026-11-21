@@ -635,6 +635,27 @@ transfer is deselected after it, with ``-K`` only the last one. Prints
 ``spitl: rx<i>=<hex>`` per receiving transfer, verdict ``spitl: PASS``
 or ``spitl: FAIL errno=<n>``.
 
+``apps/rpmbtl``
+~~~~~~~~~~~~~~~
+
+``rpmbtl`` (``CONFIG_TESTLAB_RPMBTL``, ``DRIVERS_VIRTIO_RPMB``) sends one
+RPMB request to ``/dev/rpmb`` with ``MMC_IOC_MULTI_CMD`` (512-byte
+frames, the last one device-writable)::
+
+   rpmbtl [-d dev] -k keyhex
+   rpmbtl [-d dev] -c noncehex
+   rpmbtl [-d dev] -w addr -n counter -s seed -m machex
+   rpmbtl [-d dev] -r addr -o noncehex
+
+- ``-k`` programs the key, ``-w`` writes half sector ``addr`` with byte
+  ``i`` = ``(seed + i * 31 + 7) & 0xff`` and the given MAC (both with a
+  result read frame), ``-c`` reads the write counter, ``-r`` reads.
+- Prints the response ``rpmbtl: resp= result= counter= address=
+  count=``, ``nonce=``, ``mac=`` and ``frame=`` (bytes 228 to 511 in
+  hex); ``CONFIG_LINE_MAX=160`` for the MAC argument. Verdict
+  ``rpmbtl: PASS`` when the ioctl succeeded, else ``rpmbtl: FAIL
+  errno=<n>``.
+
 NTFC configs
 ------------
 

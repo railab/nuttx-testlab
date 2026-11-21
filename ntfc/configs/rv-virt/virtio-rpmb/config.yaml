@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/rv-virt/virtio-rpmb'
+
+product:
+  name: "rv-virt-virtio-rpmb"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      line_buffered: true
+      exec_path: 'python3'
+      exec_args: 'ntfc/tests/_vhost_user.py --device rpmb
+                 --socket /tmp/tl-vu-rv-virt-rpmb.sock --ctl /tmp/tl-vu-rv-virt-rpmb.ctl
+                 -- qemu-system-riscv32
+                 -semihosting -M virt,aclint=on,memory-backend=mem -cpu rv32 -smp 1
+                 -m 128M -object memory-backend-memfd,id=mem,size=128M,share=on
+                 -bios none -nographic
+                 -global virtio-mmio.force-legacy=false
+                 -chardev socket,id=vu,path=/tmp/tl-vu-rv-virt-rpmb.sock
+                 -device vhost-user-device,chardev=vu,virtio-id=28,num_vqs=1,config_size=3
+                 -kernel $IMAGE_ELF'
+      defconfig: '../../boards/risc-v/qemu-rv/rv-virt/configs/virtio-rpmb'

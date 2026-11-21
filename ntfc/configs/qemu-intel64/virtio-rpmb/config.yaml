@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-intel64/virtio-rpmb'
+
+product:
+  name: "qemu-intel64-virtio-rpmb"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      exec_path: 'python3'
+      exec_args: 'ntfc/tests/_vhost_user.py --device rpmb
+                 --socket /tmp/tl-vu-qemu-intel64-rpmb.sock --ctl /tmp/tl-vu-qemu-intel64-rpmb.ctl
+                 -- qemu-system-x86_64
+                 -m 1G -cpu host -enable-kvm -nographic -serial mon:stdio
+                 -machine memory-backend=mem
+                 -object memory-backend-memfd,id=mem,size=1G,share=on
+                 -chardev socket,id=vu,path=/tmp/tl-vu-qemu-intel64-rpmb.sock
+                 -device vhost-user-device-pci,chardev=vu,virtio-id=28,num_vqs=1,config_size=3
+                 -kernel $IMAGE_ELF'
+      defconfig: '../../boards/x86_64/qemu/qemu-intel64/configs/virtio-rpmb'

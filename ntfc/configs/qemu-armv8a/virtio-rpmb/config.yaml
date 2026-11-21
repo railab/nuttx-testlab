@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config:
+  cwd: './external'
+  build_dir: './build/qemu-armv8a/virtio-rpmb'
+
+product:
+  name: "qemu-armv8a-virtio-rpmb"
+  cores:
+    core0:
+      name: 'main'
+      device: 'qemu'
+      line_buffered: true
+      exec_path: 'python3'
+      exec_args: 'ntfc/tests/_vhost_user.py --device rpmb
+                 --socket /tmp/tl-vu-qemu-armv8a-rpmb.sock --ctl /tmp/tl-vu-qemu-armv8a-rpmb.ctl
+                 -- qemu-system-aarch64
+                 -cpu cortex-a53 -nographic
+                 -machine virt,virtualization=on,gic-version=3,memory-backend=mem
+                 -m 128M -object memory-backend-memfd,id=mem,size=128M,share=on
+                 -net none -chardev stdio,id=con,mux=on
+                 -serial chardev:con -mon chardev=con,mode=readline
+                 -global virtio-mmio.force-legacy=false
+                 -chardev socket,id=vu,path=/tmp/tl-vu-qemu-armv8a-rpmb.sock
+                 -device vhost-user-device,chardev=vu,virtio-id=28,num_vqs=1,config_size=3
+                 -kernel $IMAGE_ELF'
+      defconfig: '../../boards/arm64/qemu/qemu-armv8a/configs/virtio-rpmb'

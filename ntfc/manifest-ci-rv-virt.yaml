@@ -64,3 +64,6 @@ sessions:
   - name: "rv-virt-virtio-spi"
     confpath: ntfc/configs/rv-virt/virtio-spi/config.yaml
     testpath: ntfc/tests/spi
+  - name: "rv-virt-virtio-rpmb"
+    confpath: ntfc/configs/rv-virt/virtio-rpmb/config.yaml
+    testpath: ntfc/tests/rpmb
