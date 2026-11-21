@@ -222,6 +222,13 @@ def test_coap_client_get(
 ) -> None:
     """node0 GET of ``/time`` from the host, confirmable or not.
 
+    RFC 7252, 5.2.1: for a Confirmable request "the response is carried
+    directly in the Acknowledgement message"; 5.2.3: "If the request
+    message is Non-confirmable, then the response SHOULD be returned in
+    a Non-confirmable message as well."  5.8.1: "Upon success, a 2.05
+    (Content) or 2.03 (Valid) Response Code SHOULD be present in the
+    response."
+
     :param host_server: host server fixture
     :param non: send a non-confirmable request
     :param rsp_type: expected response type
@@ -246,6 +253,15 @@ def test_coap_client_get(
 
 def test_coap_client_methods(host_server: CoapServer) -> None:
     """node0 PUT, POST, GET and DELETE of host resources.
+
+    RFC 7252, 5.8.3 PUT: "If no resource exists, then the server MAY
+    create a new resource with that URI, resulting in a 2.01 (Created)
+    Response Code"; "If a resource exists ... a 2.04 (Changed) Response
+    Code SHOULD be returned."  5.8.2 POST: "If a resource has been
+    created on the server, the response returned by the server SHOULD
+    have a 2.01 (Created) Response Code".  5.8.4 DELETE: "A 2.02
+    (Deleted) Response Code SHOULD be used on success"; a GET of a
+    deleted resource gets 4.04 (Not Found, 5.9.2.5).
 
     :param host_server: host server fixture
     """
@@ -277,6 +293,12 @@ def test_coap_client_methods(host_server: CoapServer) -> None:
 def test_coap_client_blockwise(host_server: CoapServer) -> None:
     """node0 Block1 PUT and Block2 GET of 48 bytes in 16-byte blocks.
 
+    RFC 7959, 2.1: "the Block1 Option pertains to the request payload,
+    and the Block2 Option pertains to the response payload"; 2.3: in
+    descriptive usage "The NUM field in the option value describes what
+    block number is contained in the payload of this message."  The
+    blocks are numbered 0, 1, 2 and the payload is reassembled intact.
+
     :param host_server: host server fixture
     """
     uri = f"coap://{HOST_IP}/tl/blk"
@@ -301,6 +323,11 @@ def test_coap_client_blockwise(host_server: CoapServer) -> None:
 def test_coap_client_observe(host_server: CoapServer) -> None:
     """node0 observes ``/time`` for 4 s, then deregisters.
 
+    RFC 7641, 4.2: "A 2.xx notification MUST include an Observe Option";
+    3.6: "a client MAY explicitly deregister by issuing a GET request
+    that ... includes an Observe Option with the value set to 1
+    (deregister)."
+
     :param host_server: host server fixture
     """
     mark = host_server.mark()
@@ -315,7 +342,12 @@ def test_coap_client_observe(host_server: CoapServer) -> None:
 
 
 def test_coap_client_no_server() -> None:
-    """node0 gives up after ``-B 3`` when nothing answers on the port."""
+    """node0 gives up after ``-B 3`` when nothing answers on the port.
+
+    No response PDU arrives, so the client prints a timeout and returns
+    after its ``-B`` wait (3 s), not within it, and well before the
+    RFC 7252, 4.8.2 MAX_TRANSMIT_WAIT of 93 s.
+    """
     start = time.monotonic()
     out = _client(f"-v 6 -B 3 coap://{HOST_IP}:{NO_SERVER_PORT}/time")
     elapsed = time.monotonic() - start
@@ -327,6 +359,10 @@ def test_coap_client_no_server() -> None:
 @pytest.mark.dep_config("CONFIG_NET_IPv6")
 def test_coap_client_ipv6(host_server: CoapServer) -> None:
     """node0 PUT and GET over IPv6.
+
+    RFC 7252, 6.1: the coap URI host may be an IP-literal, i.e. an IPv6
+    address; PUT creates the resource (2.01, 5.8.3) and GET returns the
+    stored representation.  The host server sees node0's IPv6 address.
 
     :param host_server: host server fixture
     """
@@ -345,6 +381,11 @@ def test_coap_client_ipv6(host_server: CoapServer) -> None:
 def test_coap_server_discovery(node_server: int) -> None:
     """Host GET of node1 ``/.well-known/core`` lists its resources.
 
+    RFC 6690, 1.2.1: discovery "is performed using a GET to
+    ``/.well-known/core`` on the server, which returns a payload in the
+    CoRE Link Format."  RFC 7641, 6: a link "MAY include the target
+    attribute ``obs``" for an observable resource such as ``/time``.
+
     :param node_server: node1 server fixture
     """
     out = _host_client(f"coap://{NODE_IPS[1]}/.well-known/core")
@@ -358,6 +399,10 @@ def test_coap_server_discovery(node_server: int) -> None:
 )
 def test_coap_server_get(node_server: int, non: bool, rsp_type: str) -> None:
     """Host GET of node1 ``/time``, confirmable or not.
+
+    RFC 7252, 5.2.1 and 5.2.3: a CON request gets the response in the
+    ACK, a NON request "SHOULD" get a NON response; 5.8.1: 2.05 on
+    success.
 
     :param node_server: node1 server fixture
     :param non: send a non-confirmable request
@@ -379,6 +424,10 @@ def test_coap_server_get(node_server: int, non: bool, rsp_type: str) -> None:
 def test_coap_server_put_get(node_server: int) -> None:
     """Host PUT creates a node1 resource, GET reads it, DELETE removes it.
 
+    RFC 7252, 5.8.3: PUT of a new URI MAY create it, "resulting in a
+    2.01 (Created) Response Code"; 5.8.4: "A 2.02 (Deleted) Response
+    Code SHOULD be used on success"; a GET afterwards gets 4.04.
+
     :param node_server: node1 server fixture
     """
     uri = f"coap://{NODE_IPS[1]}/tl/h"
@@ -395,6 +444,9 @@ def test_coap_server_put_get(node_server: int) -> None:
 def test_coap_server_not_found(node_server: int) -> None:
     """Host GET of an unknown node1 resource gets 4.04.
 
+    RFC 7252, 5.9.2.5 (4.04 Not Found): "This Response Code is like HTTP
+    404 'Not Found'."
+
     :param node_server: node1 server fixture
     """
     _node_mark(1)
@@ -405,6 +457,11 @@ def test_coap_server_not_found(node_server: int) -> None:
 
 def test_coap_server_blockwise(node_server: int, tmp_path: Any) -> None:
     """Host Block1 PUT and Block2 GET of 300 bytes in 64-byte blocks.
+
+    RFC 7959, 2.3: in descriptive usage "The NUM field in the option
+    value describes what block number is contained in the payload of
+    this message": node1 sees Block1 0..4 and returns Block2 0..4, and
+    the reassembled payload equals the one written.
 
     :param node_server: node1 server fixture
     :param tmp_path: pytest temporary directory
@@ -429,6 +486,11 @@ def test_coap_server_blockwise(node_server: int, tmp_path: Any) -> None:
 def test_coap_server_observe(node_server: int) -> None:
     """Host observes node1 ``/time`` for 4 s, then deregisters.
 
+    RFC 7641, 4.2: "A 2.xx notification MUST include an Observe Option";
+    4.1: on a GET with Observe set to 1 (deregister) the server MUST
+    "process the GET request as usual.  The resulting response MUST NOT
+    include an Observe Option."
+
     :param node_server: node1 server fixture
     """
     _node_mark(1)
@@ -446,6 +508,9 @@ def test_coap_server_observe(node_server: int) -> None:
 def test_coap_server_ipv6(node_server: int) -> None:
     """Host GET of node1 ``/time`` over IPv6.
 
+    RFC 7252, 6.1: IP-literal host in the coap URI; 5.8.1: 2.05 on
+    success.
+
     :param node_server: node1 server fixture
     """
     out = _host_client("-v", "6", f"coap://[{NODE_IP6S[1]}]/time")
@@ -456,6 +521,9 @@ def test_coap_server_ipv6(node_server: int) -> None:
 
 def test_coap_node_to_node(node_server: int) -> None:
     """node0 PUT, GET and DELETE of a node1 resource.
+
+    RFC 7252, 5.8.3 and 5.8.4: 2.01 (Created) for a new resource, GET
+    returns it, 2.02 (Deleted) on success.
 
     :param node_server: node1 server fixture
     """
