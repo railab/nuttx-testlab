@@ -36,17 +36,31 @@ Targets, build and manifest sessions:
      - ``ntfc/configs/qemu-armv8a/smoke/config.yaml``
      - ``qemu-armv8a-smoke``
      - ``ntfc/manifest-ci-qemu-armv8a.yaml``
+   * - qemu-armv8a (SMP)
+     - ``ntfc/configs/qemu-armv8a/smoke-smp/config.yaml``
+     - ``qemu-armv8a-smoke-smp``
+     - ``ntfc/manifest-ci-qemu-armv8a.yaml``
    * - rv-virt
      - ``ntfc/configs/rv-virt/smoke/config.yaml``
      - ``rv-virt-smoke``
+     - ``ntfc/manifest-ci-rv-virt.yaml``
+   * - rv-virt (SMP)
+     - ``ntfc/configs/rv-virt/smoke-smp/config.yaml``
+     - ``rv-virt-smoke-smp``
      - ``ntfc/manifest-ci-rv-virt.yaml``
    * - qemu-intel64
      - ``ntfc/configs/qemu-intel64/smoke/config.yaml``
      - ``qemu-intel64-smoke``
      - ``ntfc/manifest-ci-qemu-intel64.yaml``
+   * - qemu-intel64 (SMP)
+     - ``ntfc/configs/qemu-intel64/smoke-smp/config.yaml``
+     - ``qemu-intel64-smoke-smp``
+     - ``ntfc/manifest-ci-qemu-intel64.yaml``
 
-Each target runs this module exactly once; all four sessions run
-``testpath: ntfc/tests/smoke``.
+All sessions run ``testpath: ntfc/tests/smoke``. The ``smoke-smp``
+sessions use the ``smoke`` defconfig with ``CONFIG_SMP=y`` (4 CPUs;
+qemu-intel64 also needs ``CONFIG_ARCH_INTERRUPTSTACK``) and QEMU
+``-smp 4``.
 
 Test functions
 ~~~~~~~~~~~~~~
