@@ -54,16 +54,6 @@ TOUCH_UP = 1 << 2
 TOUCH_ID_VALID = 1 << 3
 TOUCH_POS_VALID = 1 << 4
 
-FRAME_BUG = (
-    "drivers/virtio/virtio-input.c: virtio_input_send_keyboard_event() "
-    "keeps only the last EV_KEY of an update and reports it at EV_SYN, "
-    "so all other key changes of the same update are lost"
-)
-BRACE_BUG = (
-    "drivers/input/virtio_key_decode.c: KEY_LEFTBRACE/KEY_RIGHTBRACE "
-    "(the [ and ] keys) are translated to '(' and ')'"
-)
-
 
 class _Qmp:
     """Minimal QMP client on the product's ``-qmp unix:`` socket."""
@@ -233,7 +223,6 @@ def test_virtio_input_special_key() -> None:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=BRACE_BUG)
 def test_virtio_input_bracket_keys() -> None:
     """Press the ``[`` and ``]`` keys.
 
@@ -258,7 +247,6 @@ def test_virtio_input_bracket_keys() -> None:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=FRAME_BUG)
 def test_virtio_input_keys_one_update() -> None:
     """Press two keys in one device update.
 
