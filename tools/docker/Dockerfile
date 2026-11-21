@@ -10,6 +10,45 @@
 # (nuttx-toolchain-arm / nuttx-toolchain-arm64 / nuttx-toolchain-riscv
 # stages).
 
+# QEMU for the virtio-spi sessions only: Ubuntu 24.04's QEMU 8.2 has no
+# virtio SPI device model (vhost-user-spi-device came later). Installed
+# under /opt/qemu-11; every other session keeps the distribution QEMU.
+FROM ubuntu:24.04 AS qemu11
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG QEMU_VERSION=11.1.3
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        curl \
+        flex \
+        libfdt-dev \
+        libglib2.0-dev \
+        libpixman-1-dev \
+        ninja-build \
+        pkg-config \
+        python3 \
+        python3-venv \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz" \
+      | tar -xJ -C /tmp \
+    && cd "/tmp/qemu-${QEMU_VERSION}" \
+    && ./configure --prefix=/opt/qemu-11 \
+       --target-list=aarch64-softmmu,riscv32-softmmu,x86_64-softmmu \
+       --disable-docs --disable-user --disable-tools \
+    && make -j"$(nproc)" install \
+    && rm -rf "/tmp/qemu-${QEMU_VERSION}"
+
+# Firmware images and debug info the sessions do not use
+RUN rm -rf /opt/qemu-11/share/qemu/edk2-* /opt/qemu-11/bin/qemu-ga \
+       /opt/qemu-11/include /opt/qemu-11/var \
+    && strip /opt/qemu-11/bin/*
+
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -112,6 +151,8 @@ ENV CC=gcc-14 CXX=g++-14
 
 RUN pip install --break-system-packages --no-cache-dir kconfiglib pymodbus==3.15.0 \
     pyserial python-can==4.6.1 canopen==2.4.1
+
+COPY --from=qemu11 /opt/qemu-11 /opt/qemu-11
 
 COPY entrypoint.sh /usr/local/bin/testlab-entrypoint
 RUN chmod +x /usr/local/bin/testlab-entrypoint
