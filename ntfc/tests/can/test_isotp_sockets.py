@@ -24,21 +24,17 @@ from contextlib import ExitStack, contextmanager
 from typing import Iterator, Tuple
 
 import pytest
-from _can_common import canfd_supported, ctucanfd_node, host_can_socket
+from _can_common import (
+    CTUCANFD_RX_INT_BUG,
+    canfd_supported,
+    ctucanfd_node,
+    host_can_socket,
+)
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_CAN_ISOTP"),
     pytest.mark.cmd_check("isotptl_main"),
 ]
-
-CTUCANFD_TXDONE_BUG = (
-    "drivers/net/netdev_upperhalf.c: netdev_lower_txdone() polls the "
-    "stack again only if netdev_upper_can_tx() saw the TX quota at 0, "
-    "but drivers/can/ctucanfd_pci.c ctucanfd_sock_transmit() frees each "
-    "packet at once (TX quota never 0) and fails with -EBUSY while all "
-    "TX buffers wait for the TX interrupt, so ISO-TP frames left in the "
-    "stack are not sent"
-)
 
 #: Tests that fail on the CTU CAN FD node in every run.
 CTUCANFD_FAIL = {
@@ -46,7 +42,6 @@ CTUCANFD_FAIL = {
     "test_isotp_wait_dontwait",
     "test_isotp_concurrent_sessions",
     "test_isotp_completion_order",
-    "test_isotp_large_pdu[fd]",
 }
 
 #: Tests whose result on the CTU CAN FD node depends on interrupt timing.
@@ -55,7 +50,7 @@ CTUCANFD_TIMING = {
     "test_isotp_error_recovery[partial]",
     "test_isotp_error_recovery[no-fc]",
     "test_isotp_error_recovery[sequence]",
-    "test_isotp_large_pdu[classic]",
+    "test_isotp_large_pdu",
     "test_isotp_socket_api",
 }
 
@@ -79,7 +74,7 @@ def _require_canfd(request: pytest.FixtureRequest) -> None:
 
 @pytest.fixture(autouse=True)
 def _ctucanfd_bug(request: pytest.FixtureRequest) -> None:
-    """Mark the cases broken by the CTU CAN FD TX bug on that driver.
+    """Mark the cases broken by the CTU CAN FD RX bug on that driver.
 
     Cases that always fail are strict xfails; cases that pass or fail
     with interrupt timing are skipped.
@@ -92,10 +87,10 @@ def _ctucanfd_bug(request: pytest.FixtureRequest) -> None:
 
     if names & CTUCANFD_FAIL:
         request.applymarker(
-            pytest.mark.xfail(strict=True, reason=CTUCANFD_TXDONE_BUG)
+            pytest.mark.xfail(strict=True, reason=CTUCANFD_RX_INT_BUG)
         )
     elif names & CTUCANFD_TIMING:
-        pytest.skip(f"timing dependent: {CTUCANFD_TXDONE_BUG}")
+        pytest.skip(f"timing dependent: {CTUCANFD_RX_INT_BUG}")
 
 
 def _payload(seed: int, length: int) -> bytes:
