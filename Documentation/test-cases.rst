@@ -1114,7 +1114,10 @@ Source: ``ntfc/tests/can/test_isotp_sockets.py``. Node 0 runs one
 ``isotptl`` phase (``apps/isotptl``) on ``can0``; the host is the peer,
 with kernel ISO-TP or raw SocketCAN sockets. Classic peers use 8-byte
 frames, CAN FD peers 64-byte frames. Every test passes on
-``isotptl: PASS mode=<phase>``. Session: ``sim-isotp``.
+``isotptl: PASS mode=<phase>``. Sessions: ``sim-isotp``,
+``qemu-intel64-isotp-ctucanfd`` (CTU CAN FD) and
+``qemu-intel64-isotp-kvaser`` (Kvaser PCI, classic CAN only: CAN FD
+cases are skipped).
 
 .. list-table::
    :header-rows: 1

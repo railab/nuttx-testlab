@@ -21,15 +21,79 @@
 import socket
 import struct
 from contextlib import ExitStack, contextmanager
-from typing import Iterator
+from typing import Iterator, Tuple
 
 import pytest
-from _can_common import host_can_socket
+from _can_common import canfd_supported, ctucanfd_node, host_can_socket
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_CAN_ISOTP"),
     pytest.mark.cmd_check("isotptl_main"),
 ]
+
+CTUCANFD_TXDONE_BUG = (
+    "drivers/net/netdev_upperhalf.c: netdev_lower_txdone() polls the "
+    "stack again only if netdev_upper_can_tx() saw the TX quota at 0, "
+    "but drivers/can/ctucanfd_pci.c ctucanfd_sock_transmit() frees each "
+    "packet at once (TX quota never 0) and fails with -EBUSY while all "
+    "TX buffers wait for the TX interrupt, so ISO-TP frames left in the "
+    "stack are not sent"
+)
+
+#: Tests that fail on the CTU CAN FD node in every run.
+CTUCANFD_FAIL = {
+    "test_isotp_exchange",
+    "test_isotp_wait_dontwait",
+    "test_isotp_concurrent_sessions",
+    "test_isotp_completion_order",
+    "test_isotp_large_pdu",
+    "test_isotp_error_recovery[sequence]",
+}
+
+#: Tests whose result on the CTU CAN FD node depends on interrupt timing.
+CTUCANFD_TIMING = {
+    "test_isotp_back_to_back",
+    "test_isotp_error_recovery[partial]",
+    "test_isotp_error_recovery[no-fc]",
+}
+
+
+@pytest.fixture(autouse=True)
+def _require_canfd(request: pytest.FixtureRequest) -> None:
+    """Skip CAN FD cases on a node without a CAN FD capable driver.
+
+    :param request: pytest request of the running test
+    """
+    callspec = getattr(request.node, "callspec", None)
+    if callspec is None or not callspec.params.get("fd", False):
+        return
+
+    if not canfd_supported(0):
+        pytest.skip(
+            "target has no CAN FD capable CAN driver "
+            "(e.g. CONFIG_CAN_KVASER is classic-only)"
+        )
+
+
+@pytest.fixture(autouse=True)
+def _ctucanfd_bug(request: pytest.FixtureRequest) -> None:
+    """Mark the cases broken by the CTU CAN FD TX bug on that driver.
+
+    Cases that always fail are strict xfails; cases that pass or fail
+    with interrupt timing are skipped.
+
+    :param request: pytest request of the running test
+    """
+    names = {request.node.name, request.node.originalname}
+    if not ctucanfd_node(0):
+        return
+
+    if names & CTUCANFD_FAIL:
+        request.applymarker(
+            pytest.mark.xfail(strict=True, reason=CTUCANFD_TXDONE_BUG)
+        )
+    elif names & CTUCANFD_TIMING:
+        pytest.skip(f"timing dependent: {CTUCANFD_TXDONE_BUG}")
 
 
 def _payload(seed: int, length: int) -> bytes:
@@ -111,6 +175,19 @@ def _raw_frame(can_id: int, data: bytes = b"", fd: bool = False) -> bytes:
     )
 
 
+def _frame_data(frame: bytes) -> Tuple[int, bytes]:
+    """Unpack the CAN identifier and the DLC data bytes of a frame.
+
+    Bytes past the frame length are not part of the CAN frame, so they
+    are not compared.
+
+    :param frame: packed SocketCAN frame
+    :return: CAN identifier and data bytes
+    """
+    can_id, length = struct.unpack_from("=IB", frame)
+    return can_id, frame[8 : 8 + length]
+
+
 @pytest.mark.parametrize("fd", [False, True], ids=["classic", "fd"])
 @pytest.mark.parametrize("wait", [False, True], ids=["async", "wait-tx"])
 def test_isotp_exchange(fd: bool, wait: bool) -> None:
@@ -154,7 +231,7 @@ def test_isotp_back_to_back(fd: bool) -> None:
     with _peer(fd, 0x457 if fd else 0x456, 0x655 if fd else 0x654) as peer:
         with host_can_socket(can_id=0x738, timeout=10) as ready:
             _start("backtoback", fd)
-            assert ready.recv(16) == _raw_frame(0x738, b"\xa5")
+            assert _frame_data(ready.recv(16)) == (0x738, b"\xa5")
             ready.send(_raw_frame(0x739))
             for seq in range(2):
                 assert peer.recv(8192) == _payload(
@@ -172,7 +249,7 @@ def test_isotp_concurrent_sessions() -> None:
         ]
         ready = stack.enter_context(host_can_socket(can_id=0x478, timeout=10))
         _start("concurrent", False)
-        assert ready.recv(16) == _raw_frame(0x478, b"\xa5")
+        assert _frame_data(ready.recv(16)) == (0x478, b"\xa5")
         ready.send(_raw_frame(0x479))
         for seq in range(3):
             for index, peer in enumerate(peers):
