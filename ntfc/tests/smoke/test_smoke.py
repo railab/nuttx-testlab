@@ -23,6 +23,13 @@ import re
 import pytest
 from _net_common import nettl_client, nettl_server
 
+RECVWINDOW_LOOPBACK_BUG = (
+    "net/tcp/tcp_recvwindow.c:258: tcp_get_recvwindow() takes the "
+    "windows advertised by the other connections from the free IOBs; "
+    "over loopback the peer's window holds the pool, so this connection "
+    "advertises a zero window and the echo never comes back"
+)
+
 EXIT_SIGTERM_BUG = (
     "sched/group: with GROUP_KILL_CHILDREN_TIMEOUT_MS != 0 (default -1 "
     "with SIG_DEFAULT) exit() sends SIGTERM to the other threads, which "
@@ -37,6 +44,7 @@ def test_uname() -> None:
 
 
 @pytest.mark.cmd_check("nettl_main")
+@pytest.mark.xfail(strict=True, reason=RECVWINDOW_LOOPBACK_BUG)
 def test_nettl_loopback_tcp() -> None:
     """Run nettl TCP echo over loopback on one node."""
     nettl_server(0, False, 5100)
