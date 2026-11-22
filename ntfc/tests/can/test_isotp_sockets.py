@@ -29,20 +29,12 @@ from _can_common import (
     canfd_supported,
     ctucanfd_node,
     host_can_socket,
-    kvaser_node,
 )
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_CAN_ISOTP"),
     pytest.mark.cmd_check("isotptl_main"),
 ]
-
-KVASER_RX_OVERRUN_BUG = (
-    "drivers/can/kvaser_pci.c:1458: kvaser_sock_interrupt() masks RX and "
-    "leaves the SJA1000 RX FIFO to the upper-half work; frames of three "
-    "sessions at STmin 1 ms overrun the 64-byte FIFO before it runs, so "
-    "consecutive frames are lost"
-)
 
 #: Tests that fail on the CTU CAN FD node in every run.
 CTUCANFD_FAIL = {
@@ -247,8 +239,6 @@ def test_isotp_back_to_back(fd: bool) -> None:
 
 def test_isotp_concurrent_sessions() -> None:
     """Three independent address pairs keep their session state separate."""
-    if kvaser_node(0):
-        pytest.skip(f"timing dependent: {KVASER_RX_OVERRUN_BUG}")
     with ExitStack() as stack:
         peers = [
             stack.enter_context(_peer(False, 0x470 + i, 0x460 + i))
