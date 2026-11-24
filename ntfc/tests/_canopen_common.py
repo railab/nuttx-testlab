@@ -64,12 +64,18 @@ SYNC_PERIOD_S = 0.100
 
 
 class Frame(NamedTuple):
-    """One CAN frame seen by the host."""
+    """One CAN frame seen by the host.
+
+    ``t`` is the host's monotonic time when the listener thread got the
+    frame, ``ts`` the kernel receive timestamp of the host socket
+    (``CLOCK_REALTIME``).
+    """
 
     t: float
     can_id: int
     data: bytes
     is_fd: bool
+    ts: float
 
 
 class FrameLog(can.Listener):
@@ -91,6 +97,7 @@ class FrameLog(can.Listener):
             msg.arbitration_id,
             bytes(msg.data),
             bool(msg.is_fd),
+            msg.timestamp,
         )
         with self._lock:
             self._frames.append(frame)
@@ -300,10 +307,6 @@ def stop_app(
     :param node_id: CANopen node-ID of the example
     :param pid: PID of the example task
     """
-    # The character driver backend of the examples loses frames that
-    # arrive together, so do not send right behind the test's last frame
-
-    time.sleep(0.1)
     bus.nmt(NMT_RESET_NODE, node_id)
     silent = bus.silent(node_id)
     assert pid is not None, "no PID for the example task"

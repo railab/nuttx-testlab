@@ -22,6 +22,7 @@ Runs on nodes that reach the bus through ``/dev/can0`` (see
 ``_can_common.can_endpoint()``); skipped on SocketCAN nodes.
 """
 
+import re
 import threading
 from typing import Iterator
 
@@ -54,6 +55,25 @@ pytestmark = [
 ]
 
 RTR_ID = 0x3A0
+
+#: Lower-half ioctls (``co_ioctl``) of ``canopt cioctl`` that each CAN
+#: character driver implements, by the driver's Kconfig symbol.
+#: sim_can_ioctl() (arch/sim/src/sim/sim_canchar.c),
+#: ctucanfd_chrdev_ioctl() (drivers/can/ctucanfd_pci.c) and
+#: kvaser_chrdev_ioctl() (drivers/can/kvaser_pci.c) implement none.
+LOWER_IOCTLS = {
+    "CONFIG_SIM_CANDEV_CHAR": set(),
+    "CONFIG_CAN_CTUCANFD_CHARDEV": set(),
+    "CONFIG_CAN_KVASER_CHARDEV": set(),
+}
+
+RTR_NOT_IMPLEMENTED = (
+    "drivers/can/can.c:973: can_rtrread() sends the request through the "
+    "lower half's co_remoterequest when it is set, and "
+    "arch/sim/src/sim/sim_canchar.c:174: sim_can_remoterequest() and "
+    "drivers/can/ctucanfd_pci.c:551: ctucanfd_chrdev_remoterequest() are "
+    "stubs that return -ENOTSUP"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -89,20 +109,31 @@ def test_can_char_tx_frame_types() -> None:
 
 
 def test_can_char_ioctl() -> None:
-    """Upper-half ioctls round trip; lower-half ones work or say ENOTTY.
+    """Upper-half ioctls round trip; lower-half ones match the driver.
 
-    CANIOC_GET/SET_MSGALIGN, FIONWRITE, CANIOC_GET_BITTIMING and
-    CANIOC_ADD/DEL_STDFILTER.
+    CANIOC_GET/SET_MSGALIGN and FIONWRITE must work.
+    CANIOC_GET_BITTIMING and CANIOC_ADD/DEL_STDFILTER must work on a
+    driver that implements them (``LOWER_IOCTLS``) and fail with ENOTTY
+    on a driver that does not; any other error fails the check.
     """
+    drivers = [name for name in LOWER_IOCTLS if kv_value(0, name)]
+    assert len(drivers) == 1, drivers
+
     ret = canopt_run(0, f"cioctl {CAN_CHARDEV}")
     assert ret.startswith("canopt: PASS cioctl"), ret
+    states = dict(re.findall(r"(bittiming|stdfilter)=(\w+)", ret))
+    assert set(states) == {"bittiming", "stdfilter"}, ret
+    assert set(states.values()) <= {"ok", "unsupported"}, ret
+    implemented = {name for name, state in states.items() if state == "ok"}
+    assert implemented == LOWER_IOCTLS[drivers[0]], ret
 
 
 def test_can_char_msgalign() -> None:
     """CANIOC_SET_MSGALIGN controls how ``read()`` packs messages.
 
-    With 6 messages queued: alignment 1 returns 3 packed messages into a
-    3-message buffer, 0 returns exactly one, 16 pads each to 16 bytes.
+    Once FIONREAD reports the 6 host messages: alignment 1 returns 3
+    packed messages into a 3-message buffer, 0 returns exactly one, 16
+    pads each to 16 bytes.
     """
     canopt_start(0, f"calign {CAN_CHARDEV}")
     host_send([Frame(0x5C0 + i, 8) for i in range(6)])
@@ -136,19 +167,26 @@ def test_can_char_rx_overflow() -> None:
 
     include/nuttx/can/can.h: ``CAN_ERROR5_RXOVERFLOW`` "RX buffer
     overflow".  The host sends ``CONFIG_CAN_RXFIFOSIZE + 16`` frames
-    while nobody reads; the reader then gets at least one RX overflow
+    and the end marker while nobody reads; a second descriptor of the
+    check sees the marker, then the reader gets at least one RX overflow
     error message, no other error, and at most
     ``CONFIG_CAN_RXFIFOSIZE`` frames.
     """
     fifo = int(kv_value(0, "CONFIG_CAN_RXFIFOSIZE"))
     canopt_start(0, f"coverflow {CAN_CHARDEV}")
-    host_send([Frame(0x5D0, 8)] * (fifo + 16), gap_s=0.001)
+    host_send(
+        [Frame(0x5D0, 8)] * (fifo + 16) + [Frame(MARKER_ID, 1)], gap_s=0.001
+    )
     ret = canopt_verdict(0)
     assert ret.startswith("canopt: PASS coverflow"), ret
 
 
 def test_can_char_fionread() -> None:
-    """FIONREAD reports the number of queued messages as an int."""
+    """FIONREAD reports the number of queued messages as an int.
+
+    It reaches the number of host frames, and one ``read()`` then
+    returns that many messages.
+    """
     count = 5
     canopt_start(0, f"cfionread {CAN_CHARDEV} -n {count}")
     host_send([Frame(0x5E0, 8)] * count)
@@ -157,9 +195,13 @@ def test_can_char_fionread() -> None:
 
 
 def test_can_char_iflush() -> None:
-    """CANIOC_IFLUSH drops queued messages; the next read says EAGAIN."""
-    canopt_start(0, f"ciflush {CAN_CHARDEV}")
-    host_send([Frame(0x5F0, 8)] * 3)
+    """CANIOC_IFLUSH drops queued messages; the next read says EAGAIN.
+
+    The check flushes once FIONREAD reports the host's frames.
+    """
+    count = 3
+    canopt_start(0, f"ciflush {CAN_CHARDEV} -n {count}")
+    host_send([Frame(0x5F0, 8)] * count)
     ret = canopt_verdict(0)
     assert ret == "canopt: PASS ciflush", ret
 
@@ -197,11 +239,7 @@ def rtr_responder() -> Iterator[None]:
     thread.join()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the sim and ctucanfd_pci CAN lower halves return ENOTSUP for "
-    "remote requests",
-)
+@pytest.mark.xfail(strict=True, reason=RTR_NOT_IMPLEMENTED)
 @pytest.mark.usefixtures("rtr_responder")
 def test_can_char_rtr_request() -> None:
     """CANIOC_RTR sends a remote request and returns the host's reply."""

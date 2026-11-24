@@ -23,13 +23,11 @@ CAN FD length (0..8, 12..64 = DLC 0..15) and BRS/ESI combination.
 """
 
 import pytest
-from _can_common import ctucanfd_rx_bug
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CLASSIC_FRAMES,
     FD_FRAMES,
     MARKER_ID,
     Frame,
-    Kicker,
     canopt_env,
     canopt_run,
     canopt_start,
@@ -71,15 +69,13 @@ def test_can_tx_frame_types() -> None:
     assert errors == []
 
 
-def test_can_fd_rx(request: pytest.FixtureRequest) -> None:
+def test_can_fd_rx() -> None:
     """A CAN_RAW_FD_FRAMES socket receives both tables from the host.
 
     CAN FD frames read as CANFD_MTU with length and BRS/ESI intact,
     classic frames as CAN_MTU.
 
-    :param request: pytest request
     """
-    ctucanfd_rx_bug(request)
     canopt_start(0, "fdrx can0")
     host_send(interleaved_frames() + [Frame(MARKER_ID, 1)])
     ret = canopt_verdict(0)
@@ -94,22 +90,18 @@ def test_can_fd_rx(request: pytest.FixtureRequest) -> None:
     ],
     ids=["blocking", "queued"],
 )
-def test_can_fd_to_classic_socket(
-    queued: bool, request: pytest.FixtureRequest
-) -> None:
+def test_can_fd_to_classic_socket(queued: bool) -> None:
     """A classic socket on a mixed bus sees only classic frames.
 
     The host interleaves both tables. ``blocking``: the reader waits in
     read() for each frame. ``queued``: all frames queue on the socket
     before the first read; the host sends the first ``QUEUED_CLASSIC``
     classic frames only. Every read must return one classic frame of
-    CAN_MTU bytes. The host sends wake-up frames after 3 s so a reader
-    that blocks despite queued frames still returns.
+    CAN_MTU bytes. A read() that gets no frame within the check's
+    timeout fails it.
 
     :param queued: let all frames queue before the first read
-    :param request: pytest request
     """
-    ctucanfd_rx_bug(request)
     if queued:
         canopt_start(0, f"legacy can0 -q -n {QUEUED_CLASSIC}")
         host_send(interleaved_frames(QUEUED_CLASSIC) + [Frame(MARKER_ID, 1)])
@@ -117,6 +109,5 @@ def test_can_fd_to_classic_socket(
         canopt_start(0, "legacy can0")
         host_send(interleaved_frames() + [Frame(MARKER_ID, 1)], gap_s=0.02)
 
-    with Kicker(delay_s=3.0):
-        ret = canopt_verdict(0, timeout=20)
+    ret = canopt_verdict(0, timeout=20)
     assert ret.startswith("canopt: PASS legacy"), ret

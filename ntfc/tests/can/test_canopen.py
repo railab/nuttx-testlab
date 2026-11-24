@@ -38,7 +38,10 @@ from typing import Iterator, List, Tuple
 
 import canopen
 import pytest
-from _can_common import KVASER_RX_BUG, ctucanfd_rx_bug, kvaser_node
+from _can_common import (
+    QEMU_SJA1000_RTR_BUG,
+    kvaser_node,
+)
 from _canopen_common import (
     COB_HB,
     COB_SYNC,
@@ -85,19 +88,6 @@ ABORT_NO_OBJECT = 0x06020000
 ABORT_NO_SUBINDEX = 0x06090011
 ABORT_LEN_MISMATCH = 0x06070010
 ABORT_LEN_LOW = 0x06070013
-
-CHARDEV_EDL_BUG = (
-    "examples/lely_slave, examples/lely_master candev_char.c: "
-    "*_candev_send() leaves cm_hdr.ch_edl/ch_brs/ch_esi of the stack "
-    "struct can_msg_s uninitialized, so with CONFIG_CAN_FD a frame can go "
-    "out as a CAN FD frame"
-)
-CHARDEV_RECV_BUG = (
-    "examples/lely_slave, examples/lely_master candev_char.c: "
-    "*_candev_recv() read()s into one struct can_msg_s and decodes only "
-    "the first message, but the CAN character driver returns every queued "
-    "message that fits the buffer, so frames that arrive together are lost"
-)
 
 
 @pytest.fixture(scope="module")
@@ -170,15 +160,6 @@ def _pdo_values(output: str) -> List[int]:
     return [int(v) for v in re.findall(PDO_RX_RE, output)]
 
 
-def _is_chardev(node: int) -> bool:
-    """Check whether a node's examples use the CAN character driver.
-
-    :param node: product index
-    :return: True for the character driver backend
-    """
-    return bool(core(node).conf.kv_check("CONFIG_EXAMPLES_LELYSLAVE_CHARDEV"))
-
-
 def test_canopen_slave_boot(bus: HostBus, slave: canopen.RemoteNode) -> None:
     """After boot-up the slave sends PRE-OPERATIONAL heartbeats every 50 ms.
 
@@ -223,11 +204,10 @@ def test_canopen_slave_nmt(bus: HostBus, slave: canopen.RemoteNode) -> None:
 
 
 def test_canopen_slave_frame_burst(
-    request: pytest.FixtureRequest, bus: HostBus, slave: canopen.RemoteNode
+    bus: HostBus, slave: canopen.RemoteNode
 ) -> None:
     """Back-to-back NMT start and stop leave the slave STOPPED.
 
-    :param request: pytest request
     :param bus: host bus
     :param slave: node 0 slave
     """
@@ -306,9 +286,11 @@ def test_canopen_slave_sdo_abort(
 ) -> None:
     """Invalid SDO requests get a CiA 301 abort code for the error.
 
-    A too short download may be answered with "data type does not match,
-    length of service parameter does not match" (0x06070010) or "...
-    too low" (0x06070013).
+    CiA 301, SDO abort codes: "0607 0010h Data type does not match,
+    length of service parameter does not match" and "0607 0013h Data
+    type does not match, length of service parameter too low" both
+    describe a too short download, and CiA 301 has no rule that selects
+    one of them.
 
     :param slave: node 0 slave
     :param index: object index
@@ -351,15 +333,13 @@ def test_canopen_slave_stopped(
 
 
 def test_canopen_slave_heartbeat_time(
-    bus: HostBus, slave: canopen.RemoteNode, request: pytest.FixtureRequest
+    bus: HostBus, slave: canopen.RemoteNode
 ) -> None:
     """Writing ``0x1017`` changes the heartbeat period; 0 disables it.
 
     :param bus: host bus
     :param slave: node 0 slave
-    :param request: pytest request
     """
-    ctucanfd_rx_bug(request, timing=True)
     slave.sdo.download(0x1017, 0, struct.pack("<H", 200))
     time.sleep(0.3)
     mark = bus.log.mark()
@@ -547,12 +527,9 @@ def test_canopen_node_to_node(
     :param request: pytest request
     :param bus: host bus
     """
-    if _is_chardev(0):
-        pytest.skip(CHARDEV_RECV_BUG)
-
     if kvaser_node(1):
         request.applymarker(
-            pytest.mark.xfail(strict=True, reason=KVASER_RX_BUG)
+            pytest.mark.xfail(strict=True, reason=QEMU_SJA1000_RTR_BUG)
         )
 
     mark = bus.log.mark()
@@ -591,6 +568,4 @@ def test_canopen_classic_frames(
     slave.sdo.upload(0x1018, 1)
     assert len(bus.log.since(mark, COB_TPDO1 + SLAVE_ID)) == 5
     fd = [f for f in bus.log.since(mark) if f.is_fd]
-    if fd and _is_chardev(0):
-        pytest.xfail(CHARDEV_EDL_BUG)
     assert not fd, fd

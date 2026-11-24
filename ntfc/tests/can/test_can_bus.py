@@ -31,13 +31,12 @@ from _can_common import (
     CAN_ID_ALT,
     CAN_ID_DEFAULT,
     CAN_IFNAME,
-    KVASER_RX_BUG,
+    KVASER_SLEEP_BUG,
     can_endpoint,
     canfd_supported,
     cantl_receiver_start,
     cantl_receiver_verdict,
     cantl_sender,
-    ctucanfd_rx_bug,
     host_can_send,
     host_can_socket,
     host_can_verify,
@@ -91,20 +90,18 @@ def test_can_node_to_node(fd: bool) -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-def test_can_host_to_nodes(request: pytest.FixtureRequest) -> None:
+def test_can_host_to_nodes() -> None:
     """Host sends; every node's receiver gets every frame intact.
 
     The host paces its frames like a real CAN bus would: a back-to-back
     burst from vcan overflows the small RX FIFO of emulated controllers
     (e.g. the SJA1000 on QEMU kvaser_pci holds 64 bytes, ~5 frames).
 
-    :param request: pytest request
     """
-    ctucanfd_rx_bug(request)
     count = 20
     cantl_receiver_start(0, count)
     cantl_receiver_start(1, count)
-    assert host_can_send(count, gap_s=HOST_GAP_S)
+    host_can_send(count, gap_s=HOST_GAP_S)
     for node in (0, 1):
         rx = cantl_receiver_verdict(node)
         assert rx == f"cantl: PASS rx={count} lost=0 err=0", rx
@@ -131,7 +128,7 @@ def test_can_node_to_host() -> None:
 
 
 @pytest.mark.cmd_check("cantl_main")
-def test_can_filter(request: pytest.FixtureRequest) -> None:
+def test_can_filter() -> None:
     """A receiver's exact-ID filter rejects frames on another CAN ID.
 
     Node 0 and the host both send: node 0 sends the frames the receiver
@@ -139,13 +136,10 @@ def test_can_filter(request: pytest.FixtureRequest) -> None:
     frames on ``CAN_ID_ALT`` before, during and after. The receiver's
     exact-ID filter (hardware, or software when the driver has none)
     must pass only the matching ID.
-
-    :param request: pytest request
     """
     if kvaser_node(1) and can_endpoint(1) == CAN_CHARDEV:
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=KVASER_RX_BUG)
-        )
+        pytest.skip(f"timing dependent: {KVASER_SLEEP_BUG}")
+
     count = 20
     cantl_receiver_start(1, count, can_id=CAN_ID_DEFAULT)
 

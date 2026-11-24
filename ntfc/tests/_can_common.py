@@ -56,20 +56,19 @@ EXACT_ID_MASK = CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG
 TX_VERDICT_RE = r"cantl: (PASS|FAIL) tx=[^\r\n]*[\r\n]"
 RX_VERDICT_RE = r"cantl: (PASS|FAIL) rx=[^\r\n]*[\r\n]"
 
-CTUCANFD_RX_INT_BUG = (
-    "drivers/can/ctucanfd_pci.c:1614: ctucanfd_sock_interrupt() leaves RX "
-    "interrupts disabled for a core of the card that had no RX event "
-    "(ctucanfd_interrupt() disables them on all cores of the shared IRQ); "
-    "only ctucanfd_sock_recv() re-enables them, so that core misses frames "
-    "until RX work runs for another reason"
+KVASER_SLEEP_BUG = (
+    "drivers/can/kvaser_pci.c:536: kvaser_chrdev_shutdown() calls "
+    "kvaser_sleep() (:380), which writes SJA1000_SLEEP_MODE, not "
+    "SJA1000_RESET_MODE, to the mode register: the controller keeps "
+    "receiving while the device is closed and the frames left in its RX "
+    "FIFO are read after the next open"
 )
 
-KVASER_RX_BUG = (
-    "drivers/can/kvaser_pci.c puts the SJA1000 in sleep mode, not reset "
-    "mode, while the device is down or closed, so QEMU's model keeps filling "
-    "its RX FIFO and stale frames come out after the next open; QEMU's "
-    "SJA1000 model also stores the data bytes of a remote frame but skips "
-    "none of them on Release Receive Buffer, which wedges its RX FIFO"
+QEMU_SJA1000_RTR_BUG = (
+    "QEMU hw/net/can/can_sja1000.c: frame2buff_pel() stores the data "
+    "bytes of a remote frame in the RX FIFO, but Release Receive Buffer "
+    "(can_sja_mem_write()) skips only its header, so every frame after a "
+    "remote frame with DLC > 0 is read at a wrong FIFO offset"
 )
 
 # (node, deadline) of cantl receivers started by the current test that may
@@ -291,14 +290,13 @@ def host_can_send(
     can_id: int = CAN_ID_DEFAULT,
     fd: bool = False,
     gap_s: float = 0.0,
-) -> bool:
+) -> None:
     """Send ``count`` cantl-pattern frames from the host.
 
     :param count: number of frames to send
     :param can_id: CAN ID to send with
     :param fd: send CAN FD frames (64-byte payload) instead of classic
     :param gap_s: delay between frames in seconds
-    :return: True if every frame was sent
     """
     length = CANFD_MAX_DLEN if fd else CAN_MAX_DLEN
     sock = host_can_socket(fd=fd)
@@ -309,7 +307,6 @@ def host_can_send(
                 time.sleep(gap_s)
     finally:
         sock.close()
-    return True
 
 
 def host_can_verify(
@@ -351,23 +348,3 @@ def host_can_verify(
     if expected < count:
         lost += count - expected
     return rx, lost, err
-
-
-def ctucanfd_rx_bug(
-    request: pytest.FixtureRequest, timing: bool = False
-) -> None:
-    """Mark a test hit by the CTU CAN FD RX interrupt bug on node 0.
-
-    :param request: pytest request of the running test
-    :param timing: the test passes or fails with interrupt timing, so skip
-     it instead of marking it a strict xfail
-    """
-    if not ctucanfd_node(0):
-        return
-
-    if timing:
-        pytest.skip(f"timing dependent: {CTUCANFD_RX_INT_BUG}")
-
-    request.applymarker(
-        pytest.mark.xfail(strict=True, reason=CTUCANFD_RX_INT_BUG)
-    )

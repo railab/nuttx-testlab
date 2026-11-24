@@ -368,10 +368,16 @@ def test_canopen_net_duplicate_bootup_state(net: Network) -> None:
 def test_canopen_net_bus_load(net: Network) -> None:
     """SYNC every 2 ms for 5 s: no PDO lost, no heartbeat timeout.
 
-    The master's SYNC period (``0x1006``) is changed over SDO.  Every
-    TPDO a node sends arrives at each peer in sequence (no gap, no
-    reordering) and no heartbeat timeout is recorded; the SYNC timing
-    itself is not checked, CiA 301 sets no tolerance for 0x1006.
+    The master's SYNC period (``0x1006``) is changed over SDO.  CiA 301,
+    Object 1006h: "This object defines the communication cycle period in
+    µs. This period defines the SYNC interval."; Synchronisation Object:
+    "The Synchronisation Object is broadcasted periodically by the SYNC
+    producer."  The SYNCs the host socket received (kernel timestamps)
+    inside a window of ``W`` seconds of the same clock must therefore
+    number ``W / period``; only the one SYNC next to each end of the
+    window may fall on either side of it.  Every TPDO a node sends
+    arrives at each peer in sequence (no gap, no reordering) and no
+    heartbeat timeout is recorded.
 
     :param net: network
     """
@@ -380,13 +386,23 @@ def test_canopen_net_bus_load(net: Network) -> None:
     net.download(MASTER_ID, 0x1006, 0, "<I", LOAD_SYNC_MS * 1000)
     time.sleep(0.2)
     mark = net.bus.log.mark()
+    start = time.time()
     time.sleep(LOAD_TIME_S)
-    end = net.bus.log.mark()
+    end = time.time()
+
+    # Frames are logged in reception order: once a SYNC stamped after
+    # the window is logged, so is every frame of the window
+
+    assert net.bus.log.wait_for(
+        mark, COB_SYNC, lambda f: f.ts > end
+    ), "no SYNC after the window"
     net.download(MASTER_ID, 0x1006, 0, "<I", SYNC_MS * 1000)
 
-    frames = net.bus.log.since(mark)[: end - mark]
-    syncs = [f for f in frames if f.can_id == COB_SYNC]
-    assert syncs, "the master sent no SYNC"
+    syncs = [
+        f for f in net.bus.log.since(mark, COB_SYNC) if start <= f.ts <= end
+    ]
+    expected = (end - start) / (LOAD_SYNC_MS / 1000)
+    assert abs(len(syncs) - expected) < 2, (len(syncs), expected)
     time.sleep(0.3)
     _check_pdo_rx(net, 1)
     for node_id in NUTTX_IDS:

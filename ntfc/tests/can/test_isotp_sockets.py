@@ -24,35 +24,12 @@ from contextlib import ExitStack, contextmanager
 from typing import Iterator, Tuple
 
 import pytest
-from _can_common import (
-    CTUCANFD_RX_INT_BUG,
-    canfd_supported,
-    ctucanfd_node,
-    host_can_socket,
-)
+from _can_common import canfd_supported, host_can_socket
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_CAN_ISOTP"),
     pytest.mark.cmd_check("isotptl_main"),
 ]
-
-#: Tests that fail on the CTU CAN FD node in every run.
-CTUCANFD_FAIL = {
-    "test_isotp_exchange",
-    "test_isotp_wait_dontwait",
-    "test_isotp_concurrent_sessions",
-    "test_isotp_completion_order",
-}
-
-#: Tests whose result on the CTU CAN FD node depends on interrupt timing.
-CTUCANFD_TIMING = {
-    "test_isotp_back_to_back",
-    "test_isotp_error_recovery[partial]",
-    "test_isotp_error_recovery[no-fc]",
-    "test_isotp_error_recovery[sequence]",
-    "test_isotp_large_pdu",
-    "test_isotp_socket_api",
-}
 
 
 @pytest.fixture(autouse=True)
@@ -70,27 +47,6 @@ def _require_canfd(request: pytest.FixtureRequest) -> None:
             "target has no CAN FD capable CAN driver "
             "(e.g. CONFIG_CAN_KVASER is classic-only)"
         )
-
-
-@pytest.fixture(autouse=True)
-def _ctucanfd_bug(request: pytest.FixtureRequest) -> None:
-    """Mark the cases broken by the CTU CAN FD RX bug on that driver.
-
-    Cases that always fail are strict xfails; cases that pass or fail
-    with interrupt timing are skipped.
-
-    :param request: pytest request of the running test
-    """
-    names = {request.node.name, request.node.originalname}
-    if not ctucanfd_node(0):
-        return
-
-    if names & CTUCANFD_FAIL:
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=CTUCANFD_RX_INT_BUG)
-        )
-    elif names & CTUCANFD_TIMING:
-        pytest.skip(f"timing dependent: {CTUCANFD_RX_INT_BUG}")
 
 
 def _payload(seed: int, length: int) -> bytes:

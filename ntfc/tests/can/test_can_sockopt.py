@@ -26,7 +26,6 @@ import re
 from typing import List, Tuple
 
 import pytest
-from _can_common import ctucanfd_rx_bug
 from _canopt_common import (  # noqa: F401 - canopt_env is a fixture
     CAN_EFF_FLAG,
     CAN_EFF_MASK,
@@ -59,6 +58,13 @@ pytestmark = [
 
 EXACT = CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG
 SNDBUF_ID = 0x5B0
+
+BUFFERED_SENT_STAT_BUG = (
+    "net/can/can_raw.c:1305: can_raw_sendmsg() of "
+    "CONFIG_NET_CAN_WRITE_BUFFERS and its psock_send_eventhandler() "
+    "(:1187) never increment g_netstats.can.sent; only the unbuffered "
+    "can_raw_sendmsg() does (:1137)"
+)
 
 # (canopt filter options, filter list) per CAN_RAW_FILTER case
 
@@ -178,16 +184,14 @@ def test_can_loopback(loopback: int, recv_own: int) -> None:
     assert ret.startswith("canopt: PASS loopback"), ret
 
 
-def test_can_nonblock_poll(request: pytest.FixtureRequest) -> None:
+def test_can_nonblock_poll() -> None:
     """Nonblocking I/O, poll() and select() on a CAN socket.
 
     EAGAIN on an empty socket (O_NONBLOCK and MSG_DONTWAIT), poll() idle
     timeout and POLLOUT, a nonblocking write that reaches the host, then
     select() and poll() wake-ups for two host frames.
 
-    :param request: pytest request
     """
-    ctucanfd_rx_bug(request)
     sock = host_socket()
     try:
         canopt_start(0, "poll can0")
@@ -209,7 +213,7 @@ def test_can_poll_hup() -> None:
     the open file description and would be diagnosed by a return of -1
     from a read() or write() call on the file descriptor shall be
     reported as a POLLERR event."  A read() on a socket
-    whose interface went down fails (Linux SocketCAN: ENETDOWN).
+    whose interface went down fails.
     """
     core = pytest.products[0].core(0)
     canopt_start(0, "hup can0")
@@ -217,11 +221,12 @@ def test_can_poll_hup() -> None:
         out = core.sendCommandReadUntilPattern(
             "ifdown can0", pattern=VERDICT_RE, timeout=15
         ).output
-        canopt_forget(0)
     finally:
         assert core.sendCommand("ifup can0", "OK", timeout=10) == 0
 
     ret = verdict_of(out)
+    if ret:
+        canopt_forget(0)
     assert ret.startswith("canopt: PASS hup"), ret
 
 
@@ -255,10 +260,7 @@ def test_can_stats(request: pytest.FixtureRequest) -> None:
     """
     if kv_value(0, "CONFIG_NET_CAN_WRITE_BUFFERS"):
         request.applymarker(
-            pytest.mark.xfail(
-                strict=True,
-                reason="net/can: buffered send does not count sent frames",
-            )
+            pytest.mark.xfail(strict=True, reason=BUFFERED_SENT_STAT_BUG)
         )
 
     count = 5

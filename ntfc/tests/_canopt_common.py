@@ -34,7 +34,7 @@ import time
 from typing import Any, Iterator, List, NamedTuple, Optional, Tuple
 
 import pytest
-from _can_common import CAN_CHARDEV, CAN_IFNAME, can_endpoint, ctucanfd_node
+from _can_common import CAN_CHARDEV, CAN_IFNAME, can_endpoint
 
 CAN_EFF_FLAG = 0x80000000
 CAN_RTR_FLAG = 0x40000000
@@ -52,9 +52,13 @@ KICK_ID = 0x7FD
 VERDICT_RE = r"canopt: (PASS|FAIL)[^\r\n]*[\r\n]"
 READY = "canopt: ready"
 
-# (node, deadline) of background canopt checks that may still run
+#: How long the cleanup waits for a check to end by its own timeout
+#: (``canopt -t``, default 10 s).
+EXIT_TIMEOUT_S = 30.0
 
-_PENDING: List[Tuple[int, float]] = []
+# (node, pid) of background canopt checks that printed no verdict yet
+
+_PENDING: List[Tuple[int, int]] = []
 
 
 class Frame(NamedTuple):
@@ -159,16 +163,6 @@ def filter_match(can_id: int, filters: List[Tuple[int, int]]) -> bool:
         if bool(fid & CAN_INV_FILTER) != hit:
             return True
     return False
-
-
-def xfail_on_ctucanfd(request: pytest.FixtureRequest, reason: str) -> None:
-    """Mark the running test xfail if node 0 uses the CTU CAN FD driver.
-
-    :param request: pytest request of the running test
-    :param reason: xfail reason
-    """
-    if ctucanfd_node(0):
-        request.applymarker(pytest.mark.xfail(strict=True, reason=reason))
 
 
 def chardev_node(node: int) -> bool:
@@ -344,36 +338,50 @@ def canopt_run(node: int, args: str, timeout: int = 30) -> str:
     return verdict_of(ret.output)
 
 
-def canopt_start(node: int, args: str, timeout_s: int = 20) -> None:
+def canopt_start(node: int, args: str) -> None:
     """Start ``canopt`` in the background and wait for ``canopt: ready``.
+
+    The check stays registered, with the PID NSH printed for it, until
+    its verdict is read; ``canopt_cleanup()`` ends what is left.
 
     :param node: product index
     :param args: canopt arguments (check, endpoint, options)
-    :param timeout_s: how long the check may run before it is drained
     """
-    ret = _core(node).sendCommand(f"canopt {args} &", READY, timeout=10)
-    assert ret == 0, f"canopt {args}: not ready"
-    _PENDING.append((node, time.monotonic() + timeout_s + 5))
+    ret = _core(node).sendCommandReadUntilPattern(
+        f"canopt {args} &", pattern=READY, timeout=10
+    )
+    # On SMP targets NSH can print its prompt into the middle of a line
+
+    out = re.sub(r"nsh> (?:\x1b\[K)?", "", str(ret.output))
+    found = re.search(r"canopt \[(\d+):", out)
+    assert found, f"canopt {args}: no PID in {out!r}"
+    _PENDING.append((node, int(found.group(1))))
+    assert READY in out, f"canopt {args}: not ready"
 
 
 def canopt_verdict(node: int, timeout: int = 30) -> str:
     """Read a background check's verdict line.
+
+    A check that printed no verdict stays registered for
+    ``canopt_cleanup()``.
 
     :param node: product index
     :param timeout: how long to wait for the verdict
     :return: verdict line or empty string
     """
     ret = _core(node).readUntilPattern(VERDICT_RE, timeout=timeout)
-    canopt_forget(node)
-    return verdict_of(ret.output)
+    verdict = verdict_of(ret.output)
+    if verdict:
+        canopt_forget(node)
+    return verdict
 
 
 def canopt_forget(node: int) -> None:
-    """Stop tracking a background check whose verdict was read elsewhere.
+    """Stop tracking a background check whose verdict was read.
 
     :param node: product index
     """
-    for i, (pending, _deadline) in enumerate(_PENDING):
+    for i, (pending, _pid) in enumerate(_PENDING):
         if pending == node:
             _PENDING.pop(i)
             break
@@ -389,25 +397,39 @@ def verdict_of(output: str) -> str:
     return found.group(0).rstrip("\r\n") if found else ""
 
 
-def canopt_cleanup() -> None:
-    """Make background checks left by a failed test finish.
+def _task_alive(node: int, pid: int) -> bool:
+    """Check whether a task still exists on a node.
 
-    Sends end markers and kick frames so blocked readers return, then
-    drains each check's verdict up to its deadline.
+    :param node: product index
+    :param pid: task PID
+    :return: True if ``/proc/<pid>`` exists
     """
-    if not _PENDING:
-        return
-    try:
-        host_send([Frame(MARKER_ID, 1), Frame(KICK_ID, 0)] * 3, gap_s=0.01)
-    except OSError:
-        pass
+    ret = _core(node).sendCommandReadUntilPattern(
+        f"ls /proc/{pid}", pattern=r"status|failed", timeout=10
+    )
+    return "status" in ret.output
+
+
+def canopt_cleanup() -> None:
+    """Wait until the background checks that printed no verdict are gone.
+
+    Every check ends by its own timeout.  The cleanup waits for the task
+    of each one to disappear, so that no reader of one test takes frames
+    of the next, and fails if a task is still there after
+    ``EXIT_TIMEOUT_S``.  A task blocked in ``read()`` is not killed
+    earlier: the next frame received after such a kill crashes the node.
+    """
+    alive = []
     while _PENDING:
-        node, deadline = _PENDING.pop()
-        remaining = max(1.0, deadline - time.monotonic())
-        try:
-            _core(node).readUntilPattern(VERDICT_RE, timeout=remaining)
-        except Exception:  # noqa: BLE001 - best-effort drain
-            pass
+        node, pid = _PENDING.pop()
+        deadline = time.monotonic() + EXIT_TIMEOUT_S
+        while _task_alive(node, pid):
+            if time.monotonic() > deadline:
+                _core(node).sendCommand(f"kill -9 {pid}", timeout=5)
+                alive.append((node, pid))
+                break
+
+    assert not alive, f"canopt tasks did not end: {alive}"
 
 
 def can_ifup_all() -> None:
