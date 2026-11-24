@@ -46,6 +46,8 @@
 #define FSTL_EXTEND_SIZE 2048
 #define FSTL_EXTEND_GROW 1024
 #define FSTL_IOV_SIZE  100
+#define FSTL_TWOFD_BLOCK 4096  /* A multiple of every sector size */
+#define FSTL_TWOFD_PART  100   /* Less than a sector */
 
 /****************************************************************************
  * Private Types
@@ -488,6 +490,128 @@ fail:
  * to its start: the old data stays, the new bytes are zeros and the
  * position does not move.
  */
+
+/* Count the bytes of len at pos that fd does not read as value */
+
+static size_t fstl_stale(int fd, FAR uint8_t *buf, size_t len, off_t pos,
+                         uint8_t value)
+{
+  size_t stale = 0;
+  size_t i;
+
+  if (pread(fd, buf, len, pos) != (ssize_t)len)
+    {
+      return len;
+    }
+
+  for (i = 0; i < len; i++)
+    {
+      if (buf[i] != value)
+        {
+          stale++;
+        }
+    }
+
+  return stale;
+}
+
+/* twofd: what one descriptor wrote is read through another descriptor
+ * that read the same sector before: for a write of a part of a sector
+ * (partial) and for a write of whole sectors (whole).  The verdict counts
+ * the bytes read with their old value.
+ */
+
+int fstl_twofd(FAR const char *path)
+{
+  FAR uint8_t *buf;
+  size_t partial;
+  size_t whole;
+  int ret = -1;
+  int wfd;
+  int rfd;
+
+  buf = malloc(FSTL_TWOFD_BLOCK);
+  if (buf == NULL)
+    {
+      return fstl_fail("twofd", "malloc", -1);
+    }
+
+  wfd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  if (wfd < 0)
+    {
+      free(buf);
+      return fstl_fail("twofd", "open", wfd);
+    }
+
+  rfd = open(path, O_RDONLY);
+  if (rfd < 0)
+    {
+      fstl_fail("twofd", "open2", rfd);
+      goto out;
+    }
+
+  /* Three blocks of zeros, read through both descriptors */
+
+  memset(buf, 0, FSTL_TWOFD_BLOCK);
+  if (write(wfd, buf, FSTL_TWOFD_BLOCK) != FSTL_TWOFD_BLOCK ||
+      write(wfd, buf, FSTL_TWOFD_BLOCK) != FSTL_TWOFD_BLOCK ||
+      write(wfd, buf, FSTL_TWOFD_BLOCK) != FSTL_TWOFD_BLOCK)
+    {
+      fstl_fail("twofd", "write", -1);
+      goto out;
+    }
+
+  if (fstl_stale(rfd, buf, FSTL_TWOFD_PART, 10, 0) != 0 ||
+      fstl_stale(wfd, buf, FSTL_TWOFD_PART, 10, 0) != 0)
+    {
+      fstl_fail("twofd", "read", -1);
+      goto out;
+    }
+
+  /* A part of the sector that the reader has just read */
+
+  memset(buf, FSTL_FILL, FSTL_TWOFD_PART);
+  if (pwrite(wfd, buf, FSTL_TWOFD_PART, 10) != FSTL_TWOFD_PART)
+    {
+      fstl_fail("twofd", "pwrite", -1);
+      goto out;
+    }
+
+  partial = fstl_stale(rfd, buf, FSTL_TWOFD_PART, 10, FSTL_FILL);
+
+  /* Whole sectors, one of which the reader has just read */
+
+  if (fstl_stale(rfd, buf, FSTL_TWOFD_PART, FSTL_TWOFD_BLOCK + 10, 0) != 0)
+    {
+      fstl_fail("twofd", "read2", -1);
+      goto out;
+    }
+
+  memset(buf, FSTL_FILL, FSTL_TWOFD_BLOCK);
+  if (pwrite(wfd, buf, FSTL_TWOFD_BLOCK, FSTL_TWOFD_BLOCK) !=
+      FSTL_TWOFD_BLOCK)
+    {
+      fstl_fail("twofd", "pwrite2", -1);
+      goto out;
+    }
+
+  whole = fstl_stale(rfd, buf, FSTL_TWOFD_PART, FSTL_TWOFD_BLOCK + 10,
+                     FSTL_FILL);
+
+  printf("fstl: %s twofd partial=%zu whole=%zu\n",
+         partial == 0 && whole == 0 ? "PASS" : "FAIL", partial, whole);
+  ret = partial == 0 && whole == 0 ? OK : -1;
+
+out:
+  if (rfd >= 0)
+    {
+      close(rfd);
+    }
+
+  close(wfd);
+  free(buf);
+  return ret;
+}
 
 int fstl_extend(FAR const char *path)
 {

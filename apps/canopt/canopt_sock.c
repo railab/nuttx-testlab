@@ -782,8 +782,11 @@ static int canopt_fdrx(FAR struct canopt_args_s *args)
  * Description:
  *   A classic (non CAN FD) socket on a bus carrying both tables must see
  *   only the classic frames, each read returning exactly CAN_MTU.  With
- *   -q the frames are left to queue on the socket before the first read,
- *   otherwise the reader is blocked in read() when each frame arrives.
+ *   -q the frames are left to queue on the socket before the first read:
+ *   the reader waits for the host's end marker on a second socket that
+ *   filters for it alone.  Otherwise the reader is blocked in read() when
+ *   each frame arrives.  A read() that gets no frame within the -t timeout
+ *   (SO_RCVTIMEO) ends the check.
  *
  ****************************************************************************/
 
@@ -791,7 +794,10 @@ static int canopt_legacy(FAR struct canopt_args_s *args)
 {
   FAR const struct canopt_frame_s *entry;
   struct canfd_frame frame;
+  struct can_filter filter;
   struct timespec start;
+  struct timeval tv;
+  struct pollfd pfd;
   ssize_t nbytes;
   bool marker = false;
   int classic = 0;
@@ -799,25 +805,58 @@ static int canopt_legacy(FAR struct canopt_args_s *args)
   int bad = 0;
   bool pass;
   int sd;
+  int sm;
 
   sd = canopt_sock_open(args->endpoint, false);
-  if (sd < 0)
+  sm = canopt_sock_open(args->endpoint, false);
+  if (sd < 0 || sm < 0)
     {
       return canopt_fail(args->cmd, "open");
     }
 
+  tv.tv_sec  = args->timeout;
+  tv.tv_usec = 0;
+  if (setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+      return canopt_fail(args->cmd, "rcvtimeo");
+    }
+
+  filter.can_id   = CANOPT_MARKER_ID;
+  filter.can_mask = CANOPT_EXACT_MASK;
+  if (setsockopt(sm, SOL_CAN_RAW, CAN_RAW_FILTER, &filter,
+                 sizeof(filter)) < 0)
+    {
+      return canopt_fail(args->cmd, "marker-filter");
+    }
+
   canopt_ready();
+  clock_gettime(CLOCK_MONOTONIC, &start);
 
   if (args->queued)
     {
-      usleep(1000 * 1000);
-    }
+      /* Everything sent before the marker is queued on sd by then */
 
-  clock_gettime(CLOCK_MONOTONIC, &start);
+      pfd.fd     = sm;
+      pfd.events = POLLIN;
+      if (poll(&pfd, 1, args->timeout * 1000) != 1)
+        {
+          printf("canopt: FAIL legacy no-marker\n");
+          return EXIT_FAILURE;
+        }
+
+      clock_gettime(CLOCK_MONOTONIC, &start);
+    }
 
   while (!marker && canopt_remain_ms(&start, args->timeout) > 0)
     {
       nbytes = read(sd, &frame, sizeof(frame));
+      if (nbytes < 0 && errno == EAGAIN)
+        {
+          printf("canopt: read timed out\n");
+          bad++;
+          break;
+        }
+
       if (nbytes != CAN_MTU)
         {
           printf("canopt: read returned %zd\n", nbytes);
@@ -828,11 +867,6 @@ static int canopt_legacy(FAR struct canopt_args_s *args)
       if (frame.can_id == CANOPT_MARKER_ID)
         {
           marker = true;
-          continue;
-        }
-
-      if (frame.can_id == CANOPT_KICK_ID)
-        {
           continue;
         }
 
@@ -853,6 +887,7 @@ static int canopt_legacy(FAR struct canopt_args_s *args)
     }
 
   close(sd);
+  close(sm);
 
   /* Queued frames must fit the receive buffer: with -q the host sends
    * only the first -n classic frames.

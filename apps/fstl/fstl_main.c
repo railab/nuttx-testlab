@@ -94,6 +94,7 @@ static void fstl_usage(FAR const char *progname)
           "  write  <path> <size>       write the pattern (-s -b -a)\n"
           "  verify <path> <size>       read the pattern back (-s -b)\n"
           "  pio    <path>              pread/pwrite/lseek\n"
+          "  twofd  <path>              write and read, two descriptors\n"
           "  trunc  <path>              ftruncate/truncate/O_TRUNC\n"
           "  append <path>              O_APPEND\n"
           "  sync   <path>              fsync\n"
@@ -319,6 +320,10 @@ int main(int argc, FAR char *argv[])
   else if (strcmp(check, "pio") == 0 && nargs == 1)
     {
       ret = fstl_pio(args[0]);
+    }
+  else if (strcmp(check, "twofd") == 0 && nargs == 1)
+    {
+      ret = fstl_twofd(args[0]);
     }
   else if (strcmp(check, "trunc") == 0 && nargs == 1)
     {

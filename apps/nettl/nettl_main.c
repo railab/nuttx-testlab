@@ -60,8 +60,6 @@
 #define NETTL_UDP_COUNT        100
 #define NETTL_UDP_LEN          512
 #define NETTL_TIMEOUT          10
-#define NETTL_UDP_RETRIES      3
-#define NETTL_UDP_STALE_MAX    16
 #define NETTL_UDP_END          0xffffffffu
 #define NETTL_UDP_COUNT_MAX    0xfffffffeu
 #define NETTL_UDP_HDR          4
@@ -102,6 +100,7 @@ struct nettl_args_s
   bool        nbconnect;
   bool        peerclosed;
   bool        iovcheck;
+  bool        msgsize;
   bool        sink;
   int         rate;
   int         rcvbuf;
@@ -198,13 +197,19 @@ static bool nettl_parse_uint(FAR const char *arg, unsigned long minval,
   return true;
 }
 
-static void nettl_settimeout(int sd, int timeout)
+static int nettl_settimeout(int sd, int timeout)
 {
   struct timeval tv;
 
   tv.tv_sec  = timeout;
   tv.tv_usec = 0;
-  setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  if (setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+      printf("nettl: setsockopt SO_RCVTIMEO failed %d\n", errno);
+      return -1;
+    }
+
+  return 0;
 }
 
 /* Fill the socket address for the server (any address) or the client
@@ -364,7 +369,12 @@ static int nettl_socket(FAR const struct nettl_args_s *args,
         }
     }
 
-  nettl_settimeout(sd, args->timeout);
+  if (nettl_settimeout(sd, args->timeout) < 0)
+    {
+      close(sd);
+      return -1;
+    }
+
   return sd;
 }
 
@@ -431,7 +441,12 @@ static int nettl_tcp_server(FAR const struct nettl_args_s *args)
       return EXIT_FAILURE;
     }
 
-  nettl_settimeout(cd, args->timeout);
+  if (nettl_settimeout(cd, args->timeout) < 0)
+    {
+      close(cd);
+      printf("nettl: FAIL rx=0 err=1\n");
+      return EXIT_FAILURE;
+    }
 
   if (args->write_only)
     {
@@ -1039,7 +1054,12 @@ static int nettl_udp_server(FAR const struct nettl_args_s *args)
                          (size_t)seq * (ret - NETTL_UDP_HDR),
                          ret - NETTL_UDP_HDR);
       rx++;
-      sendto(sd, args->rxbuf, ret, 0, (FAR struct sockaddr *)&from, fromlen);
+      if (sendto(sd, args->rxbuf, ret, 0, (FAR struct sockaddr *)&from,
+                 fromlen) != ret)
+        {
+          printf("nettl: sendto failed %d\n", errno);
+          err++;
+        }
     }
 
   close(sd);
@@ -1069,13 +1089,9 @@ static int nettl_udp_sink(FAR const struct nettl_args_s *args)
       return EXIT_FAILURE;
     }
 
-  /* Without CONFIG_NET_RECV_BUFSIZE the queue has no limit and there is
-   * no SO_RCVBUF option.
-   */
-
   if (args->rcvbuf > 0 &&
       setsockopt(sd, SOL_SOCKET, SO_RCVBUF, &args->rcvbuf,
-                 sizeof(args->rcvbuf)) < 0 && errno != ENOPROTOOPT)
+                 sizeof(args->rcvbuf)) < 0)
     {
       printf("nettl: SO_RCVBUF failed %d\n", errno);
       close(sd);
@@ -1133,7 +1149,12 @@ static int nettl_elapsed_ms(FAR const struct timespec *start)
 }
 
 /* Send args->count datagrams without waiting for echoes, paced to
- * args->rate datagrams per second (0: as fast as possible).
+ * args->rate datagrams per second (0: as fast as possible), then the end
+ * marker.  POSIX sendto() may fail with ENOBUFS ("Insufficient resources
+ * were available in the system to perform the operation") or ENOMEM
+ * ("Insufficient memory was available to fulfill the request"): such a
+ * datagram is counted as busy.  Any other failure, including EAGAIN on
+ * this blocking socket, is an error, and so is a run that sent nothing.
  */
 
 static int nettl_udp_flood(FAR const struct nettl_args_s *args)
@@ -1146,7 +1167,6 @@ static int nettl_udp_flood(FAR const struct nettl_args_s *args)
   size_t err  = 0;
   uint32_t seq;
   int sd;
-  int i;
 
   sd = nettl_socket(args, &sa, &salen);
   if (sd < 0)
@@ -1172,12 +1192,13 @@ static int nettl_udp_flood(FAR const struct nettl_args_s *args)
       if (sendto(sd, args->txbuf, args->len + NETTL_UDP_HDR, 0,
                  (FAR struct sockaddr *)&sa, salen) < 0)
         {
-          if (errno == EAGAIN || errno == ENOMEM || errno == ENOBUFS)
+          if (errno == ENOMEM || errno == ENOBUFS)
             {
               busy++;
             }
           else
             {
+              printf("nettl: sendto failed %d\n", errno);
               err++;
             }
 
@@ -1187,20 +1208,18 @@ static int nettl_udp_flood(FAR const struct nettl_args_s *args)
       tx++;
     }
 
-  /* Let the receiver drain, then send the end marker */
-
-  usleep(500000);
   nettl_put32(args->txbuf, NETTL_UDP_END);
-  for (i = 0; i < NETTL_UDP_RETRIES; i++)
+  if (sendto(sd, args->txbuf, NETTL_UDP_HDR, 0,
+             (FAR struct sockaddr *)&sa, salen) < 0)
     {
-      sendto(sd, args->txbuf, NETTL_UDP_HDR, 0,
-             (FAR struct sockaddr *)&sa, salen);
+      printf("nettl: end marker sendto failed %d\n", errno);
+      err++;
     }
 
   close(sd);
   printf("nettl: %s tx=%zu rx=0 busy=%zu err=%zu\n",
-         err == 0 ? "PASS" : "FAIL", tx, busy, err);
-  return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+         (tx > 0 && err == 0) ? "PASS" : "FAIL", tx, busy, err);
+  return (tx > 0 && err == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 /* Send and receive on one TCP connection at the same time, verifying
@@ -1453,19 +1472,60 @@ static int nettl_udp_server_reuse(FAR const struct nettl_args_s *args)
   return err == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+/****************************************************************************
+ * Name: nettl_msgsize
+ *
+ * Description:
+ *   One sendto() of a datagram that the socket cannot send all at once
+ *   must fail with EMSGSIZE.
+ *
+ ****************************************************************************/
+
+static int nettl_msgsize(FAR const struct nettl_args_s *args)
+{
+  struct sockaddr_storage sa;
+  socklen_t salen;
+  ssize_t ret;
+  bool pass;
+  int err;
+  int sd;
+
+  sd = nettl_socket(args, &sa, &salen);
+  if (sd < 0)
+    {
+      printf("nettl: FAIL tx=0 rx=0 lost=0 err=1 msgsize=0\n");
+      return EXIT_FAILURE;
+    }
+
+  nettl_put32(args->txbuf, 0);
+  nettl_fill(args->txbuf + NETTL_UDP_HDR, 0, args->len);
+  ret = sendto(sd, args->txbuf, args->len + NETTL_UDP_HDR, 0,
+               (FAR struct sockaddr *)&sa, salen);
+  err = ret < 0 ? errno : 0;
+  close(sd);
+
+  pass = ret < 0 && err == EMSGSIZE;
+  printf("nettl: %s tx=%d rx=0 lost=0 err=%d msgsize=%d ret=%zd\n",
+         pass ? "PASS" : "FAIL", ret < 0 ? 0 : 1, pass ? 0 : 1, err, ret);
+  return pass ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+/* Send args->count datagrams, each one once, and wait for the echo of
+ * each before sending the next.  An echo that does not arrive within the
+ * receive timeout is lost; a failed sendto() or recv() and any datagram
+ * other than the awaited echo (a duplicate or a late echo) is an error.
+ */
+
 static int nettl_udp_client(FAR const struct nettl_args_s *args)
 {
   struct sockaddr_storage sa;
   socklen_t salen;
+  size_t tx   = 0;
   size_t rx   = 0;
   size_t lost = 0;
   size_t err  = 0;
   ssize_t ret;
   size_t seq;
-  int retry;
-  int stale;
-  bool matched;
-  bool badlen;
   int sd;
 
   sd = nettl_socket(args, &sa, &salen);
@@ -1480,74 +1540,69 @@ static int nettl_udp_client(FAR const struct nettl_args_s *args)
       nettl_put32(args->txbuf, seq);
       nettl_fill(args->txbuf + NETTL_UDP_HDR, seq * args->len, args->len);
 
-      matched = false;
-      badlen  = false;
-
-      for (retry = 0; retry < NETTL_UDP_RETRIES && !matched; retry++)
+      if (sendto(sd, args->txbuf, args->len + NETTL_UDP_HDR, 0,
+                 (FAR struct sockaddr *)&sa, salen) < 0)
         {
-          if (sendto(sd, args->txbuf, args->len + NETTL_UDP_HDR, 0,
-                     (FAR struct sockaddr *)&sa, salen) < 0)
-            {
-              continue;  /* send failure consumes this retry */
-            }
-
-          /* Drain late duplicates of earlier sequence numbers without
-           * consuming a retry; only a timeout/recv error or exhausting
-           * the stale-datagram bound below ends this attempt.
-           */
-
-          for (stale = 0; stale < NETTL_UDP_STALE_MAX; stale++)
-            {
-              ret = recv(sd, args->rxbuf, NETTL_IOBUFSIZE, 0);
-              if (ret < 0)
-                {
-                  break;  /* timeout/error consumes this retry */
-                }
-
-              if ((size_t)ret >= NETTL_UDP_HDR &&
-                  nettl_get32(args->rxbuf) == seq)
-                {
-                  matched = true;
-                  badlen  = (ret != (ssize_t)(args->len + NETTL_UDP_HDR));
-                  break;
-                }
-
-              /* Stale datagram for a different seq: discard and retry
-               * the recv() without resending or using up a retry.
-               */
-            }
-        }
-
-      if (!matched)
-        {
-          lost++;
+          printf("nettl: sendto %zu failed %d\n", seq, errno);
+          err++;
           continue;
         }
 
-      if (badlen)
-        {
-          err++;
-        }
-      else
-        {
-          err += nettl_check(args->rxbuf + NETTL_UDP_HDR, seq * args->len,
-                             args->len);
-        }
+      tx++;
 
-      rx++;
+      for (; ; )
+        {
+          ret = recv(sd, args->rxbuf, NETTL_IOBUFSIZE, 0);
+          if (ret < 0)
+            {
+              if (errno == EAGAIN || errno == EWOULDBLOCK)
+                {
+                  lost++;
+                }
+              else
+                {
+                  printf("nettl: recv %zu failed %d\n", seq, errno);
+                  err++;
+                }
+
+              break;
+            }
+
+          if ((size_t)ret < NETTL_UDP_HDR ||
+              nettl_get32(args->rxbuf) != seq)
+            {
+              printf("nettl: unexpected datagram while waiting for %zu\n",
+                     seq);
+              err++;
+              continue;
+            }
+
+          if ((size_t)ret != args->len + NETTL_UDP_HDR)
+            {
+              err++;
+            }
+          else
+            {
+              err += nettl_check(args->rxbuf + NETTL_UDP_HDR,
+                                 seq * args->len, args->len);
+            }
+
+          rx++;
+          break;
+        }
     }
 
   nettl_put32(args->txbuf, NETTL_UDP_END);
-  for (retry = 0; retry < NETTL_UDP_RETRIES; retry++)
+  if (sendto(sd, args->txbuf, NETTL_UDP_HDR, 0,
+             (FAR struct sockaddr *)&sa, salen) < 0)
     {
-      sendto(sd, args->txbuf, NETTL_UDP_HDR, 0,
-             (FAR struct sockaddr *)&sa, salen);
+      printf("nettl: end marker sendto failed %d\n", errno);
+      err++;
     }
 
   close(sd);
   printf("nettl: %s tx=%zu rx=%zu lost=%zu err=%zu\n",
-         (lost == 0 && err == 0) ? "PASS" : "FAIL",
-         args->count, rx, lost, err);
+         (lost == 0 && err == 0) ? "PASS" : "FAIL", tx, rx, lost, err);
   return (lost == 0 && err == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
@@ -1557,7 +1612,8 @@ static void nettl_usage(FAR const char *progname)
          "[-l len] [-t sec] [-w] [-D sec] [-L n [-E]] [-C n] "
          "[-S [-R bytes]]\n", progname);
   printf("       %s -c addr [-6] [-u] [-p port] [-n count] [-l len] "
-         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-X] [-I]\n", progname);
+         "[-t sec] [-k idle [-P]] [-r pps] [-d] [-N] [-X] [-I] [-M]\n",
+         progname);
   printf("       %s -B ifname\n", progname);
 #ifdef CONFIG_NET_VSOCK
   printf("       %s -V -s [-A] [-p port] [-n count] [-t sec] [-w]\n",
@@ -1598,6 +1654,11 @@ static int nettl_run(FAR struct nettl_args_s *args)
           return nettl_iov_overflow(args);
         }
 
+      if (args->msgsize)
+        {
+          return nettl_msgsize(args);
+        }
+
       return args->flood ? nettl_udp_flood(args) : nettl_udp_client(args);
     }
 
@@ -1626,7 +1687,7 @@ int main(int argc, FAR char *argv[])
   args.timeout = NETTL_TIMEOUT;
 
   while ((opt = getopt(argc, argv,
-                       "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IB:VAb:"))
+                       "sc:6ug:p:n:l:t:wD:L:EC:k:Pr:dNXSR:IMB:VAb:"))
          != ERROR)
     {
       unsigned long val;
@@ -1712,6 +1773,9 @@ int main(int argc, FAR char *argv[])
             break;
           case 'I':
             args.iovcheck = true;
+            break;
+          case 'M':
+            args.msgsize = true;
             break;
           case 'S':
             args.sink = true;
@@ -1874,6 +1938,7 @@ int main(int argc, FAR char *argv[])
       (args.nbconnect && (args.server || args.udp)) ||
       (args.peerclosed && (args.server || args.udp)) ||
       (args.iovcheck && (args.server || !args.udp)) ||
+      (args.msgsize && (args.server || !args.udp)) ||
       (args.sink && (!args.server || !args.udp || args.reuse > 0)) ||
       (args.rcvbuf > 0 && !args.sink))
     {

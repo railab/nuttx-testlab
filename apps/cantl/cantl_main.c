@@ -390,10 +390,11 @@ static int cantl_chardev_open(FAR const char *devpath)
 /* Install an exact-ID hardware filter if the lower-half driver supports
  * CANIOC_ADD_STDFILTER.  Drivers that return -ENOTTY (e.g. the sim
  * character driver, arch/sim/src/sim/sim_canchar.c) have no filtering of
- * their own, so the caller must then filter in software instead.
+ * their own, so the caller must then filter in software instead.  Any
+ * other error is a failure of a driver that implements the ioctl.
  */
 
-static bool cantl_chardev_filter_set(int fd, uint32_t id)
+static int cantl_chardev_filter_set(int fd, uint32_t id, FAR bool *swfilter)
 {
   struct canioc_stdfilter_s sf;
   int ret;
@@ -405,14 +406,19 @@ static bool cantl_chardev_filter_set(int fd, uint32_t id)
   sf.sf_prio = CAN_MSGPRIO_HIGH;
 
   ret = ioctl(fd, CANIOC_ADD_STDFILTER, (unsigned long)((uintptr_t)&sf));
-  if (ret < 0)
+  if (ret < 0 && errno != ENOTTY)
     {
-      printf("cantl: no chardev hw filter (%d), filtering id in "
-             "software\n", errno);
-      return true;
+      printf("cantl: CANIOC_ADD_STDFILTER failed %d\n", errno);
+      return ERROR;
     }
 
-  return false;
+  *swfilter = ret < 0;
+  if (*swfilter)
+    {
+      printf("cantl: no chardev hw filter, filtering id in software\n");
+    }
+
+  return OK;
 }
 
 static int cantl_chardev_send(FAR const struct cantl_args_s *args)
@@ -542,7 +548,12 @@ static int cantl_chardev_recv(FAR const struct cantl_args_s *args)
       return EXIT_FAILURE;
     }
 
-  swfilter = cantl_chardev_filter_set(fd, args->id);
+  if (cantl_chardev_filter_set(fd, args->id, &swfilter) < 0)
+    {
+      close(fd);
+      printf("cantl: FAIL rx=0 lost=0 err=1\n");
+      return EXIT_FAILURE;
+    }
 
   printf("cantl: listening\n");
   fflush(stdout);

@@ -59,18 +59,24 @@ static int sertl_elapsed_ms(FAR const struct timespec *start)
                (now.tv_nsec - start->tv_nsec) / 1000000);
 }
 
-/* Disable the line discipline so that every byte is echoed unchanged */
+/* Disable the line discipline so that every byte is echoed unchanged.
+ * Returns 0, or -1 with errno set by tcgetattr() or tcsetattr().
+ */
 
-static void sertl_raw(int fd)
+static int sertl_raw(int fd)
 {
 #ifdef CONFIG_SERIAL_TERMIOS
   struct termios tio;
 
-  if (tcgetattr(fd, &tio) == 0)
+  if (tcgetattr(fd, &tio) < 0)
     {
-      cfmakeraw(&tio);
-      tcsetattr(fd, TCSANOW, &tio);
+      return -1;
     }
+
+  cfmakeraw(&tio);
+  return tcsetattr(fd, TCSANOW, &tio);
+#else
+  return 0;
 #endif
 }
 
@@ -122,7 +128,13 @@ int main(int argc, FAR char *argv[])
       return EXIT_FAILURE;
     }
 
-  sertl_raw(fd);
+  if (sertl_raw(fd) < 0)
+    {
+      printf("sertl: FAIL dev=%s termios errno=%d\n", dev, errno);
+      close(fd);
+      return EXIT_FAILURE;
+    }
+
   printf("sertl: ready dev=%s\n", dev);
   clock_gettime(CLOCK_MONOTONIC, &start);
 

@@ -928,6 +928,7 @@ int fstl_umount(FAR const char *target, FAR const char *expect)
 int fstl_exec(int argc, FAR char *argv[])
 {
   FAR char *const *args;
+  FAR const char *expect;
   pid_t pid;
   int status;
   bool experr;
@@ -940,8 +941,9 @@ int fstl_exec(int argc, FAR char *argv[])
       return -1;
     }
 
-  want = atoi(argv[1]);
-  experr = isalpha((unsigned char)argv[1][0]);
+  expect = argv[1];
+  want   = atoi(expect);
+  experr = isalpha((unsigned char)expect[0]);
 
   /* argv[1] is replaced by argv[0], so the child gets argv[0] = path */
 
@@ -964,11 +966,11 @@ int fstl_exec(int argc, FAR char *argv[])
       if (ret == 0)
         {
           waitpid(pid, &status, 0);
-          printf("fstl: FAIL exec spawned want=%s\n", argv[1]);
+          printf("fstl: FAIL exec spawned want=%s\n", expect);
           return -1;
         }
 
-      return fstl_expect("exec", "spawn", ret, argv[1]);
+      return fstl_expect("exec", "spawn", ret, expect);
     }
 
   if (ret != 0)

@@ -212,11 +212,17 @@ static bool exittl_keep(void)
 }
 
 /* wait: SA_NOCLDWAIT and SIGCHLD set to SIG_IGN, each followed by the
- * default action again
+ * default action again.  Without CONFIG_SIG_DEFAULT SIG_IGN is SIG_DFL:
+ * the SIG_IGN case cannot be built and the verdict says so.
  */
 
 static int exittl_wait(void)
 {
+#ifdef CONFIG_SIG_DEFAULT
+  FAR const char *ignore = "run";
+#else
+  FAR const char *ignore = "notbuilt";
+#endif
   bool pass;
 
   exittl_sigchld(SIG_DFL, SA_NOCLDWAIT);
@@ -231,7 +237,7 @@ static int exittl_wait(void)
   pass = exittl_keep() && pass;
 #endif
 
-  printf("exittl: %s wait\n", pass ? "PASS" : "FAIL");
+  printf("exittl: %s wait ignore=%s\n", pass ? "PASS" : "FAIL", ignore);
   return pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 #endif /* CONFIG_SCHED_WAITPID */

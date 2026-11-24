@@ -66,6 +66,7 @@ int fstl_write(FAR const char *path, off_t size,
 int fstl_verify(FAR const char *path, off_t size,
                 FAR const struct fstl_opts_s *opts);
 int fstl_pio(FAR const char *path);
+int fstl_twofd(FAR const char *path);
 int fstl_trunc(FAR const char *path);
 int fstl_append(FAR const char *path);
 int fstl_sync(FAR const char *path);

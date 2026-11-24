@@ -60,6 +60,7 @@ struct rpsocktl_args_s
   bool            server;
   bool            dgram;
   bool            local;
+  bool            queued;   /* Client: read once the stream end is queued */
   size_t          count;
   int             timeout;
 };
@@ -82,7 +83,7 @@ static void rpsocktl_usage(FAR const char *progname)
   printf("Usage: %s -s [-m echo|send|close|select] [-n bytes] "
          "[-t sec] name\n", progname);
   printf("       %s -s -u -c cpu [-t sec] name\n", progname);
-  printf("       %s -c cpu [-u] [-m check] [-n bytes] [-t sec] name\n",
+  printf("       %s -c cpu [-u] [-q] [-m check] [-n bytes] [-t sec] name\n",
          progname);
   printf("       %s -e check\n", progname);
 }
@@ -400,9 +401,16 @@ static int rpsocktl_client_eof(int sd,
   ssize_t ret;
   int err = 0;
 
-  /* Let the data and the end of the stream arrive before reading */
+  /* Without -q recv() blocks until the data and then the end of the
+   * stream arrive.  With -q both are in the socket before the first
+   * recv(): nothing but the calls under test tells when they arrived.
+   */
 
-  sleep(1);
+  if (args->queued)
+    {
+      sleep(1);
+    }
+
   for (; ; )
     {
       ret = recv(sd, buf, sizeof(buf), 0);
@@ -430,13 +438,16 @@ static int rpsocktl_client_selecteof(int sd,
   int sel;
   int err;
 
-  sleep(1);
-  sel = rpsocktl_readable(sd, args->timeout);
-  ret = recv(sd, &ch, 1, MSG_DONTWAIT);
+  /* recv() returns 0 once the end of the stream has arrived: select()
+   * must then report the socket as readable.
+   */
+
+  ret = recv(sd, &ch, 1, 0);
   err = ret < 0 ? errno : 0;
-  printf("rpsocktl: %s selecteof sel=%d ret=%zd errno=%d\n",
-         sel == 1 && ret == 0 ? "PASS" : "FAIL", sel, ret, err);
-  return sel == 1 && ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+  sel = rpsocktl_readable(sd, args->timeout);
+  printf("rpsocktl: %s selecteof ret=%zd sel=%d errno=%d\n",
+         ret == 0 && sel == 1 ? "PASS" : "FAIL", ret, sel, err);
+  return ret == 0 && sel == 1 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 static int rpsocktl_client_readv(int sd,
@@ -450,7 +461,6 @@ static int rpsocktl_client_readv(int sd,
   ssize_t ret = 0;
   int err = 0;
 
-  sleep(1);
   while (total < args->count)
     {
       iov[0].iov_base = buf0;
@@ -891,7 +901,7 @@ int main(int argc, FAR char *argv[])
   args.count   = 1000;
   args.timeout = RPSOCKTL_TIMEOUT;
 
-  while ((opt = getopt(argc, argv, "sc:e:um:n:t:")) != ERROR)
+  while ((opt = getopt(argc, argv, "sc:e:uqm:n:t:")) != ERROR)
     {
       switch (opt)
         {
@@ -907,6 +917,9 @@ int main(int argc, FAR char *argv[])
             break;
           case 'u':
             args.dgram = true;
+            break;
+          case 'q':
+            args.queued = true;
             break;
           case 'm':
             args.mode = optarg;

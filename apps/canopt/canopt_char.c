@@ -52,6 +52,8 @@
 #define CANOPT_ALIGN        16
 #define CANOPT_MSG8         CAN_MSGLEN(8)
 #define CANOPT_RXBUF        (8 * sizeof(struct can_msg_s))
+#define CANOPT_ALIGN_MSGS   6
+#define CANOPT_WAIT_MS      10
 
 /****************************************************************************
  * Private Types
@@ -225,6 +227,78 @@ static int canopt_crx_parse(FAR const uint8_t *buf, ssize_t nbytes,
   return nmsgs;
 }
 
+/* Wait until FIONREAD reports at least count queued messages.  Returns
+ * the last FIONREAD value, or -1 if the ioctl failed.
+ */
+
+static int canopt_cwait_queued(int fd, int count, int timeout_s)
+{
+  struct timespec start;
+  int queued;
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
+  for (; ; )
+    {
+      queued = -1;
+      if (ioctl(fd, FIONREAD, (unsigned long)&queued) < 0)
+        {
+          return -1;
+        }
+
+      if (queued >= count || canopt_remain_ms(&start, timeout_s) == 0)
+        {
+          return queued;
+        }
+
+      usleep(CANOPT_WAIT_MS * 1000);
+    }
+}
+
+#ifdef CONFIG_CAN_ERRORS
+
+/* Read from a nonblocking descriptor until the host's end marker */
+
+static bool canopt_cwait_marker(int fd, int timeout_s)
+{
+  uint8_t buf[CANOPT_RXBUF];
+  struct can_msg_s msg;
+  struct timespec start;
+  struct pollfd pfd;
+  ssize_t nbytes;
+  ssize_t off;
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
+  pfd.fd     = fd;
+  pfd.events = POLLIN;
+
+  while (poll(&pfd, 1, canopt_remain_ms(&start, timeout_s)) > 0)
+    {
+      nbytes = read(fd, buf, sizeof(buf));
+      if (nbytes < 0)
+        {
+          return false;
+        }
+
+      off = 0;
+      while (off + (ssize_t)CAN_MSGLEN(0) <= nbytes)
+        {
+          memcpy(&msg.cm_hdr, buf + off, sizeof(msg.cm_hdr));
+          if (!msg.cm_hdr.ch_error &&
+              canopt_msg_id(&msg) == CANOPT_MARKER_ID)
+            {
+              return true;
+            }
+
+          off += CAN_MSGLEN(can_dlc2bytes(msg.cm_hdr.ch_dlc));
+        }
+    }
+
+  return false;
+}
+#endif
+
 /****************************************************************************
  * Name: canopt_crx
  *
@@ -341,21 +415,20 @@ static int canopt_ctx(FAR struct canopt_args_s *args)
  * Name: canopt_cioctl
  *
  * Description:
- *   Upper-half ioctls (CANIOC_GET/SET_MSGALIGN, FIONWRITE) round trip;
- *   lower-half ioctls either work or report ENOTTY.
+ *   Upper-half ioctls (CANIOC_GET/SET_MSGALIGN, FIONWRITE) round trip.
+ *   A lower-half ioctl (CANIOC_GET_BITTIMING, CANIOC_ADD/DEL_STDFILTER)
+ *   must work, or fail with ENOTTY if the driver does not implement it;
+ *   the verdict names the ones that worked and the ones not implemented.
  *
  ****************************************************************************/
-
-static bool canopt_lower_ok(int ret)
-{
-  return ret >= 0 || errno == ENOTTY;
-}
 
 static int canopt_cioctl(FAR struct canopt_args_s *args)
 {
   FAR const char *cmd = args->cmd;
   struct canioc_bittiming_s bt;
   struct canioc_stdfilter_s sf;
+  FAR const char *bittiming;
+  FAR const char *stdfilter;
   unsigned int align;
   int checks = 0;
   int pending;
@@ -402,12 +475,18 @@ static int canopt_cioctl(FAR struct canopt_args_s *args)
 
   memset(&bt, 0, sizeof(bt));
   ret = ioctl(fd, CANIOC_GET_BITTIMING, (unsigned long)&bt);
-  if (!canopt_lower_ok(ret) || (ret >= 0 && bt.bt_baud == 0))
+  if (ret < 0 && errno == ENOTTY)
+    {
+      bittiming = "unsupported";
+    }
+  else if (ret < 0 || bt.bt_baud == 0)
     {
       return canopt_cfail(cmd, "get-bittiming");
     }
-
-  checks++;
+  else
+    {
+      bittiming = "ok";
+    }
 
   memset(&sf, 0, sizeof(sf));
   sf.sf_id1  = 0x123;
@@ -415,16 +494,26 @@ static int canopt_cioctl(FAR struct canopt_args_s *args)
   sf.sf_type = CAN_FILTER_MASK;
   sf.sf_prio = CAN_MSGPRIO_HIGH;
   ret = ioctl(fd, CANIOC_ADD_STDFILTER, (unsigned long)&sf);
-  if (!canopt_lower_ok(ret) ||
-      (ret >= 0 && !canopt_lower_ok(ioctl(fd, CANIOC_DEL_STDFILTER, ret))))
+  if (ret < 0 && errno == ENOTTY)
     {
-      return canopt_cfail(cmd, "stdfilter");
+      stdfilter = "unsupported";
+    }
+  else if (ret < 0)
+    {
+      return canopt_cfail(cmd, "add-stdfilter");
+    }
+  else if (ioctl(fd, CANIOC_DEL_STDFILTER, ret) < 0)
+    {
+      return canopt_cfail(cmd, "del-stdfilter");
+    }
+  else
+    {
+      stdfilter = "ok";
     }
 
-  checks++;
-
   close(fd);
-  printf("canopt: PASS cioctl checks=%d\n", checks);
+  printf("canopt: PASS cioctl checks=%d bittiming=%s stdfilter=%s\n",
+         checks, bittiming, stdfilter);
   return EXIT_SUCCESS;
 }
 
@@ -434,8 +523,8 @@ static int canopt_cioctl(FAR struct canopt_args_s *args)
  * Description:
  *   CANIOC_SET_MSGALIGN effect on read(): with the default alignment 1 a
  *   read returns as many packed messages as fit, with 0 exactly one, with
- *   16 each message is padded to 16 bytes.  The host sends 6 classic
- *   8-byte frames before the first read.
+ *   16 each message is padded to 16 bytes.  The first read waits until
+ *   the 6 classic 8-byte frames of the host are queued.
  *
  ****************************************************************************/
 
@@ -447,6 +536,7 @@ static int canopt_calign(FAR struct canopt_args_s *args)
   ssize_t n2;
   ssize_t n3;
   ssize_t padded;
+  int queued;
   bool pass;
   int fd;
 
@@ -457,18 +547,33 @@ static int canopt_calign(FAR struct canopt_args_s *args)
     }
 
   canopt_ready();
-  usleep(1000 * 1000);
+
+  queued = canopt_cwait_queued(fd, CANOPT_ALIGN_MSGS, args->timeout);
+  if (queued != CANOPT_ALIGN_MSGS)
+    {
+      printf("canopt: FAIL calign queued=%d expected=%d\n",
+             queued, CANOPT_ALIGN_MSGS);
+      return EXIT_FAILURE;
+    }
 
   /* Alignment 1: three messages fit exactly */
 
   n1 = read(fd, buf, 3 * CANOPT_MSG8);
 
   align = 0;
-  ioctl(fd, CANIOC_SET_MSGALIGN, (unsigned long)&align);
+  if (ioctl(fd, CANIOC_SET_MSGALIGN, (unsigned long)&align) < 0)
+    {
+      return canopt_cfail(args->cmd, "msgalign-0");
+    }
+
   n2 = read(fd, buf, sizeof(buf));
 
   align = CANOPT_ALIGN;
-  ioctl(fd, CANIOC_SET_MSGALIGN, (unsigned long)&align);
+  if (ioctl(fd, CANIOC_SET_MSGALIGN, (unsigned long)&align) < 0)
+    {
+      return canopt_cfail(args->cmd, "msgalign-16");
+    }
+
   n3 = read(fd, buf, sizeof(buf));
 
   close(fd);
@@ -566,7 +671,9 @@ static int canopt_cnonblock(FAR struct canopt_args_s *args)
  * Description:
  *   RX FIFO overflow: the host floods the bus while nobody reads; the
  *   reader gets one CAN_ERROR_INTERNAL / CAN_ERROR5_RXOVERFLOW error
- *   message, then the CONFIG_CAN_RXFIFOSIZE - 1 queued messages.
+ *   message, then the CONFIG_CAN_RXFIFOSIZE - 1 queued messages.  A
+ *   second descriptor, which has its own RX FIFO and is read all the
+ *   time, waits for the end marker the host sends after the flood.
  *
  ****************************************************************************/
 
@@ -582,15 +689,24 @@ static int canopt_coverflow(FAR struct canopt_args_s *args)
   int rx = 0;
   bool pass;
   int fd;
+  int fm;
 
   fd = open(args->endpoint, O_RDWR | O_NONBLOCK);
-  if (fd < 0)
+  fm = open(args->endpoint, O_RDWR | O_NONBLOCK);
+  if (fd < 0 || fm < 0)
     {
       return canopt_cfail(args->cmd, "open");
     }
 
   canopt_ready();
-  usleep(1500 * 1000);
+
+  if (!canopt_cwait_marker(fm, args->timeout))
+    {
+      printf("canopt: FAIL coverflow no-marker\n");
+      return EXIT_FAILURE;
+    }
+
+  close(fm);
 
   while ((nbytes = read(fd, buf, sizeof(buf))) > 0)
     {
@@ -633,42 +749,51 @@ static int canopt_coverflow(FAR struct canopt_args_s *args)
  * Name: canopt_cfionread
  *
  * Description:
- *   FIONREAD reports the number of queued messages as an int.
+ *   FIONREAD reports the number of queued messages as an int: it reaches
+ *   the -n count of 8-byte host frames, and one read() then returns that
+ *   many messages.
  *
  ****************************************************************************/
 
 static int canopt_cfionread(FAR struct canopt_args_s *args)
 {
+  uint8_t buf[CANOPT_RXBUF];
+  ssize_t nbytes;
   int queued;
+  bool pass;
   int fd;
 
-  fd = open(args->endpoint, O_RDWR);
+  fd = open(args->endpoint, O_RDWR | O_NONBLOCK);
   if (fd < 0)
     {
       return canopt_cfail(args->cmd, "open");
     }
 
   canopt_ready();
-  usleep(1000 * 1000);
 
-  queued = -1;
-  if (ioctl(fd, FIONREAD, (unsigned long)&queued) < 0)
+  queued = canopt_cwait_queued(fd, args->count, args->timeout);
+  if (queued < 0)
     {
       return canopt_cfail(args->cmd, "ioctl");
     }
 
+  nbytes = read(fd, buf, sizeof(buf));
   close(fd);
-  printf("canopt: %s cfionread queued=%d expected=%d\n",
-         queued == args->count ? "PASS" : "FAIL", queued, args->count);
-  return queued == args->count ? EXIT_SUCCESS : EXIT_FAILURE;
+
+  pass = queued == args->count &&
+         nbytes == (ssize_t)(args->count * CANOPT_MSG8);
+  printf("canopt: %s cfionread queued=%d expected=%d read=%zd\n",
+         pass ? "PASS" : "FAIL", queued, args->count, nbytes);
+  return pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 /****************************************************************************
  * Name: canopt_ciflush
  *
  * Description:
- *   CANIOC_IFLUSH drops queued messages: the ioctl succeeds and a
- *   nonblocking read afterwards returns EAGAIN.
+ *   CANIOC_IFLUSH drops queued messages: once the -n host frames are
+ *   queued, the ioctl succeeds and a nonblocking read afterwards returns
+ *   EAGAIN.
  *
  ****************************************************************************/
 
@@ -679,6 +804,7 @@ static int canopt_ciflush(FAR struct canopt_args_s *args)
   int ret;
   int ioerr;
   int rderr;
+  int queued;
   int fd;
 
   fd = open(args->endpoint, O_RDWR | O_NONBLOCK);
@@ -688,7 +814,14 @@ static int canopt_ciflush(FAR struct canopt_args_s *args)
     }
 
   canopt_ready();
-  usleep(1000 * 1000);
+
+  queued = canopt_cwait_queued(fd, args->count, args->timeout);
+  if (queued != args->count)
+    {
+      printf("canopt: FAIL ciflush queued=%d expected=%d\n",
+             queued, args->count);
+      return EXIT_FAILURE;
+    }
 
   ret    = ioctl(fd, CANIOC_IFLUSH, 0);
   ioerr  = ret < 0 ? errno : 0;
