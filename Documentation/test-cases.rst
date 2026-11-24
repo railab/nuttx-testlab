@@ -115,7 +115,8 @@ Test functions
   to ``SIG_IGN``, ``waitpid(-1)`` blocks until both children (200 and
   600 ms) ended and fails with ``ECHILD``; after each, with ``SIG_DFL``,
   ``waitpid()`` returns a child's exit status 7. PASS: ``exittl: PASS
-  wait``.
+  wait ignore=run``; ``ignore=notbuilt`` where the ``SIG_IGN`` case is
+  not built (no ``CONFIG_SIG_DEFAULT``).
 
 ``unix`` socket tests
 ---------------------
@@ -216,8 +217,7 @@ bridge ``tl-br0`` (see :doc:`architecture`). Sessions:
 -------------------
 
 Source: ``ntfc/tests/tcplocal/test_tcp_local.py``. TCP between two
-tasks of node0, in a session of its own because a stalled transfer can
-hang the node. Session: ``sim-ip-pair-local`` (the ``sim-ip-pair``
+tasks of node0. Session: ``sim-ip-pair-local`` (the ``sim-ip-pair``
 configuration).
 
 .. list-table::
@@ -245,16 +245,16 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
    * - Test
      - PASS criterion
    * - ``test_tcp_rst_after_handshake``
-     - A peer RST right after the TCP handshake does not hang the
-       server's blocking send(): a verdict line (PASS or FAIL) is
-       printed within 15 s.
+     - A peer RST right after the TCP handshake, before ``accept()``:
+       ``accept()`` fails with ``ECONNABORTED`` and the server prints
+       ``nettl: FAIL rx=0 err=1`` within 15 s.
    * - ``test_udp_reuseaddr_broadcast``
      - Two ``SO_REUSEADDR`` UDP listeners on one port both receive all
        20 broadcast datagrams intact: ``nettl: PASS rx=40 err=0``.
    * - ``test_arp_expiry_traffic``
      - 300 paced UDP echoes (~30 s, over 2x the default
-       ``CONFIG_NET_ARP_MAXAGE``) across an ARP entry's expiry: zero
-       datagrams lost after up to 3 retries each, all intact.
+       ``CONFIG_NET_ARP_MAXAGE``) across an ARP entry's expiry: every
+       datagram, sent once, is echoed intact.
    * - ``test_tcp_long_transfer``
      - 4 MiB host-to-node TCP echo, 10 s per-operation stall
        watchdog: all bytes echoed intact.
@@ -278,8 +278,7 @@ sessions as the ``ip`` module above (``sim-ip-pair``,
      - After killing (``kill -9``) ``CONFIG_NET_TCP_PREALLOC_CONNS +
        1`` TCP listeners each blocked in accept(), a probe client
        still allocates a socket and is refused by the host
-       (``connect failed 111``). Runs last in the session
-       (``@pytest.mark.run(order=-1)``): it poisons the node.
+       (``connect failed 111``). Needs ``CONFIG_SIG_DEFAULT``.
 
 ``ip`` IPv6
 -----------
@@ -374,7 +373,7 @@ test. Same sessions as the ``ip`` module.
        the request, node1 has the address and pings the host.
    * - ``test_dhcpd_node_to_node``
      - ``dhcpd_start eth0`` on node0 leases ``10.42.0.100``: node1 has the
-       address and pings node0.
+       address, node0 pings it and node1 pings node0.
 
 ``ip`` multicast
 ----------------
@@ -400,8 +399,7 @@ sessions as the ``ip`` module.
        ``nettl: PASS``.
    * - ``test_mcast_membership_lifetime``
      - node0's membership is still in the bridge table 20 s after the
-       join, and is gone within 10 s after its socket closes (querier
-       off for the leave).
+       join, and is gone within 10 s after its socket closes.
    * - ``test_mcast_igmp_query_not_member``
      - Three host IGMPv2 Group-Specific Queries (to 224.0.0.1) for a
        group node0 never joined: no report, the group is not in the
@@ -424,26 +422,27 @@ node0 against the host. Same sessions as the ``ip`` module.
    * - Test
      - PASS criterion
    * - ``test_tcp_concurrent_host_to_node``
-     - ``nettl -s -C 8``: 8 host connections, opened one after another
-       (each once the previous one echoed its first 1 KiB), 32 KiB each,
-       echoed interleaved and intact.
+     - ``nettl -s -C 8``: 8 host connections, opened at the same
+       time, 32 KiB each, echoed interleaved and intact.
    * - ``test_tcp_half_close``
      - 64 KiB sent, then ``shutdown(SHUT_WR)``: all data echoed, then
        EOF from the node.
    * - ``test_tcp_churn_node_client``
      - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential node client
        connections to a host echo server that closes first (no
-       TIME-WAIT on the node): all pass. Runs second to last in the
-       session (``@pytest.mark.run(order=-2)``).
+       TIME-WAIT on the node): all pass.
    * - ``test_tcp_churn_node_server``
      - 3x ``CONFIG_NET_TCP_PREALLOC_CONNS`` sequential host connections
        to node servers (host closes first): all pass.
    * - ``test_tcp_backlog_overflow``
-     - 8 host connection attempts while the server waits 5 s before
-       ``accept()``; afterwards the server churn above still passes.
+     - 8 host connection attempts, closed without data, while the
+       server (backlog 1) waits 5 s before ``accept()``: the server
+       accepts the first one and prints ``nettl: PASS rx=0 err=0``;
+       afterwards the server churn above still passes.
    * - ``test_tcp_rst_mid_transfer``
-     - A host RST during a transfer ends the node server with a
-       verdict; a new server then echoes 16 KiB intact.
+     - A host RST during a transfer ends the node server with
+       ``nettl: FAIL rx=<n> err=1`` (a failed ``recv()`` reports
+       ``ECONNRESET``); a new server then echoes 16 KiB intact.
    * - ``test_tcp_send_after_peer_close``
      - ``nettl -X``: after the host closed, the first failing send gives
        ``EPIPE`` or ``ECONNRESET``, the next one ``EPIPE``, and one
@@ -505,8 +504,8 @@ fc00::252-253 have no host. Same sessions as the ``ip`` module.
      - PASS criterion
    * - ``test_arp_no_flood``
      - The host sends node1 100 echo requests per second for 6 s from
-       10.42.0.250: node1 sends fewer ARP requests for it than one per
-       10 echo requests.
+       10.42.0.250: node1 sends at most one ARP request for it per
+       second.
    * - ``test_arp_unreachable``
      - A ping to 10.42.0.251 sends ARP requests and fails with
        ``EHOSTUNREACH``.
@@ -525,6 +524,10 @@ fc00::252-253 have no host. Same sessions as the ``ip`` module.
    * - ``test_nd_solicit_rate``
      - node1's Neighbor Solicitations for fc00::253 are at least 1 s
        (RETRANS_TIMER) apart.
+   * - ``test_nd_linklocal_on_link``
+     - node1 with fc00::254 (no such host) as its only router: 3 host
+       datagrams from the bridge's link-local address to ff02::1 are
+       echoed by a node1 UDP server.
 
 ``ip`` Modbus TCP
 -----------------
@@ -625,9 +628,7 @@ Source: ``ntfc/tests/ip/test_ip_mqtt.py``. MQTT clients on the nodes
 against a mosquitto broker on the host bridge (port 1883, anonymous, no
 persistence); the host peers are ``mosquitto_sub``/``mosquitto_pub``.
 Paho MQTT C: ``mqtt_pub``, ``mqtt_sub``; MQTT-C: ``mqttc_pub``,
-``mqttc_sub``. Before each test both nodes must have 4 free TCP
-connections (``/proc/net/tcp``); the test waits up to 130 s for closed
-connections to leave TIME_WAIT. Same sessions as the ``ip`` module.
+``mqttc_sub``. Same sessions as the ``ip`` module.
 
 .. list-table::
    :header-rows: 1
@@ -658,7 +659,7 @@ connections to leave TIME_WAIT. Same sessions as the ``ip`` module.
        broker restart and prints the next one, and exits on ``q``.
    * - ``test_mqtt_no_broker``
      - With the broker stopped, ``mqtt_pub`` reports ``Connect failed``
-       and then exits on SIGINT. Runs last.
+       and then exits on SIGINT.
 
 ``ip`` PTP
 ----------
@@ -858,8 +859,8 @@ frame sizes, duplex, overload, backpressure. Same sessions as the
      - A node 0 TCP writer sends twice its IOB pool to a host peer that
        does not read yet, while a node 0 UDP socket in ``poll()``
        (``-L 1``) or blocking ``recv()`` (``-S``) receives 50 datagrams
-       sent 20 ms apart: the host then reads the whole TCP stream intact,
-       no IOB leaked.
+       sent 20 ms apart: the UDP receiver reports PASS, the host then
+       reads the whole TCP stream intact, no IOB leaked.
 
 ``ip`` robustness
 -----------------
@@ -916,7 +917,8 @@ the host and reach the host itself. Expectations cite RFC 8200, RFC
 
 Source: ``ntfc/tests/can/test_can_bus.py``. Two nodes and the host
 share one SocketCAN bus, vcan ``can0`` (see :doc:`architecture`).
-Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus`` (SocketCAN,
+Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``,
+``qemu-armv8a-can-bus`` (SocketCAN,
 ``can0``), ``sim-can-bus-buffered`` (SocketCAN with write buffers,
 ``NET_CAN_WRITE_BUFFERS`` and a 1024 byte ``NET_SEND_BUFSIZE``),
 ``sim-can-char`` and ``qemu-intel64-can-char`` (CAN character driver,
@@ -957,7 +959,7 @@ Source: ``ntfc/tests/can/test_can_sockopt.py``. Node 0 runs one
 side. The frame tables (classic: SFF, EFF, RTR, DLC 0..8; CAN FD: all
 lengths 0..64 with BRS/ESI) are in ``ntfc/tests/_canopt_common.py``.
 Sessions: ``sim-can-bus``, ``sim-can-bus-buffered``,
-``qemu-intel64-can-bus``.
+``qemu-intel64-can-bus``, ``qemu-armv8a-can-bus``.
 
 .. list-table::
    :header-rows: 1
@@ -1045,14 +1047,16 @@ options`_.
      - Variants ``blocking`` (reader waits in ``read()``) and ``queued``
        (frames queue before the first read, the host sends 6 of the
        classic frames): a classic socket on a bus carrying both tables
-       reads only the classic frames, each ``CAN_MTU`` bytes.
+       reads only the classic frames, each ``CAN_MTU`` bytes; a
+       ``read()`` that times out fails.
 
 ``can`` timestamps
 ------------------
 
 Source: ``ntfc/tests/can/test_can_timestamp.py``. The host sends 10
 frames 20 ms apart to ``canopt ts``, which lets the first ones queue
-before it reads. Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``.
+before it reads. Sessions: ``sim-can-bus``, ``qemu-intel64-can-bus``,
+``qemu-armv8a-can-bus``.
 
 .. list-table::
    :header-rows: 1
@@ -1090,8 +1094,9 @@ Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
      - ``write()`` of both tables; the host receives every frame intact.
    * - ``test_can_char_ioctl``
      - ``CANIOC_GET/SET_MSGALIGN`` and ``FIONWRITE`` round trip;
-       ``CANIOC_GET_BITTIMING`` and ``CANIOC_ADD/DEL_STDFILTER`` work or
-       return ``ENOTTY``.
+       ``CANIOC_GET_BITTIMING`` and ``CANIOC_ADD/DEL_STDFILTER`` work on
+       a driver that implements them and return ``ENOTTY`` on one that
+       does not (expected set per driver).
    * - ``test_can_char_msgalign``
      - 6 queued messages: alignment 1 returns 3 packed messages into a
        3-message buffer, 0 exactly one, 16 two messages padded to 16
@@ -1101,14 +1106,16 @@ Source: ``ntfc/tests/can/test_can_char.py``. ``canopt`` on
        ``POLLOUT``, a nonblocking write the host receives, ``POLLIN`` for
        a host frame, then ``EAGAIN``.
    * - ``test_can_char_rx_overflow``
-     - ``CONFIG_CAN_RXFIFOSIZE + 16`` unread host frames: at least one
+     - ``CONFIG_CAN_RXFIFOSIZE + 16`` unread host frames, then the end
+       marker (seen on a second descriptor): at least one
        ``CAN_ERROR5_RXOVERFLOW`` error message, no other error, at most
        ``CONFIG_CAN_RXFIFOSIZE`` frames.
    * - ``test_can_char_fionread``
-     - ``FIONREAD`` returns 5 (``int``) with 5 messages queued.
+     - ``FIONREAD`` returns 5 (``int``) with 5 messages queued; one
+       ``read()`` then returns 5 messages.
    * - ``test_can_char_iflush``
-     - ``CANIOC_IFLUSH`` returns 0; the next nonblocking read returns
-       ``EAGAIN``.
+     - With 3 messages queued ``CANIOC_IFLUSH`` returns 0; the next
+       nonblocking read returns ``EAGAIN``.
    * - ``test_can_char_rtr_request``
      - ``CANIOC_RTR`` returns the 8-byte reply a host responder sends to
        the remote request.
@@ -1288,8 +1295,10 @@ error on any node. Session: ``sim-canopen-net``.
      - After a duplicate boot-up the master's state of node 3 returns to
        OPERATIONAL.
    * - ``test_canopen_net_bus_load``
-     - SYNC 2 ms for 5 s (``0x1006`` over SDO): every receiver got the
-       PDOs of each node without gaps, no heartbeat timeout.
+     - SYNC 2 ms for 5 s (``0x1006`` over SDO): the SYNC count matches
+       the period over the window (one period at each end), every
+       receiver got the PDOs of each node without gaps, no heartbeat
+       timeout.
    * - ``test_canopen_net_master_restart``
      - The stopped master prints ``conode: PASS``; restarted, it resets
        all nodes, sees one boot-up of each and boots all to
@@ -1492,12 +1501,13 @@ tests run ``fstl`` on both sides. Node 1 logs through
        send(), getpeername(), shutdown() unconnected ``ENOTCONN``.
    * - ``test_rpsock_eof_after_close``
      - Server sends 1000 bytes and closes; the client reads them all,
-       then 0.
+       then 0, waiting in recv() for them (``blocked``) or reading once
+       both arrived (``queued``).
    * - ``test_rpsock_eof_after_shutdown``
      - As above with shutdown(``SHUT_WR``) instead of close().
    * - ``test_rpsock_select_eof``
-     - After the peer's shutdown(``SHUT_WR``), select() reports the
-       socket readable and recv() returns 0.
+     - Once recv() has returned 0 after the peer's
+       shutdown(``SHUT_WR``), select() reports the socket readable.
    * - ``test_rpsock_select_listen``
      - select() reports the listening socket readable once a client
        connected.
@@ -1606,7 +1616,7 @@ without that device.
        no motion.
    * - ``test_virtio_input_tablet_touch``
      - Touch, move, release give ``TOUCH_DOWN``, ``TOUCH_MOVE`` (with
-       the absolute positions) and ``TOUCH_UP``.
+       the absolute positions) and ``TOUCH_UP`` (ID valid, no position).
 
 ``sound`` module
 ----------------
@@ -1851,6 +1861,21 @@ of the build and is in the node's ``PATH``. Sessions:
        after it), last, followed by a trailing comma, and with
        ``uname=``/``aname=``; a host file reads back and 200000 bytes
        written by the node match on the host.
+   * - ``test_v9fs_mount_bad_options``
+     - No tag (``no-tag``) or an unknown ``trans=`` (``unknown-trans``):
+       ``EINVAL``; the share stays mounted.
+   * - ``test_v9fs_mount_long_uname``
+     - The share mounts with a 40-character ``uname=`` (a 9P string has
+       a 16-bit length) and a host file reads back.
+   * - ``test_v9fs_mount_busy_tag``
+     - Mounting the mounted tag again fails with ``EBUSY``; the share
+       stays usable (``use``) and unmounts and mounts again
+       (``remount``).
+   * - ``test_v9fs_mount_wrong_tag``
+     - Mounting an unknown tag fails with ``ENOENT``, with the share
+       mounted (``mounted``) or unmounted before and mounted after
+       (``unmounted``); 100000 bytes written by the node then match on
+       the host.
    * - ``test_v9fs_shell_text``
      - ``echo`` from NSH and ``cat`` of a host file give the same text
        on both sides.
@@ -1930,8 +1955,10 @@ of the build and is in the node's ``PATH``. Sessions:
        ``unlink`` removes only the link.
    * - ``test_v9fs_open_nofollow``
      - ``open(O_NOFOLLOW)`` of a symbolic link fails with ``ELOOP`` 20
-       times; the target still opens and reads back, and the share can
-       be unmounted and mounted again (flat MMIO builds).
+       times; the target still opens and reads back.
+   * - ``test_v9fs_open_nofollow_umount``
+     - After 20 ``open(O_NOFOLLOW)`` of a symbolic link that failed with
+       ``ELOOP``, ``umount`` succeeds and the share mounts again.
    * - ``test_v9fs_umount_inside``
      - ``umount`` of a directory inside the share fails with ``EINVAL``
        and the share stays mounted and usable.
@@ -1959,7 +1986,7 @@ of the build and is in the node's ``PATH``. Sessions:
    * - ``test_v9fs_elf_bad_section``
      - A copy of ``elftl`` with a section header ``sh_addralign`` of 3
        (``align``) or an ``sh_size`` beyond the file (``size``) is
-       refused by ``posix_spawn()`` with ``ENOEXEC`` or ``EINVAL``, and
+       refused by ``posix_spawn()`` with ``ENOEXEC``, and
        the intact program still runs afterwards.
    * - ``test_v9fs_elf_args``
      - ``/mnt/v9fs/bin/elftl args one two three`` prints
@@ -1983,18 +2010,6 @@ of the build and is in the node's ``PATH``. Sessions:
    * - ``test_v9fs_elf_symbols``
      - ``elfsym`` (calls ``getpid``, ``gettid``, ``putchar``) loads and
        prints ``elfsym: PASS``.
-   * - ``test_v9fs_mount_bad_options``
-     - No tag or an unknown ``trans=``: ``EINVAL`` (Linux 9P client
-       errnos); the share stays mounted.
-   * - ``test_v9fs_mount_long_uname``
-     - A 40-character ``uname=`` is accepted or rejected, and the share
-       mounts afterwards.
-   * - ``test_v9fs_mount_busy_tag``
-     - Mounting the mounted tag again fails with ``EBUSY``, an unknown
-       tag with ``ENOENT``; unmount and mount again work.
-   * - ``test_v9fs_mount_wrong_tag``
-     - Mounting an unknown tag fails with ``ENOENT``; the share then
-       mounts and 100000 bytes written by the node match on the host.
 
 ``fs`` VFS, tmpfs and FAT
 -------------------------
@@ -2033,6 +2048,10 @@ sessions as the ``fs`` module.
      - ``fstl pio`` on tmpfs: ``pread``/``pwrite`` do not move the
        offset, a write after a seek past the end extends the file, the
        gap reads as zeros and the data before the old end is intact.
+   * - ``test_tmpfs_two_descriptors``
+     - ``fstl twofd`` on tmpfs: 100 bytes and then 4096 bytes written
+       through one descriptor are read through a second descriptor that
+       read the same place before.
    * - ``test_tmpfs_write_verify``
      - 70000 pattern bytes written to tmpfs read back and ``stat``
        reports the size.
@@ -2066,6 +2085,8 @@ sessions as the ``fs`` module.
    * - ``test_fat_pread_pwrite``
      - ``fstl pio`` on FAT (as for tmpfs), including ``fstat`` sizes of
        the open file after it was extended.
+   * - ``test_fat_two_descriptors``
+     - ``fstl twofd`` on FAT (as for tmpfs).
    * - ``test_fat_extend_after_seek``
      - ``ftruncate`` extending a FAT file after a seek to its start
        keeps the data and zero-fills only the extension.
@@ -2146,8 +2167,8 @@ address, 127-byte frames) and ``sim-pktradio``
        ``lost=0`` (fragments of different datagrams interleave, told
        apart by datagram_tag).
    * - ``test_sixlowpan_udp_over_mtu``
-     - One 1236-byte datagram (IPv6 length 1284, below the 1294-byte
-       device MTU) is echoed, or sendto() fails with ``EMSGSIZE``.
+     - sendto() of one 1236-byte datagram (IPv6 length 1284, above the
+       1280-octet MTU of RFC 4944) fails with ``EMSGSIZE``.
    * - ``test_sixlowpan_tcp_echo``
      - TCP streams of 3000, 4096 and 65536 bytes (nettl writes 2048-byte
        chunks and reads each back) echoed intact, at least
@@ -2232,7 +2253,9 @@ reported before it are read from the QEMU console log. Sessions:
 Sources: ``ntfc/tests/router/test_router_*.py``, helpers
 ``ntfc/tests/_router_common.py``. One node forwards between host A and
 host B (see :doc:`architecture`); ``router_ifs`` addresses both node
-interfaces once per module. Sessions: ``qemu-armv8a-router``,
+interfaces once per module, waits for carrier and has the node ping
+each host. A ping passes when 3 of 3 echo requests are answered.
+Sessions: ``qemu-armv8a-router``,
 ``rv-virt-router``, ``rv-virt64-router``, ``qemu-intel64-router`` (all
 tests); ``qemu-armv8a-router-hp2``, ``rv-virt-router-hp2``,
 ``rv-virt64-router-hp2``,
@@ -2265,7 +2288,8 @@ high-priority work queue threads).
    * - ``test_router_iperf``
      - A to B and B to A: 10 s of iperf2 TCP at 5 Mbit/s or more.
    * - ``test_router_port_flap``
-     - The B side TAP is down for 3 s during an iperf run: A and B ping
+     - The B side TAP is down for 3 s during an iperf run: the iperf
+       client exits with a report of transferred bytes; A and B ping
        each other and echo TCP afterwards.
    * - ``test_nat_ping``
      - MASQUERADE on the B interface, host B without a route to A: A
@@ -2282,8 +2306,9 @@ high-priority work queue threads).
    * - ``test_router_duplex``
      - With MASQUERADE, three rounds: A runs an iperf2 client sending
        to B and one receiving from B (``-R``), 4 streams each, at the
-       same time for 20 s; after each round both node addresses answer
-       and A pings B. Then ``ifconfig`` returns.
+       same time for 20 s; every stream reports transferred bytes;
+       after each round both node addresses answer and A pings B. Then
+       ``ifconfig`` returns.
    * - ``test_router_ifdown_ifup``
      - Each side: after ``ifdown`` the side's host gets no reply from
        the node and A cannot reach B; after ``ifup`` and readdressing
@@ -2299,12 +2324,10 @@ creates a P-256 test PKI with ``openssl ca``: CA, server certificates
 for ``tls.testlab`` (valid, expired 1 day ago, valid from tomorrow,
 wrong name, signed by an unknown CA) and ``node.testlab`` for the node
 server; files go to a tmpfs at ``/tl`` over TFTP. Before each test the
-node clock is set from a host SNTP server, unless it is within 60 s,
-and the node has at least 6 free TCP connections (TIME_WAIT of earlier
-tests expired).
+node clock is set from a host SNTP server, unless it is within 60 s.
 Sessions: ``sim-tls``, ``qemu-armv8a-tls``, ``rv-virt-tls``,
 ``rv-virt64-tls``, ``qemu-intel64-tls``. "Heap freed": ``free`` reports no more used
-bytes than before the test (10 s settle time); "no IOB leaked": the
+bytes than before the test, once tlstl has exited; "no IOB leaked": the
 ``net_leak`` check of the ``ip`` driver tests.
 
 .. list-table::

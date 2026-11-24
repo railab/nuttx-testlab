@@ -92,6 +92,23 @@ def _gpiotl(args: str) -> str:
     return found.group(0) + (f" value={value.group(1)}" if value else "")
 
 
+def _wait_unmasked(ctl: VhostCtl, gpio: int) -> None:
+    """Wait until the driver has queued the eventq buffer of a line.
+
+    VIRTIO 1.3: the interrupt of a line is unmasked while its buffer
+    pair is queued; "the device should latch the interrupt events sensed
+    on a line where the interrupt is masked", so the edges of a masked
+    line are one event.
+
+    :param ctl: control client
+    :param gpio: line number
+    """
+    deadline = time.monotonic() + TIMEOUT
+    while not ctl("lines")[gpio]["unmasked"]:
+        assert time.monotonic() < deadline, f"line {gpio} stays masked"
+        time.sleep(0.01)
+
+
 def _irq(
     ctl: VhostCtl, gpio: int, kind: str, levels: List[int], n: int
 ) -> str:
@@ -100,7 +117,8 @@ def _irq(
     :param ctl: control client
     :param gpio: line number
     :param kind: gpiotl interrupt type
-    :param levels: levels to drive, 200 ms apart, from low
+    :param levels: levels to drive from low, each once the driver has
+     unmasked the interrupt again
     :param n: signals gpiotl waits for
     :return: gpiotl verdict line
     """
@@ -113,12 +131,11 @@ def _irq(
     )
     assert ret == 0
     for level in levels:
-        time.sleep(0.2)
+        _wait_unmasked(ctl, gpio)
         ctl("drive", gpio=gpio, level=level)
     out = str(core.readUntilPattern(VERDICT_RE, timeout=TIMEOUT).output)
     found = re.search(VERDICT_RE, out)
     assert found, out
-    time.sleep(0.5)  # gpiotl disables the interrupt after the verdict
     return found.group(0)
 
 

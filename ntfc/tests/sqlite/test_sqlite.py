@@ -51,13 +51,16 @@ DISKS = ("/dev/virtblk0", "/dev/virtblk1")
 SMALL_DISK = 8 * 1024 * 1024
 
 LOCK_BUG = (
-    "fs/vfs/fs_lock.c: record locks belong to the thread (l_pid = "
-    "gettid()) and the open file, not to the process: a second descriptor "
-    "or another thread of the process conflicts with the process lock "
-    "instead of replacing it, close() keeps the locks taken through the "
-    "other descriptors and F_GETLK reports the thread ID; a SQLite "
-    "connection then cannot commit after another connection of the "
-    "process has read the database (SQLITE_BUSY until the reader closes)"
+    "fs/vfs/fs_lock.c:685 file_setlk() makes the thread the lock owner "
+    "(l_pid = gettid()) and fs_lock.c:278 file_lock_is_conflict() also "
+    "compares the open file, so record locks belong to the thread and "
+    "the open file, not to the process: a second descriptor or another "
+    "thread of the process conflicts with the process lock instead of "
+    "replacing it, close() keeps the locks taken through the other "
+    "descriptors (fs_lock.c:828 file_closelk()) and F_GETLK reports the "
+    "thread ID; a SQLite connection then cannot commit after another "
+    "connection of the process has read the database (SQLITE_BUSY until "
+    "the reader closes)"
 )
 FAT_INO_BUG = (
     "fs/fat/fs_fat32.c: fat_stat_common() never sets st_ino, so all files "
@@ -67,10 +70,15 @@ FAT_INO_BUG = (
     "database file"
 )
 FAT_CACHE_BUG = (
-    "fs/fat: every descriptor has its own sector cache (ff_buffer) and a "
-    "write through one descriptor neither updates nor invalidates the "
-    "caches of the others, so they read stale data; another SQLite "
-    "connection reads a stale change counter and keeps stale pages"
+    "fs/fat/fs_fat32.h:949: every open of a file has its own sector "
+    "cache (struct fat_file_s ff_buffer). fs/fat/fs_fat32.c:1673 "
+    "fat_write() keeps a partial-sector write in the writer's ff_buffer "
+    "and fs_fat32.c:1572 writes whole sectors to the volume, neither "
+    "updating nor invalidating the caches of the other opens, and "
+    "fs/fat/fs_fat32util.c:1951 fat_ffcacheread() serves fat_read() "
+    "(fs_fat32.c:1403) from its own cached sector, so the other opens "
+    "read stale data; another SQLite connection reads a stale change "
+    "counter and keeps stale pages"
 )
 RAMMAP_BUG = (
     "fs/mmap/fs_mmap.c: mmap(MAP_SHARED) of a file whose file system has "
@@ -92,9 +100,12 @@ MUNMAP_BUG = (
     "stay until the task exits and a reopen finds the volume full"
 )
 WAL_CACHE_SKIP = (
-    f"{FAT_CACHE_BUG}; in WAL mode a connection now and then reads a stale "
-    "WAL sector rewritten after a checkpoint (SQLITE_NOTADB), too rarely "
-    "for an expected failure: test_sqlite_visible covers the bug"
+    f"{FAT_CACHE_BUG}; in WAL mode each connection appends frames to the "
+    "-wal file and reads the frames of the others through its own "
+    "descriptor, so the interleaving of the eight threads decides whether "
+    "a connection reads a stale sector of it: the run then ends with "
+    "SQLITE_NOTADB (rc=26), otherwise it passes; "
+    "test_fat_two_descriptors shows the stale read every time"
 )
 FLAT_TASKS = (
     "flat build: the tasks share the SQLite library globals (unix VFS "
@@ -701,7 +712,9 @@ def test_sqlite_full(request: pytest.FixtureRequest, journal: str) -> None:
     if journal == "wal" and _big_pagesize():
         known = REOPEN_SIGNATURE
         _xfail(request, True, MUNMAP_BUG)
-    run(f"umount {FULL}")
+    out = run(f"umount {FULL}")
+    assert "failed" not in out, out
+    assert not _mounted(FULL)
     out = run(f"mkfatfs {_DISK[FULL]}", timeout=120)
     assert "failed" not in out, out
     _mount_all()

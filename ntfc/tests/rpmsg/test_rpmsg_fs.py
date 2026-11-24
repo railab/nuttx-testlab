@@ -64,19 +64,30 @@ def _pass(node: int, args: str, timeout: int = 120) -> dict:
     return fields(line)
 
 
+def _nsh(node: int, cmd: str) -> None:
+    """Run an NSH command that must not report an error.
+
+    :param node: product index
+    :param cmd: command line
+    """
+    out = run(node, cmd)
+    assert "nsh: " not in out, out
+
+
 @pytest.fixture(scope="module")
 def mounted() -> Iterator[None]:
     """Mount node 0's ``/tmp/rfs`` on node 1 for the module."""
-    run(0, f"mkdir {SERVER_DIR}")
-    run(1, f"mkdir {CLIENT_DIR}")
-    run(
+    _nsh(0, f"mkdir {SERVER_DIR}")
+    _nsh(1, f"mkdir {CLIENT_DIR}")
+    _nsh(
         1,
         f"mount -t rpmsgfs -o cpu={cpuname(0)},fs={SERVER_DIR} "
         f"{CLIENT_DIR}",
     )
     assert f"{CLIENT_DIR} type rpmsgfs" in run(1, "mount")
     yield
-    run(1, f"umount {CLIENT_DIR}")
+    _nsh(1, f"umount {CLIENT_DIR}")
+    assert f"{CLIENT_DIR} type rpmsgfs" not in run(1, "mount")
 
 
 @pytest.fixture()
@@ -87,7 +98,7 @@ def work(mounted: None) -> Tuple[str, str]:
     :return: the directory on node 0 and on node 1
     """
     name = f"w{next(_COUNTER)}"
-    run(0, f"mkdir {SERVER_DIR}/{name}")
+    _nsh(0, f"mkdir {SERVER_DIR}/{name}")
     return f"{SERVER_DIR}/{name}", f"{CLIENT_DIR}/{name}"
 
 
@@ -186,7 +197,7 @@ def test_rpmsgfs_readdir(work: Tuple[str, str]) -> None:
     srv, cli = work
     for name in ("a", "b", "c"):
         _pass(0, f"write {srv}/{name} 10")
-    run(0, f"mkdir {srv}/d")
+    _nsh(0, f"mkdir {srv}/d")
     _pass(1, f"ls -n 4 {cli}")
 
 
@@ -270,7 +281,7 @@ def test_rpmsgfs_errno(
     """
     srv, cli = work
     _pass(0, f"write {srv}/f 4")
-    run(0, f"mkdir {srv}/d")
+    _nsh(0, f"mkdir {srv}/d")
     _pass(0, f"write {srv}/d/x 1")
     second = f" {cli}/{path2}" if path2 else ""
     _pass(1, f"err {op} {cli}/{path}{second} {expect}")

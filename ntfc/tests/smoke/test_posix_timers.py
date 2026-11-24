@@ -32,27 +32,31 @@ import pytest
 pytestmark = pytest.mark.cmd_check("posixtl_main")
 
 OVERRUN_RESET_BUG = (
-    "sched/timer: timer_signotify() sets pt_overrun to 0 when it queues "
-    "the next signal and timer_getoverrun() returns that live counter, "
-    "not the count of the last delivery or acceptance"
+    "sched/timer/timer_settime.c:208: timer_signotify() sets pt_overrun "
+    "to 0 when it queues the next signal and timer_getoverrun() "
+    "(timer_getoverrun.c:90) returns that live counter, not the count of "
+    "the last delivery or acceptance"
 )
 THREAD_TIMER_BUG = (
-    "sched/timer: timer_create() makes the calling thread the owner "
-    "(pt_owner = tcb->pid) and nxsched_release_tcb() deletes the timers "
-    "of each exiting thread (timer_deleteall()), so timers are not "
-    "per-process"
+    "sched/timer/timer_create.c:224: timer_create() makes the calling "
+    "thread the owner (pt_owner = tcb->pid) and nxsched_release_tcb() "
+    "(sched/sched/sched_releasetcb.c:114) deletes the timers of each "
+    "exiting thread (timer_deleteall()), so timers are not per-process"
 )
 SENDER_PID_BUG = (
-    "sched/signal: sigqueue() and kill() set si_pid to the thread ID of "
-    "the sender (rtcb->pid), not its process ID"
+    "sched/signal/sig_queue.c:78: nxsig_queue_send() and "
+    "sched/signal/sig_kill.c:239: nxsig_kill() set si_pid to the thread "
+    "ID of the sender (rtcb->pid), not its process ID"
 )
 RELOAD_DISARM_BUG = (
-    "sched/timer: timer_settime() sets the reload value (pt_delay) only "
-    "when it arms the timer, so disarming keeps the old it_interval"
+    "sched/timer/timer_settime.c:492: timer_settime() sets the reload "
+    "value (pt_delay) only when it arms the timer, so disarming keeps the "
+    "old it_interval"
 )
 SETITIMER_EINVAL_BUG = (
-    "sched/timer: setitimer() does not check that tv_usec is in "
-    "0..999999 and timer_settime() does not check tv_nsec"
+    "sched/timer/timer_setitimer.c:152: setitimer() does not check that "
+    "tv_usec is in 0..999999 and timer_settime() (timer_settime.c:484) "
+    "does not check tv_nsec"
 )
 
 

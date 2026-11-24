@@ -24,9 +24,10 @@ import pytest
 from _net_common import nettl_client, nettl_server
 
 EXIT_SIGTERM_BUG = (
-    "sched/group: with GROUP_KILL_CHILDREN_TIMEOUT_MS != 0 (default -1 "
-    "with SIG_DEFAULT) exit() sends SIGTERM to the other threads, which "
-    "runs their handlers, and with < 0 waits forever for them to exit"
+    "sched/group/group_killchildren.c:226: group_kill_children(): with "
+    "GROUP_KILL_CHILDREN_TIMEOUT_MS != 0 exit() sends SIGTERM to the "
+    "other threads, which runs their handlers, and with < 0 waits forever "
+    "for them to exit (group_killchildren.c:232)"
 )
 
 
@@ -166,15 +167,19 @@ def test_wait_child_status_not_kept() -> None:
     containing the calling thread terminate, and wait() and waitpid()
     shall fail and set errno to [ECHILD]."  After each, SIGCHLD is set
     back to SIG_DFL without SA_NOCLDWAIT, and waitpid() must again
-    "obtain status information" of a child (exit status 7).
+    "obtain status information" of a child (exit status 7).  The verdict
+    names the SIG_IGN case as run, or as not built where SIG_IGN is
+    SIG_DFL (no ``CONFIG_SIG_DEFAULT``).
     """
-    out = (
-        pytest.product.core(0)
-        .sendCommandReadUntilPattern(
-            "exittl wait", pattern=r"exittl: (PASS|FAIL) wait", timeout=15
-        )
-        .output
-    )
-    found = re.search(r"exittl: (PASS|FAIL) wait", out)
+    core = pytest.product.core(0)
+    verdict_re = r"exittl: (?:PASS|FAIL) wait[^\r\n]*[\r\n]"
+    out = core.sendCommandReadUntilPattern(
+        "exittl wait", pattern=verdict_re, timeout=15
+    ).output
+    found = re.search(verdict_re, out)
     assert found, out
-    assert found.group(1) == "PASS", out
+    built = bool(core.conf.kv_check("CONFIG_SIG_DEFAULT"))
+    ignore = "run" if built else "notbuilt"
+    assert found.group(0).strip() == f"exittl: PASS wait ignore={ignore}", out
+    cases = ["nocldwait", "ignore"] if built else ["nocldwait"]
+    assert re.findall(r"exittl: (\w+) waitpid=-1 ", out) == cases, out

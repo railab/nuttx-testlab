@@ -61,8 +61,10 @@ EXCL_BUG = (
     "succeeds instead of failing with EEXIST"
 )
 QID_TYPE_BUG = (
-    "fs/v9fs/v9fs.c: the walk never looks at the qid type: a file used "
-    "as a directory gives ENOENT, not ENOTDIR"
+    "fs/v9fs/client.c:1883: v9fs_client_walk_impl() turns every partial "
+    "walk (Rwalk with nwqid < nwname) into ENOENT without looking at the "
+    "type of the last qid: a file used as a directory gives ENOENT, not "
+    "ENOTDIR"
 )
 SEEK_BUG = (
     "fs/v9fs/v9fs.c: v9fs_vfs_seek() returns a negative resulting offset "
@@ -79,16 +81,17 @@ WALK_BUG = (
     "Twalk; 9P allows at most 16 (MAXWELEM), so paths with more than 16 "
     "elements below the mount fail with EINVAL"
 )
-UNAME_BUG = (
-    "fs/v9fs/client.c: v9fs_client_init() copies uname=, aname= and "
-    "trans= values into fixed buffers with the option length, a uname "
-    "of NAME_MAX characters or more overflows the stack"
+TRANS_ERRNO_BUG = (
+    "fs/v9fs/transport.c:107: v9fs_transport_create() returns ENOENT for "
+    "a trans= value that is not in g_transport_ops_map; the Linux 9P "
+    "client returns EINVAL"
 )
-PROBE_UAF_BUG = (
-    "fs/v9fs/virtio_9p.c: virtio_9p_create() frees the driver after a "
-    "failed probe (ENODEV) without virtio_unregister_driver(); the freed "
-    "driver stays on the virtio bus list and the next unregister writes "
-    "into freed memory"
+TAG_ERRNO_BUG = (
+    "fs/v9fs/virtio_9p.c:204: virtio_9p_create() returns ENODEV whenever "
+    "virtio_register_driver() bound no device: the tag of no device "
+    "(virtio_9p_probe() fails at virtio_9p.c:400; Linux 9P virtio "
+    "transport: ENOENT) or a tag that is mounted (the bound device is "
+    "skipped at drivers/virtio/virtio.c:427; Linux: EBUSY)"
 )
 PCI_RESET_BUG = (
     "drivers/virtio/virtio-pci.c: virtio_pci_reset_device() calls "
@@ -103,11 +106,22 @@ KERNEL_UMOUNT_BUG = (
     "free(); umount asserts in mm_free() (DEBUGASSERT(mm_heapmember))"
 )
 OFFSET_BUG = (
-    "fs/v9fs: 9P directory offsets are opaque 64-bit values but v9fs "
-    "keeps them in off_t; without CONFIG_FS_LARGEFILE (32-bit off_t) the "
-    "offset of the last entry is truncated and the next Treaddir fails, "
-    "so readdir() reports an error at the end of the directory"
+    "fs/v9fs/client.c:1253: v9fs_client_convertdir() stores the opaque "
+    "64-bit 9P directory offset in an off_t (struct v9fs_vfs_dirent_s "
+    "offset, fs/v9fs/v9fs.c:78; Treaddir argument, client.c:1140); "
+    "without CONFIG_FS_LARGEFILE (32-bit off_t) the offset of the last "
+    "entry is truncated and the next Treaddir fails, so readdir() "
+    "reports an error at the end of the directory"
 )
+UNLINK_DIR_BUG = (
+    "fs/v9fs/v9fs.c:791: v9fs_vfs_unlink() sends Tunlinkat without "
+    "checking the file type and returns the server's error EISDIR; POSIX "
+    "unlink() fails with [EPERM] for a directory"
+)
+
+
+class MountErrnoError(Exception):
+    """A failed mount returned the errno of a known upstream bug."""
 
 
 def _share_root() -> Path:
@@ -136,6 +150,41 @@ def _mount() -> None:
     out = run(f"mount -t v9fs -o {OPTS} {MNT}")
     assert "failed" not in out, out
     assert _mounted()
+
+
+def _umount() -> None:
+    """Unmount the share."""
+    out = run(f"umount {MNT}")
+    assert "failed" not in out, out
+    assert not _mounted()
+
+
+def _mount_fails(data: str, expect: str, known: str = "") -> None:
+    """Require a mount to fail with an errno; the share stays mounted.
+
+    :param data: mount options
+    :param expect: errno name the mount must fail with
+    :param known: errno name of a known bug: ``MountErrnoError`` is
+     raised for it instead of failing the assertion
+    """
+    verdict = fstl(f"mount v9fs /mnt/bad {data} {expect}")
+    assert _mounted()
+    _mount_verdict(verdict, expect, known)
+
+
+def _mount_verdict(verdict: str, expect: str, known: str) -> None:
+    """Check the verdict of a mount that must fail.
+
+    :param verdict: ``fstl mount`` verdict line
+    :param expect: errno name the mount must fail with
+    :param known: errno name of a known bug: ``MountErrnoError`` is
+     raised for it instead of failing the assertion
+    """
+    if known and verdict == (
+        f"fstl: FAIL mount v9fs errno={known} want={expect}"
+    ):
+        raise MountErrnoError(verdict)
+    assert verdict.startswith("fstl: PASS"), verdict
 
 
 @pytest.fixture(scope="module")
@@ -270,11 +319,102 @@ def test_v9fs_mount_options(work: Tuple[Path, str], opts: str) -> None:
     _skip_remount()
     host, node = work
     (host / "probe.txt").write_text(f"opts {opts}\n")
-    run(f"umount {MNT}")
+    _umount()
     fstl_pass(f"mount v9fs {MNT} {opts} OK")
     assert f"opts {opts}" in run(f"cat {node}/probe.txt")
     fstl_pass(f"write {node}/data.bin 200000 -s 5 -b 65536")
     assert (host / "data.bin").read_bytes() == pattern(0, 200000, 5)
+
+
+# Mount errors
+
+
+@pytest.mark.parametrize(
+    "data,known",
+    [
+        pytest.param("trans=virtio", "", id="no-tag"),
+        pytest.param(
+            f"trans=nosuch,tag={TAG}",
+            "ENOENT",
+            id="unknown-trans",
+            marks=pytest.mark.xfail(
+                strict=True, reason=TRANS_ERRNO_BUG, raises=MountErrnoError
+            ),
+        ),
+    ],
+)
+def test_v9fs_mount_bad_options(data: str, known: str) -> None:
+    """Mount without a tag or with an unknown transport fails with EINVAL.
+
+    No standard covers 9P mount options; the errnos are those of the
+    Linux 9P client: no device name (tag) and an unknown ``trans=``
+    both give EINVAL.
+    """
+    _mount_fails(data, "EINVAL", known)
+
+
+def test_v9fs_mount_long_uname(work: Tuple[Path, str]) -> None:
+    """A uname= value of 40 characters mounts the share.
+
+    No standard covers 9P mount options; the limit is that of the
+    protocol.  9P2000.L: "size[4] Tattach tag[2] fid[4] afid[4]
+    uname[s] aname[s] n_uname[4]"; 9P intro: "The notation string[s]
+    (using a literal s character) is shorthand for s[2] followed by s
+    bytes of UTF-8 text", so a name of up to 65535 bytes is valid.
+    """
+    _skip_remount()
+    host, node = work
+    (host / "probe.txt").write_text("long uname\n")
+    _umount()
+    fstl_pass(f"mount v9fs {MNT} {OPTS},uname={'u' * 40} OK")
+    assert "long uname" in run(f"cat {node}/probe.txt")
+
+
+@pytest.mark.xfail(strict=True, reason=TAG_ERRNO_BUG, raises=MountErrnoError)
+@pytest.mark.parametrize("then", ["use", "remount"])
+def test_v9fs_mount_busy_tag(work: Tuple[Path, str], then: str) -> None:
+    """A second mount of the mounted tag fails with EBUSY.
+
+    EBUSY is the errno of the Linux 9P virtio transport for a tag in
+    use (no standard covers it).  The share stays usable (``use``) and
+    can be unmounted and mounted again (``remount``).
+    """
+    if then == "remount":
+        _skip_remount()
+    host, node = work
+    (host / "probe.txt").write_text("busy\n")
+    verdict = fstl(f"mount v9fs /mnt/again {OPTS} EBUSY")
+    assert _mounted()
+    if then == "remount":
+        _umount()
+        _mount()
+    assert "busy" in run(f"cat {node}/probe.txt")
+    _mount_verdict(verdict, "EBUSY", "ENODEV")
+
+
+@pytest.mark.xfail(strict=True, reason=TAG_ERRNO_BUG, raises=MountErrnoError)
+@pytest.mark.parametrize("state", ["mounted", "unmounted"])
+def test_v9fs_mount_wrong_tag(work: Tuple[Path, str], state: str) -> None:
+    """A tag no device has fails with ENOENT; the share still works.
+
+    ENOENT is the errno of the Linux 9P virtio transport for a tag no
+    device has (no standard covers it).  With the share mounted, or
+    unmounted before and mounted after the failed mount.
+    """
+    if state == "unmounted":
+        _skip_remount()
+    host, node = work
+    (host / "probe.txt").write_text("after wrong tag\n")
+    if state == "unmounted":
+        _umount()
+    verdict = fstl("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENOENT")
+    if state == "unmounted":
+        _mount()
+    assert _mounted()
+    assert "after wrong tag" in run(f"cat {node}/probe.txt")
+    fstl_pass(f"write {node}/after.bin 100000 -s 9")
+    assert (host / "after.bin").read_bytes() == pattern(0, 100000, 9)
+    _mount_verdict(verdict, "ENOENT", "ENODEV")
 
 
 # Data
@@ -570,8 +710,7 @@ def test_v9fs_open_nofollow(work: Tuple[Path, str]) -> None:
     """open(O_NOFOLLOW) of a symbolic link fails with ELOOP, 20 times.
 
     POSIX open(): "[ELOOP] O_NOFOLLOW was specified and the path
-    argument names a symbolic link."  The failed opens hold nothing:
-    the target still opens, and the share can be unmounted afterwards.
+    argument names a symbolic link."  The target still opens.
     """
     host, node = work
     (host / "f").write_bytes(pattern(0, 1000, 9))
@@ -580,10 +719,25 @@ def test_v9fs_open_nofollow(work: Tuple[Path, str]) -> None:
         fstl_pass(f"err nofollow {node}/lnk ELOOP")
     fstl_pass(f"err nofollow {node}/f OK")
     fstl_pass(f"verify {node}/lnk 1000 -s 9")
-    if not kv("CONFIG_DRIVERS_VIRTIO_PCI") and not kv("CONFIG_BUILD_KERNEL"):
-        fstl_pass(f"umount {MNT} OK")
-        assert not _mounted()
-        _mount()
+
+
+def test_v9fs_open_nofollow_umount(work: Tuple[Path, str]) -> None:
+    """The share unmounts after 20 failed open(O_NOFOLLOW) of a link.
+
+    POSIX open(): "[ELOOP] O_NOFOLLOW was specified and the path
+    argument names a symbolic link."  The failed opens hold nothing, so
+    umount() does not fail with EBUSY.
+    """
+    _skip_remount()
+    host, node = work
+    (host / "f").write_bytes(pattern(0, 1000, 9))
+    os.symlink("f", host / "lnk")
+    for _ in range(20):
+        fstl_pass(f"err nofollow {node}/lnk ELOOP")
+    fstl_pass(f"umount {MNT} OK")
+    assert not _mounted()
+    _mount()
+    fstl_pass(f"verify {node}/lnk 1000 -s 9")
 
 
 def test_v9fs_umount_inside(work: Tuple[Path, str]) -> None:
@@ -599,18 +753,6 @@ def test_v9fs_umount_inside(work: Tuple[Path, str]) -> None:
     assert _mounted()
     fstl_pass(f"err stat {node}/d OK")
 
-
-UNLINK_DIR_BUG = (
-    "fs/v9fs: unlink() of a directory sends Tunlinkat and returns the "
-    "server's error EISDIR; POSIX unlink() fails with [EPERM] for a "
-    "directory"
-)
-
-MOUNT_ERRNO_BUG = (
-    "fs/v9fs/transport.c returns ENOENT for an unknown trans= and "
-    "fs/v9fs/virtio_9p.c ENODEV for a tag no device has; the Linux 9P "
-    "client returns EINVAL and ENOENT"
-)
 
 ERRNO_CASES = [
     ("open-missing", "open", "nope", None, "ENOENT", None),
@@ -707,9 +849,11 @@ def test_v9fs_remount_persistence(work: Tuple[Path, str]) -> None:
     """Files and directories written before umount are there after."""
     _skip_remount()
     host, node = work
-    run(f"mkdir {node}/keep")
+    out = run(f"mkdir {node}/keep")
+    assert "failed" not in out, out
+    assert (host / "keep").is_dir()
     fstl_pass(f"write {node}/keep/p.bin 70000 -s 8")
-    run(f"umount {MNT}")
+    _umount()
     assert (host / "keep" / "p.bin").read_bytes() == pattern(0, 70000, 8)
     _mount()
     fstl_pass(f"verify {node}/keep/p.bin 70000 -s 8")
@@ -806,16 +950,27 @@ def _corrupt_section(data: bytes, field: str) -> bytes:
     raise AssertionError("no PROGBITS section")
 
 
-BINFMT_ERRNO_BUG = (
-    "binfmt/binfmt_loadmodule.c load_absmodule(): the error of the last "
-    "registered loader is returned, so an existing file every loader "
-    "rejects (ELF: EINVAL) fails with the builtin loader's ENOENT; POSIX "
-    "exec: [ENOEXEC] 'has an unrecognized format'"
+ELF_EOF_ERRNO_BUG = (
+    "libs/libc/elf/elf_read.c:122: libelf_read() returns ENODATA when "
+    "the file ends before the data it reads, and only the read of the "
+    "ELF header turns that into ENOEXEC (libs/libc/elf/elf_init.c:140 "
+    "libelf_initialize()): a section whose sh_size reaches beyond the "
+    "file fails the load (binfmt/elf.c:136 elf_loadbinary()) and "
+    "posix_spawn() with ENODATA; POSIX exec: [ENOEXEC] 'has an "
+    "unrecognized format'"
 )
 
 
-@pytest.mark.xfail(strict=True, reason=BINFMT_ERRNO_BUG)
-@pytest.mark.parametrize("field", ["align", "size"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "align",
+        pytest.param(
+            "size",
+            marks=pytest.mark.xfail(strict=True, reason=ELF_EOF_ERRNO_BUG),
+        ),
+    ],
+)
 def test_v9fs_elf_bad_section(share: Path, field: str) -> None:
     """A program with an invalid section header does not load.
 
@@ -823,15 +978,14 @@ def test_v9fs_elf_bad_section(share: Path, field: str) -> None:
     integral power of 2"; sh_size gives the section's size in the
     file.  POSIX posix_spawn()/exec: "[ENOEXEC] The new process image
     file has the appropriate access permission but has an unrecognized
-    format"; EINVAL is the other value a loader may give for an invalid
-    image.  The node keeps running: a good program still starts.
+    format".  The node keeps running: a good program still starts.
     """
     _elf(share, "elftl")
     data = (share / "bin" / "elftl").read_bytes()
     (share / "bin" / f"elfbad{field}").write_bytes(
         _corrupt_section(data, field)
     )
-    fstl_pass(f"exec {MNT}/bin/elfbad{field} ENOEXEC|EINVAL")
+    fstl_pass(f"exec {MNT}/bin/elfbad{field} ENOEXEC")
     fstl_pass(f"exec {MNT}/bin/elftl 0 exit 0")
 
 
@@ -840,64 +994,3 @@ def test_v9fs_elf_symbols(share: Path) -> None:
     _elf(share, "elfsym")
     verdict = _prog(f"{MNT}/bin/elfsym", r"elfsym: \S+.*")
     assert verdict.startswith("elfsym: PASS"), verdict
-
-
-# Mount errors, last: a failed virtio probe leaves the bus list damaged
-
-
-@pytest.mark.xfail(strict=True, reason=MOUNT_ERRNO_BUG)
-def test_v9fs_mount_bad_options() -> None:
-    """Mount without a tag or with an unknown transport fails with EINVAL.
-
-    No standard covers 9P mount options; the errnos are those of the
-    Linux 9P client: no device name (tag) and an unknown ``trans=``
-    both give EINVAL.
-    """
-    fstl_pass("mount v9fs /mnt/bad trans=virtio EINVAL")
-    fstl_pass(f"mount v9fs /mnt/bad trans=nosuch,tag={TAG} EINVAL")
-    assert _mounted()
-
-
-@pytest.mark.skip(reason=UNAME_BUG)
-def test_v9fs_mount_long_uname(work: Tuple[Path, str]) -> None:
-    """A uname= value longer than NAME_MAX is rejected or truncated."""
-    host, node = work
-    (host / "probe.txt").write_text("long uname\n")
-    run(f"umount {MNT}")
-    fstl(f"mount v9fs {MNT} {OPTS},uname={'u' * 40} OK|ENAMETOOLONG")
-    _mount()
-    assert "long uname" in run(f"cat {node}/probe.txt")
-
-
-@pytest.mark.skip(reason=PROBE_UAF_BUG)
-def test_v9fs_mount_busy_tag(work: Tuple[Path, str]) -> None:
-    """A second mount of the mounted tag fails; unmount and remount.
-
-    Errnos of the Linux 9P virtio transport (no standard covers them):
-    a tag in use gives EBUSY, a tag no device has ENOENT.
-    """
-    host, node = work
-    (host / "probe.txt").write_text("busy\n")
-    fstl_pass(f"mount v9fs /mnt/again {OPTS} EBUSY")
-    fstl_pass("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENOENT")
-    run(f"umount {MNT}")
-    _mount()
-    assert "busy" in run(f"cat {node}/probe.txt")
-
-
-@pytest.mark.xfail(strict=True, reason=MOUNT_ERRNO_BUG)
-def test_v9fs_mount_wrong_tag(work: Tuple[Path, str]) -> None:
-    """A tag no device has fails with ENOENT; the share still mounts.
-
-    ENOENT is the errno of the Linux 9P virtio transport for a tag no
-    device has (no standard covers it).
-    """
-    _skip_remount()
-    host, node = work
-    (host / "probe.txt").write_text("after wrong tag\n")
-    run(f"umount {MNT}")
-    fstl_pass("mount v9fs /mnt/bad trans=virtio,tag=nosuch ENOENT")
-    _mount()
-    assert "after wrong tag" in run(f"cat {node}/probe.txt")
-    fstl_pass(f"write {node}/after.bin 100000 -s 9")
-    assert (host / "after.bin").read_bytes() == pattern(0, 100000, 9)

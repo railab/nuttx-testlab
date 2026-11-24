@@ -104,6 +104,7 @@ RIGS: Dict[str, Dict[str, List[Any]]] = {
             ("oneshot6-1ms", "/dev/oneshot6 1000"),
             ("oneshot6-20ms", "/dev/oneshot6 20000"),
             ("oneshot6-half", "/dev/oneshot6 0"),
+            # TIM5 counts 32 bits of 1 us: half its maximum delay is 36 min
             ("oneshot5-1ms", "/dev/oneshot5 1000"),
             ("oneshot5-20ms", "/dev/oneshot5 20000"),
         ],
@@ -307,23 +308,34 @@ RIGS: Dict[str, Dict[str, List[Any]]] = {
 def board() -> str:
     """Return the board under test (``CONFIG_ARCH_BOARD_CUSTOM_NAME``).
 
-    :return: board name, empty if there is no product (e.g. at import
-        outside NTFC)
+    A build with ``hwtl`` is a hardware session: its board must have a
+    table in ``RIGS``, or the modules that ask for its entries fail to
+    collect.
+
+    :return: board name, empty if there is no product (import outside
+        NTFC) or the build has no ``hwtl``
+    :raises LookupError: hardware session of a board without a table
     """
     try:
         conf = pytest.product.core(0).conf
     except AttributeError:
         return ""
-    return str(conf.kv_check("CONFIG_ARCH_BOARD_CUSTOM_NAME") or "")
+    if not conf.kv_check("CONFIG_TESTLAB_HWTL"):
+        return ""
+    name = str(conf.kv_check("CONFIG_ARCH_BOARD_CUSTOM_NAME") or "")
+    if name not in RIGS:
+        raise LookupError(f"board {name!r} has no entry in RIGS")
+    return name
 
 
 def entries(feature: str) -> List[Entry]:
     """Return the entries of a feature for the board under test.
 
     :param feature: feature table name, e.g. ``timer``
-    :return: entries, empty if the board has none
+    :return: entries, empty if the board has no device of the feature
     """
-    return list(RIGS.get(board(), {}).get(feature, []))
+    name = board()
+    return list(RIGS[name].get(feature, [])) if name else []
 
 
 def entry_id(entry: Entry) -> str:

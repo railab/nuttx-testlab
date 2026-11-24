@@ -31,51 +31,56 @@ import pytest
 
 #: bind() of a pathname bound by a socket of another type succeeds.
 BIND_TYPE_BUG = (
-    "net/local: local_findconn() compares the name only with sockets of "
-    "the same type (lc_proto), so bind() of a pathname bound by a socket "
-    "of another type succeeds instead of failing with EADDRINUSE"
+    "net/local/local_conn.c:122: local_findconn() compares the name only "
+    "with sockets of the same type (lc_proto), so bind() of a pathname "
+    "bound by a socket of another type succeeds instead of failing with "
+    "EADDRINUSE"
 )
 
 #: bind() of the pathname of an existing file succeeds.
 BIND_FILE_BUG = (
-    "net/local: psock_local_bind() checks only the names of other local "
-    "sockets, not the file system, so bind() of the pathname of an "
-    "existing file succeeds instead of failing with EADDRINUSE"
+    "net/local/local_bind.c:92: psock_local_bind() checks only the names "
+    "of other local sockets, not the file system, so bind() of the "
+    "pathname of an existing file succeeds instead of failing with "
+    "EADDRINUSE"
 )
 
 #: connect() to a bound, non-listening stream socket fails with ENOENT.
 CONNECT_REFUSED_BUG = (
-    "net/local: psock_local_connect() matches only listening sockets and "
-    "then nx_stat()s the pathname, which bind() does not create, so "
+    "net/local/local_connect.c:267: psock_local_connect() matches only "
+    "listening sockets and then nx_stat()s the pathname "
+    "(local_connect.c:292), which bind() does not create, so "
     "connect() to a bound socket that is not listening fails with ENOENT "
     "instead of ECONNREFUSED"
 )
 
 #: connect() to a pathname bound by another socket type fails with ENOENT.
 CONNECT_TYPE_BUG = (
-    "net/local: connect() matches only sockets of its own type and then "
-    "nx_stat()s the pathname, so connect() to a pathname bound by a "
-    "socket of another type fails with ENOENT instead of EPROTOTYPE"
+    "net/local/local_connect.c:268: psock_local_connect() matches only "
+    "stream sockets and then nx_stat()s the pathname "
+    "(local_connect.c:292), so connect() to a pathname bound by a socket "
+    "of another type fails with ENOENT instead of EPROTOTYPE"
 )
 
 #: recvmsg() of a truncated datagram does not set MSG_TRUNC.
 TRUNC_BUG = (
-    "net/local: psock_dgram_recvfrom() discards the excess of a datagram "
-    "larger than the buffer, but local_recvmsg() never sets MSG_TRUNC in "
-    "msg_flags"
+    "net/local/local_recvmsg.c:640: psock_dgram_recvfrom() discards the "
+    "excess of a datagram larger than the buffer, but local_recvmsg() "
+    "(local_recvmsg.c:723) never sets MSG_TRUNC in msg_flags"
 )
 
 #: recvmsg() of a datagram into more than one iovec fails with ENOTSUP.
 SCATTER_BUG = (
-    "net/local: local_recvmsg() fails recvmsg() of a datagram socket "
-    "with more than one iovec with ENOTSUP"
+    "net/local/local_recvmsg.c:719: local_recvmsg() fails recvmsg() of a "
+    "datagram socket with more than one iovec with ENOTSUP"
 )
 
 #: recvmsg() with a short control buffer does not set MSG_CTRUNC.
 CTRUNC_BUG = (
-    "net/local: local_recvmsg() skips local_recvctl() when msg_controllen "
-    "is not larger than a cmsghdr, and local_recvctl() ignores a failed "
-    "cmsg_append(); MSG_CTRUNC is never set"
+    "net/local/local_recvmsg.c:739: local_recvmsg() skips local_recvctl() "
+    "when msg_controllen is not larger than a cmsghdr, and local_recvctl() "
+    "(local_recvmsg.c:171) ignores a failed cmsg_append(); MSG_CTRUNC is "
+    "never set"
 )
 
 

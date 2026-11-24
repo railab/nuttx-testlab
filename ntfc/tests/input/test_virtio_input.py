@@ -262,7 +262,10 @@ def test_virtio_input_tablet_touch() -> None:
     evdev: ``EV_ABS`` values are absolute positions, the button is the
     contact; ``touchscreen.h``: TOUCH_DOWN "A new touch contact is
     established", TOUCH_MOVE "Movement occurred with previously reported
-    contact", TOUCH_UP "The touch contact was lost".
+    contact", TOUCH_UP "The touch contact was lost", TOUCH_ID_VALID
+    "Touch ID is certain", TOUCH_POS_VALID "Hardware provided a valid
+    X/Y position": the release carries no position, so its report has
+    TOUCH_UP and TOUCH_ID_VALID only.
     """
     _need("virtio-tablet")
     reports = _inject(
@@ -282,5 +285,6 @@ def test_virtio_input_tablet_touch() -> None:
     assert reports[1] == (
         f"touch npoints=1 flags=0x{TOUCH_MOVE | valid:02x} x=1500 y=2500"
     )
-    flags = int(re.search(r"flags=0x([0-9a-f]+)", reports[2]).group(1), 16)
-    assert flags & (TOUCH_DOWN | TOUCH_MOVE | TOUCH_UP) == TOUCH_UP
+    assert reports[2].startswith(
+        f"touch npoints=1 flags=0x{TOUCH_UP | TOUCH_ID_VALID:02x} "
+    ), reports[2]

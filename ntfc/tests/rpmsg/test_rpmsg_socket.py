@@ -71,6 +71,12 @@ SHUTDOWN_DATA_BUG = (
     "available to be received and the peer has performed an orderly "
     "shutdown'"
 )
+SHUTDOWN_DATA_RACE = (
+    f"{SHUTDOWN_DATA_BUG}; a client that waits in recv() loses only the "
+    "data that arrives together with the SHUT_WR between two of its "
+    "recv() calls, which the scheduling of the two nodes decides (512 "
+    "of 1000 bytes read, or all of them)"
+)
 SELECT_EOF_BUG = (
     f"{SOCKIF}:1291 rpmsg_socket_poll() reports no event for a "
     "connected socket whose peer did shutdown(SHUT_WR) (conn->how has "
@@ -181,28 +187,46 @@ def test_rpsock_errno(check: str) -> None:
     assert line.startswith(f"rpsocktl: PASS {check}"), line
 
 
-def test_rpsock_eof_after_close() -> None:
+EOF_STATES = [
+    pytest.param("", id="blocked"),
+    pytest.param("-q", id="queued"),
+]
+
+
+@pytest.mark.parametrize("state", EOF_STATES)
+def test_rpsock_eof_after_close(state: str) -> None:
     """Data sent before close() is read, then end-of-file.
 
-    recv(): "If no messages are available to be received and the peer
-    has performed an orderly shutdown, recv() shall return 0." The
-    client reads only after the data and the close arrived.
+    recv(): "If no messages are available at the socket and O_NONBLOCK
+    is not set on the socket's file descriptor, recv() shall block until
+    a message arrives"; "If no messages are available to be received and
+    the peer has performed an orderly shutdown, recv() shall return 0."
+    ``blocked``: the client waits in recv() for the data and for the
+    close; ``queued``: it reads after both arrived.
     """
-    srv, cli = _pair("tl-eofc", "-m close -n 1000", "-m eof -n 1000")
+    srv, cli = _pair("tl-eofc", "-m close -n 1000", f"{state} -m eof -n 1000")
     assert srv.startswith("rpsocktl: PASS"), srv
     assert cli.startswith("rpsocktl: PASS eof rx=1000"), cli
 
 
-@pytest.mark.xfail(strict=True, reason=SHUTDOWN_DATA_BUG)
-def test_rpsock_eof_after_shutdown() -> None:
+@pytest.mark.parametrize("state", EOF_STATES)
+def test_rpsock_eof_after_shutdown(
+    request: pytest.FixtureRequest, state: str
+) -> None:
     """Data sent before shutdown(SHUT_WR) is read, then end-of-file.
 
     shutdown(): "SHUT_WR Disables further send operations." recv(): "If
     no messages are available to be received and the peer has performed
     an orderly shutdown, recv() shall return 0." The data the peer sent
-    before is still available, so it is returned first.
+    before is still available, so it is returned first.  ``blocked``:
+    the client waits in recv() for the data and for the shutdown;
+    ``queued``: it reads after both arrived.
     """
-    srv, cli = _pair("tl-eofs", "-m send -n 1000", "-m eof -n 1000")
+    if state == "-q":
+        request.applymarker(_xfail(SHUTDOWN_DATA_BUG))
+    else:
+        pytest.skip(SHUTDOWN_DATA_RACE)
+    srv, cli = _pair("tl-eofs", "-m send -n 1000", f"{state} -m eof -n 1000")
     assert srv.startswith("rpsocktl: PASS"), srv
     assert cli.startswith("rpsocktl: PASS eof rx=1000"), cli
 
@@ -216,7 +240,9 @@ def test_rpsock_select_eof() -> None:
     whether or not the function would transfer data successfully. (The
     function might return data, an end-of-file indication, or an error
     other than one indicating that it is blocked, and in each of these
-    cases the descriptor shall be considered ready for reading.)"
+    cases the descriptor shall be considered ready for reading.)"  The
+    client calls select() once recv() has returned the end of the
+    stream.
     """
     srv, cli = _pair("tl-sele", "-m send -n 0", "-m selecteof -t 5")
     assert srv.startswith("rpsocktl: PASS"), srv

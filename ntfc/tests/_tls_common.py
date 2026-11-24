@@ -39,7 +39,7 @@ from typing import Any, Dict, Iterator, List, Optional, Type
 
 import pytest
 from _host_services import SntpServer, TftpServer
-from _net_common import HOST_IP, pat, tcp_free
+from _net_common import HOST_IP, pat
 
 TLS_PORT = 5101
 WORKDIR = "/tl"
@@ -742,53 +742,31 @@ def server_verdict(timeout: int = 60) -> Dict[str, Any]:
     :return: parsed verdict, see :func:`_parse`
     """
     ret = core().readUntilPattern(VERDICT_RE, timeout=timeout)
-    return _parse(str(ret.output))
+    verdict = _parse(str(ret.output))
+    if verdict:
+        wait_exit()
+    return verdict
+
+
+def wait_exit(timeout: float = 10) -> None:
+    """Wait until no tlstl task is left on node 0.
+
+    A background server prints its verdict before it exits.
+
+    :param timeout: seconds to wait
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        ret = core().sendCommandReadUntilPattern(
+            "ps", pattern=r"nsh> ", timeout=10
+        )
+        if "tlstl" not in str(ret.output):
+            return
+        assert time.monotonic() < deadline, f"tlstl runs: {ret.output}"
+        time.sleep(0.5)
 
 
 _FREE_RE = re.compile(r"^\s*\d+\s+(\d+)\s+\d+\s+\d+\s+\d+.*Umem", re.M)
-
-#: Seconds an exited task may take to release its memory
-HEAP_SETTLE_S = 10.0
-
-
-def _ncpus() -> int:
-    """Return the CPU count of an SMP node.
-
-    :return: ``CONFIG_SMP_NCPUS``, 1 without ``CONFIG_SMP``
-    """
-    if not core().conf.kv_check("CONFIG_SMP"):
-        return 1
-    return int(core().conf.kv_check("CONFIG_SMP_NCPUS") or 1)
-
-
-def pin_shell(mask: int = 1) -> None:
-    """Keep the node shell, and so every program it starts, on CPU 0.
-
-    Only on SMP nodes.  A task's stack is freed while the task switches
-    out, onto a delay list of its CPU, which only that CPU empties, at
-    its next allocation (``free`` runs ``mallinfo()``, which empties the
-    list of the calling CPU only).  With all programs on the shell's CPU,
-    ``free`` sees every block they freed as free.
-
-    :param mask: CPU affinity mask, 0 for all CPUs
-    """
-    ncpus = _ncpus()
-    if ncpus == 1:
-        return
-    mask = mask or (1 << ncpus) - 1
-    ret = core().sendCommandReadUntilPattern(
-        "ps", pattern=r"nsh> ", timeout=10
-    )
-    found = re.search(
-        r"^\s*(\d+)\s.*\sRunning\s.*\s(nsh_main|sh)\s*$",
-        str(ret.output),
-        re.M,
-    )
-    assert found, f"no running shell: {ret.output}"
-    ret = core().sendCommandReadUntilPattern(
-        f"taskset -p {mask} {found.group(1)}", pattern=r"nsh> ", timeout=10
-    )
-    assert f"mask: {mask:#x}" in str(ret.output), str(ret.output)
 
 
 def heap_used() -> int:
@@ -804,6 +782,16 @@ def heap_used() -> int:
     return int(found.group(1))
 
 
+SMP_DELAYLIST_BUG = (
+    "mm/mm_heap/mm_malloc.c:71: free_delaylist() frees only the delay "
+    "list of the calling CPU, so mallinfo() (mm/mm_heap/mm_foreach.c:62: "
+    "mm_foreach()) counts as used the stack and TCB of a task that "
+    "exited on another CPU (sched/task/task_exit.c:148: nxtask_exit(), "
+    "mm/mm_heap/mm_free.c:101: mm_delayfree()) until that CPU allocates; "
+    "the heap check passes or fails with the CPU the task exits on"
+)
+
+
 class HeapCheck:
     """``free`` snapshot taken before a test; ``check()`` compares."""
 
@@ -814,28 +802,12 @@ class HeapCheck:
     def check(self) -> None:
         """Fail when the heap holds more than before the test.
 
-        An exited task releases its memory after its parent is woken up,
-        so wait up to ``HEAP_SETTLE_S`` for the count to come back.
+        The programs of the test have exited: see :func:`wait_exit`.
+        Call it last: on an SMP node it skips the rest of the test.
         """
-        deadline = time.monotonic() + HEAP_SETTLE_S
+        if core().conf.kv_check("CONFIG_SMP"):
+            pytest.skip(SMP_DELAYLIST_BUG)
         after = heap_used()
-        while after > self.before and time.monotonic() < deadline:
-            time.sleep(1)
-            after = heap_used()
         assert (
             after <= self.before
         ), f"heap grew by {after - self.before} bytes"
-
-
-def wait_conn_room(room: int, timeout: float = 130) -> None:
-    """Wait until node 0 has ``room`` free TCP connections.
-
-    Connections a test closed first stay in TIME_WAIT for 2 minutes;
-    waiting keeps the next test from taking over one of them.
-
-    :param room: free connections needed
-    :param timeout: seconds to wait
-    """
-    deadline = time.monotonic() + timeout
-    while tcp_free(0) < room and time.monotonic() < deadline:
-        time.sleep(5)

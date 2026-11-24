@@ -25,13 +25,23 @@ the Linux interface is the reference.
 """
 
 import pytest
-from _fs_common import fields, fstl, fstl_pass, kv, run
+from _fs_common import fstl_pass, kv, run
 
 TMP = "/mnt/tmp"
 FAT = "/mnt/fat"
 RAMDISK_MINOR = 7
 RAMDISK_SECTORS = 2048  # 1 MiB of 512-byte sectors
 
+FAT_CACHE_BUG = (
+    "fs/fat/fs_fat32.h:949: every open of a file has its own sector "
+    "cache (struct fat_file_s ff_buffer). fs/fat/fs_fat32.c:1673 "
+    "fat_write() keeps a partial-sector write in the writer's ff_buffer "
+    "and fs_fat32.c:1572 writes whole sectors to the volume, neither "
+    "updating nor invalidating the caches of the other opens, and "
+    "fs/fat/fs_fat32util.c:1951 fat_ffcacheread() serves fat_read() "
+    "(fs_fat32.c:1403) from its own cached sector, so the other opens "
+    "read stale data"
+)
 FAT_RMDIR_BUG = (
     "fs/fat/fs_fat32dirent.c fat_remove(): a directory whose last cluster "
     "is full of deleted entries (no DIR0_ALLEMPTY entry) is scanned to "
@@ -214,6 +224,18 @@ def test_tmpfs_pread_pwrite(tmpdir: str) -> None:
     fstl_pass(f"pio {tmpdir}/p.bin")
 
 
+def test_tmpfs_two_descriptors(tmpdir: str) -> None:
+    """A read through one descriptor returns what another one wrote.
+
+    POSIX write(): "After a write() to a regular file has successfully
+    returned: Any successful read() from each byte position in the file
+    that was modified by that write shall return the data specified by
+    the write() for that position until such byte positions are again
+    modified."
+    """
+    fstl_pass(f"twofd {tmpdir}/t.bin")
+
+
 def test_tmpfs_write_verify(tmpdir: str) -> None:
     """70000 bytes of pattern read back from tmpfs (write(), read())."""
     fstl_pass(f"write {tmpdir}/w.bin 70000 -s 3")
@@ -329,6 +351,20 @@ def test_fat_pread_pwrite(fatdir: str) -> None:
     fstl_pass(f"pio {fatdir}/P.BIN")
 
 
+@pytest.mark.xfail(strict=True, reason=FAT_CACHE_BUG)
+def test_fat_two_descriptors(fatdir: str) -> None:
+    """A read through one descriptor returns what another one wrote.
+
+    POSIX write(): "After a write() to a regular file has successfully
+    returned: Any successful read() from each byte position in the file
+    that was modified by that write shall return the data specified by
+    the write() for that position until such byte positions are again
+    modified."  The second descriptor has read the sector before: for a
+    write of 100 bytes of it and for a write of whole sectors.
+    """
+    fstl_pass(f"twofd {fatdir}/T.BIN")
+
+
 def test_fat_extend_after_seek(fatdir: str) -> None:
     """ftruncate() extension after a seek to the start keeps the data.
 
@@ -391,7 +427,7 @@ def test_fat_statfs(fat: str) -> None:
     POSIX fstatvfs(): f_bsize "File system block size", f_blocks "Total
     number of blocks on file system in units of f_frsize".
     """
-    got = fields(fstl(f"statfs {fat}"))
+    got = fstl_pass(f"statfs {fat}")
     assert int(got["bsize"]) % 512 == 0 and int(got["bsize"]) > 0, got
     assert 0 < int(got["blocks"]) <= RAMDISK_SECTORS, got
     assert int(got["bfree"]) <= int(got["blocks"]), got

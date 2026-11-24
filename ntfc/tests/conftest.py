@@ -51,6 +51,22 @@ def pytest_runtest_makereport(item: pytest.Item) -> Iterator[None]:
         item.rep_call = report  # type: ignore[attr-defined]
 
 
+@pytest.fixture
+def reboot_after_failure(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Reboot the nodes after a failed or expected-to-fail test.
+
+    For a test whose failure leaves a node in a state that would fail
+    later tests.
+
+    :param request: pytest request
+    """
+    yield
+    report = getattr(request.node, "rep_call", None)
+    if report is not None and (report.failed or hasattr(report, "wasxfail")):
+        for product in pytest.products:
+            assert product.reboot(), f"{product.name}: reboot failed"
+
+
 @pytest.fixture(autouse=True)
 def nettl_servers() -> Iterator[None]:
     """Stop background nettl servers after each test."""

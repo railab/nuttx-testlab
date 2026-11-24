@@ -27,7 +27,6 @@ The node's serial device (:data:`NODE_DEV`) and the host's
 
 import re
 import struct
-import time
 from typing import Any, Iterator, List
 
 import pytest
@@ -78,9 +77,13 @@ def _node_dev() -> str:
 
 
 def _flush_host() -> None:
-    """Drop stale bytes queued for the host end of the line."""
+    """Drop the bytes the line stored while the host end was closed.
+
+    The line is a pseudoterminal pair: unlike a wire, it keeps what the
+    node sent while nothing on the host had it open (the request of a
+    NuttX master to a silent line).
+    """
     with serial.Serial(HOST_DEV) as port:
-        time.sleep(0.1)
         port.reset_input_buffer()
 
 
@@ -131,8 +134,6 @@ def _raw(frame: bytes, baud: int = BAUD, wait: float = 1.0) -> bytes:
         timeout=wait,
         inter_byte_timeout=0.1,
     ) as port:
-        time.sleep(0.1)
-        port.reset_input_buffer()
         port.write(frame)
         return bytes(port.read(256))
 
@@ -159,8 +160,7 @@ def _master(baud: int = BAUD) -> ModbusSerialClient:
     :param baud: line speed
     :return: connected client
     """
-    _flush_host()
-    client = ModbusSerialClient(HOST_DEV, baudrate=baud, timeout=2, retries=1)
+    client = ModbusSerialClient(HOST_DEV, baudrate=baud, timeout=2, retries=0)
     assert client.connect(), f"cannot open {HOST_DEV}"
     return client
 
@@ -292,6 +292,7 @@ def node_slave() -> Iterator[NodeSlave]:
     node's serial line until the end of the module.
     """
     slave = NodeSlave()
+    _flush_host()
     slave.start()
     yield slave
     slave.stop()
@@ -438,7 +439,6 @@ def test_modbus_rtu_slave_restart(node_slave: NodeSlave) -> None:
     node_slave.stop()
     node_slave.start()
     try:
-        time.sleep(0.5)
         read = struct.pack(">BHH", 4, 1, 1)
         assert _raw_pdu(UNIT, read) == bytes([4, 2, 0, 10])
     finally:

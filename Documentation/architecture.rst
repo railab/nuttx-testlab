@@ -100,9 +100,10 @@ CLI::
 - ``-l len`` client only, UDP only: payload length per datagram in
   bytes, ``1`` to ``CONFIG_TESTLAB_NETTL_BUFSIZE``; default is
   ``min(512, CONFIG_TESTLAB_NETTL_BUFSIZE)``.
-- ``-t sec`` socket receive timeout, default ``10``.
+- ``-t sec`` socket receive timeout (``SO_RCVTIMEO``), default ``10``;
+  fails if it cannot be set.
 
-TCP/UDP server-only options (added for ``ip`` regression tests, see
+TCP/UDP server-only options (used by the ``ip`` regression tests, see
 :doc:`test-cases`), full CLI::
 
    nettl -s [-u] [-p port] [-n count] [-l len] [-t sec] [-w] [-D sec]
@@ -119,7 +120,9 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
   <SO_ERROR>`` and fails.
 - ``-r pps`` UDP client only: send ``-n`` datagrams at ``pps`` per
   second (``0``: as fast as possible) without waiting for echoes, then
-  the end marker; fails only on send errors other than a full queue.
+  the end marker once. A ``sendto()`` that fails with ``ENOBUFS`` or
+  ``ENOMEM`` is counted in ``busy=``, any other failure in ``err=``;
+  passes when ``err == 0`` and at least one datagram was sent.
 - ``-d`` TCP client only: send and read the echo at the same time on a
   nonblocking socket instead of chunk by chunk.
 - ``-N`` TCP client only: only connect, on a nonblocking socket. Prints
@@ -136,6 +139,9 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
 - ``-I`` UDP client only: ``sendmsg()`` of a two-element iov whose
   lengths sum past ``SSIZE_MAX``; passes when it fails with ``EINVAL``
   and prints ``iov=<errno> ret=<ret>`` on the verdict line.
+- ``-M`` UDP client only: one ``sendto()`` of ``-l`` + 4 bytes; passes
+  when it fails with ``EMSGSIZE`` and prints ``msgsize=<errno>
+  ret=<ret>`` on the verdict line.
 
 - ``-w`` TCP server only: after accept(), send ``-n`` bytes of
   pattern data to the client (no echo) then close; does not combine
@@ -145,8 +151,8 @@ TCP/UDP server-only options (added for ``ip`` regression tests, see
 - ``-S`` UDP server only: receive-only sink, no echo. Verifies the
   datagrams until the end marker or the ``-t`` timeout; passes when at
   least one datagram arrived and all were intact.
-- ``-R bytes`` with ``-S``: set ``SO_RCVBUF`` (ignored without
-  ``CONFIG_NET_RECV_BUFSIZE``, where the receive queue has no limit).
+- ``-R bytes`` with ``-S``: set ``SO_RCVBUF``; fails if the option
+  cannot be set.
 - ``-L n`` UDP server only, ``1`` to ``4``: open ``n`` sockets with
   ``SO_REUSEADDR`` bound to the same port and poll all of them until
   each has received ``-n`` datagrams of ``-l`` bytes each (or the
@@ -167,11 +173,13 @@ position in the logical stream (TCP) or datagram (UDP).
   by ``len`` bytes of pattern data (offset ``seq * len``). The server
   echoes each datagram verbatim to its sender until it receives a
   datagram whose sequence number is ``0xffffffff`` (sent with no
-  payload), which ends its loop without a reply. The client sends each
-  sequence number and waits for the matching echo, retrying up to 3
-  times (and discarding up to 16 stale/duplicate echoes per attempt
-  without consuming a retry) before counting it lost; after the last
-  sequence number it sends the ``0xffffffff`` end marker 3 times.
+  payload), which ends its loop without a reply; a failed echo
+  ``sendto()`` counts in ``err=``. The client sends each sequence
+  number once and waits for its echo: no echo within the ``-t``
+  timeout counts in ``lost=``; a failed ``sendto()``/``recv()`` and
+  any other datagram (duplicate or late echo) count in ``err=``;
+  ``tx=`` is the number of datagrams sent. After the last sequence
+  number it sends the ``0xffffffff`` end marker once.
 
 Verdict line (always exactly one, to stdout) and process exit code:
 
@@ -230,7 +238,8 @@ sets a flag that the parent reads (flat build: shared memory).
   children of 200 and 600 ms and expects ``waitpid(-1)`` to fail with
   ``ECHILD`` after both ended; after each, with ``SIG_DFL``,
   ``waitpid()`` must return a child's exit status 7. Verdict
-  ``exittl: PASS|FAIL wait``.
+  ``exittl: PASS|FAIL wait ignore=run|notbuilt`` (``notbuilt``: no
+  ``CONFIG_SIG_DEFAULT``, the ``SIG_IGN`` case is not built).
 
 ``apps/inputtl``
 ~~~~~~~~~~~~~~~~
@@ -335,7 +344,7 @@ and prints one verdict line ``fstl: PASS|FAIL <check> ...``; exit 0 on
 PASS. It uses only POSIX calls, so it works on any file system::
 
    fstl write|verify <path> <size> [-s seed] [-b bufsize] [-a]
-   fstl pio|trunc|append|sync <path>
+   fstl pio|twofd|trunc|append|sync <path>
    fstl conc <dir> <n> <size>
    fstl ls <dir> [-n count] [-q]
    fstl stat|statfs|path <path>
@@ -345,7 +354,7 @@ PASS. It uses only POSIX calls, so it works on any file system::
    fstl err <op> <path> [path2] <ERRNO[|ERRNO]|OK>
    fstl mount <fstype> <target> <data> <ERRNO|OK>
    fstl umount <target> <ERRNO|OK>
-   fstl exec <path|name> <status> [args...]
+   fstl exec <path|name> <status|ERRNO> [args...]
 
 - Pattern: the 4-byte word at offset ``w`` (multiple of 4) is
   ``w ^ (seed * 0x9e3779b9)``, little-endian, so no two words of a file
@@ -364,7 +373,11 @@ PASS. It uses only POSIX calls, so it works on any file system::
 - ``conc`` runs ``n`` threads that each write and read back
   ``<dir>/conc<i>.bin`` (seed ``i + 1``); ``exec`` runs a program with
   ``posix_spawn`` (``posix_spawnp`` for a name) and checks its exit
-  status.
+  status, or the errno of the spawn.
+- ``twofd`` writes 100 bytes and then 4096 bytes through one descriptor
+  and reads them through a second one that read the same place before;
+  verdict ``fstl: PASS|FAIL twofd partial=<n> whole=<n>``, the bytes
+  read with their old value.
 
 ``apps/elftl``
 ~~~~~~~~~~~~~~
@@ -430,6 +443,7 @@ X.509 and PEM parsing) is an Mbed TLS client/server::
   ``sertl: ready dev=<dev>`` and writes back every byte read until
   ``-n`` bytes (default 256) arrived or ``-t`` s (default 10) passed.
 - Verdict: ``sertl: PASS|FAIL dev=<dev> rx=<n>``; exit 0 on PASS.
+  ``sertl: FAIL dev=<dev> termios errno=<n>`` if raw mode cannot be set.
 
 ``apps/ptptl``
 ~~~~~~~~~~~~~~
@@ -526,7 +540,7 @@ check per call on a mounted file system::
 
    rpsocktl -s [-m echo|send|close|select] [-n bytes] [-t sec] name
    rpsocktl -s -u -c cpu [-t sec] name
-   rpsocktl -c cpu [-u] [-m check] [-n bytes] [-t sec] name
+   rpsocktl -c cpu [-u] [-q] [-m check] [-n bytes] [-t sec] name
    rpsocktl -e check
 
 - Server (``-s``): stream socket bound to ``name`` (any CPU), prints
@@ -542,7 +556,10 @@ check per call on a mounted file system::
   default 10 s, with ``SIGALRM``), then one check: ``eof``,
   ``selecteof``, ``readv``, ``peer``, ``isconn``, ``epipe``,
   ``refused`` (stream); ``bounds``, ``trunc``, ``msgsize`` (``-u``).
-  ``eof``, ``selecteof`` and ``readv`` wait 1 s before reading.
+  ``eof`` and ``readv`` wait in the call for the data and the end of
+  the stream; ``eof -q`` reads 1 s after connecting, when both are
+  queued. ``selecteof`` calls select() once recv() has returned the end
+  of the stream.
 - Local (``-e``): one call on a socket without a peer: ``dgramlisten``,
   ``unboundlisten``, ``listen0``, ``acceptnl``, ``recvnc``, ``sendnc``,
   ``peernc``, ``shutnc``.
@@ -827,8 +844,8 @@ directory over 9P, as ``v9fs64-knsh`` (see `Host share (v9fs)`_), with a
 6 MiB kernel heap (the kernel page tables map 8 MiB of kernel text and
 data), a 16 MiB page pool for the processes, the kernel stacks of
 ``v9fs64-knsh`` and ``TLS_LOG2_MAXSTACK=15`` for the 16 KiB Paho MQTT
-stacks. They leave out what does not build in a kernel build: the NTP
-client, the ``ftpd`` example and ``ptptl`` with the PTP daemon
+stacks. Their session runs the ``ip`` modules on defconfigs without the
+NTP client, the ``ftpd`` example, ``ptptl`` with the PTP daemon
 (``task_create()``) and MQTT-C.
 
 Driver tests check for buffer leaks: the ``net_leak`` fixture
@@ -872,8 +889,7 @@ and role come from the ``conode`` command line.
        (``CAN_CTUCANFD``, CAN FD), node1 ``kvaser_pci``
        (``CAN_KVASER``, classic)
    * - ``qemu-armv8a``
-     - ``boards/arm64/qemu/qemu-armv8a/configs/can-bus`` (both nodes,
-       not in the manifest)
+     - ``boards/arm64/qemu/qemu-armv8a/configs/can-bus`` (both nodes)
      - as ``qemu-intel64``, ``ctucan_pci`` on both nodes; GICv2
        (``ARM64_GIC_VERSION=2``, ``gic-version=2``) for PCI INTx
 
@@ -1107,10 +1123,6 @@ starts at ``CONFIG_START_YEAR`` until NTP sets it).
      - ``virtio-rng-device`` (``DRIVERS_VIRTIO_RNG``)
    * - ``qemu-intel64``
      - RDRAND (``DEV_URANDOM_ARCH``)
-
-``qemu-intel64`` is SMP: the tests pin the shell, and so tlstl, to CPU
-0 (``taskset``, ``SYSTEM_TASKSET``), so that ``free`` (run on that CPU)
-sees the stacks of exited programs released.
 
 ``test_tls_handshake_lossy`` adds a netem qdisc to ``tl-br0`` (host to
 node) and redirects the bridge's ingress (node to host) to ``ifb``

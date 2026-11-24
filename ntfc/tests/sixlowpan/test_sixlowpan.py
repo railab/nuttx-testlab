@@ -74,33 +74,16 @@ LOOPBACK_SADDR_BUG = (
     "IPHC-compressed packet as not destined for us"
 )
 
-BURST_HANG_BUG = (
-    "wireless/ieee802154/mac802154_loopback.c, net/sixlowpan: with the "
-    "lo_addr2ip() byte-order bug (LOOPBACK_SADDR_BUG) every "
-    "IPHC-compressed packet is dropped by ipv6_input(); a client that "
-    "sends 50 fragmented 1228-byte datagrams in a row then stops the "
-    "node: no verdict, no NSH prompt, the console stays dead (4 such "
-    "datagrams only lose their echoes); with the byte order fixed the "
-    "same burst passes"
-)
-
-TCP_SEND_BLOCK_BUG = (
-    "net/sixlowpan/sixlowpan_tcpsend.c psock_6lowpan_tcp_send(): with "
-    "every data segment dropped by the receiver (LOOPBACK_SADDR_BUG) the "
-    "client's send() never returns: the 3-way handshake (uncompressed, "
-    "below the compression threshold) succeeds, the first data segment is "
-    "retransmitted without end and the task stays blocked for minutes "
-    "although SO_RCVTIMEO is 10 s and TCP_MAXRTX should abort the "
-    "connection; the node answers no other command meanwhile"
-)
-
-OVER_MTU_HANG_BUG = (
-    "net/sixlowpan: a UDP datagram of 1236 bytes (IPv6 length 1284, "
-    "within the 1294-byte CONFIG_NET_6LOWPAN_PKTSIZE of wpan0) is "
-    "fragmented into 13 frames and reassembled, but the node stops "
-    "answering the console after the reassembled echo is dispatched "
-    "(sixlowpan_frame_process() reports the full length and nothing "
-    "follows); 1232 bytes work"
+OVER_MTU_BUG = (
+    "net/sixlowpan/Kconfig:313: CONFIG_NET_6LOWPAN_PKTSIZE, the MTU of "
+    "an IEEE 802.15.4 or packet radio device "
+    "(net/netdev/netdev_register.c:352 netdev_register()), is 1294 by "
+    "default (its help counts an Ethernet header that 6LoWPAN does not "
+    "have), not the 1280 octets of RFC 4944; the only size check of "
+    "sendto(), net/devif/devif_send.c:89 devif_send(), therefore "
+    "accepts IPv6 packets of up to 1294 octets and "
+    "psock_6lowpan_udp_sendto() (net/sixlowpan/sixlowpan_udpsend.c:313) "
+    "sends them as 6LoWPAN fragments"
 )
 
 _ADDR_RE = re.compile(r"inet6 addr: (fe80:[0-9a-f:]+)/\d+")
@@ -144,16 +127,18 @@ def _loopback_bug(request: pytest.FixtureRequest, compressed: bool) -> None:
         )
 
 
-def _tcp_send_block() -> None:
-    """Skip a TCP test whose client blocks the IEEE 802.15.4 loopback."""
-    if _ieee802154_loopback():
-        pytest.skip(TCP_SEND_BLOCK_BUG)
+def _finished(verdict: str) -> str:
+    """Reboot the node if a nettl client printed no verdict in time.
 
+    A client that gets no answer goes on until its own timeouts end it;
+    it holds the console of the node meanwhile.
 
-def _burst_hang() -> None:
-    """Skip a burst that hangs the IEEE 802.15.4 loopback node."""
-    if _ieee802154_loopback():
-        pytest.skip(BURST_HANG_BUG)
+    :param verdict: client verdict line, empty if there is none
+    :return: the verdict
+    """
+    if not verdict:
+        assert pytest.product.reboot(), "reboot failed"
+    return verdict
 
 
 @pytest.fixture(scope="module")
@@ -273,10 +258,11 @@ def test_sixlowpan_udp_fragment_burst(
     datagram_size; the receiver reassembles each datagram from its own
     fragments. PASS: ``lost=0`` for 50 datagrams of 1228 bytes.
     """
-    _burst_hang()
     _loopback_bug(request, True)
     nettl_server(0, True, PORT_COMPRESSED, ipv6=True)
-    verdict = nettl_client(0, addr, True, PORT_COMPRESSED, 50, UDP_MAX)
+    verdict = _finished(
+        nettl_client(0, addr, True, PORT_COMPRESSED, 50, UDP_MAX)
+    )
     assert verdict == "nettl: PASS tx=50 rx=50 lost=0 err=0"
     _frames_since(frames[0], _min_frames(UDP_MAX, 100))
 
@@ -292,7 +278,6 @@ def test_sixlowpan_udp_interleaved(
     foreground client, each sending 20 datagrams of 1228 bytes to its
     own server, both report ``lost=0``.
     """
-    _burst_hang()
     _loopback_bug(request, True)
     nettl_server(0, True, PORT_COMPRESSED, ipv6=True)
     nettl_server(0, True, PORT_INLINE, ipv6=True)
@@ -312,27 +297,29 @@ def test_sixlowpan_udp_interleaved(
     if len(re.findall(client_re, out)) < 2:
         out += str(core.readUntilPattern(VERDICT_RE, timeout=60).output)
     verdicts = re.findall(client_re, out)
+    if len(verdicts) < 2:
+        _finished("")
     assert len(verdicts) == 2, out
     assert all(
         v == "nettl: PASS tx=20 rx=20 lost=0 err=0" for v in verdicts
     ), verdicts
 
 
-def test_sixlowpan_udp_over_mtu(
-    request: pytest.FixtureRequest, addr: str
-) -> None:
-    """A UDP datagram just above the 1280-byte minimum MTU is echoed.
+@pytest.mark.xfail(strict=True, reason=OVER_MTU_BUG)
+def test_sixlowpan_udp_over_mtu(addr: str) -> None:
+    """A UDP datagram above the 1280-octet MTU is refused with EMSGSIZE.
 
-    RFC 8200 5: a node may send packets larger than 1280 bytes on a
-    link whose MTU allows it; ``wpan0`` reports mtu 1294. PASS: one
-    1236-byte datagram (IPv6 length 1284) comes back, or sendto() fails
-    with EMSGSIZE (POSIX). Skipped: the node hangs, see the reason.
+    RFC 4944 4: "The MTU size for IPv6 packets over IEEE 802.15.4 is
+    1280 octets."  POSIX sendto(): "[EMSGSIZE] The message is too large
+    to be sent all at once, as the socket requires."  The node does not
+    fragment IPv6 packets (no ``CONFIG_NET_IPFRAG``), so a 1236-byte
+    datagram (IPv6 length 1284) cannot be sent. PASS: ``nettl -M``, one
+    sendto() of it, fails with EMSGSIZE (90).
     """
-    pytest.skip(OVER_MTU_HANG_BUG)
-    _loopback_bug(request, True)
-    nettl_server(0, True, PORT_INLINE, ipv6=True)
-    verdict = nettl_client(0, addr, True, PORT_INLINE, 1, UDP_MAX + 4)
-    assert verdict == "nettl: PASS tx=1 rx=1 lost=0 err=0"
+    verdict = nettl_client(
+        0, addr, True, PORT_INLINE, 1, UDP_MAX + 4, extra="-M"
+    )
+    assert verdict == "nettl: PASS tx=0 rx=0 lost=0 err=0 msgsize=90 ret=-1"
 
 
 @pytest.mark.parametrize(
@@ -354,10 +341,9 @@ def test_sixlowpan_tcp_echo(
     next. PASS: ``nettl: PASS tx=N rx=N err=0`` and at least
     ceil(N / 127) frames per direction.
     """
-    _tcp_send_block()
     _loopback_bug(request, True)
     nettl_server(0, False, 5100, ipv6=True)
-    verdict = nettl_client(0, addr, False, 5100, nbytes)
+    verdict = _finished(nettl_client(0, addr, False, 5100, nbytes))
     assert verdict == f"nettl: PASS tx={nbytes} rx={nbytes} err=0"
     _frames_since(frames[0], 2 * math.ceil(nbytes / FRAME_MAX))
 

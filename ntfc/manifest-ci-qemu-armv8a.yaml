@@ -15,6 +15,10 @@ sessions:
     confpath: ntfc/configs/qemu-armv8a/ip-pair/config.yaml
     testpath: ntfc/tests/ip
     resources: [tl-br0]
+  - name: "qemu-armv8a-can-bus"
+    confpath: ntfc/configs/qemu-armv8a/can-bus/config.yaml
+    testpath: ntfc/tests/can
+    resources: [can0]
   - name: "qemu-armv8a-modbus-rtu"
     confpath: ntfc/configs/qemu-armv8a/modbus-rtu/config.yaml
     testpath: ntfc/tests/modbus

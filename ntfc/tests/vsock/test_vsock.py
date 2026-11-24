@@ -45,13 +45,6 @@ CONNECT_FAILED_RE = r"nettl: connect failed (\d+)"
 
 _SERVERS: List[int] = []
 
-REFUSED_BUG = (
-    "net/vsock/vsock_sockif.c: vsock_recv_connecting() turns the "
-    "VIRTIO_VSOCK_OP_RST reply to a connection request into ECONNRESET; "
-    "the RST means no listener (or no resources) at the destination, "
-    "for which POSIX connect() requires ECONNREFUSED"
-)
-
 
 def _guest_cid() -> int:
     """Return the guest CID given to QEMU for this product.
@@ -325,18 +318,16 @@ def test_vsock_host_connect_refused() -> None:
     """Connect from the host to a node port nobody listens on.
 
     VIRTIO 1.2, Stream Sockets: "A VIRTIO_VSOCK_OP_RST reply is sent if
-    a listening socket does not exist on the destination"; POSIX
-    ``connect()``: [ECONNREFUSED] "The target address was not listening
-    for connections or refused the connection request."
+    a listening socket does not exist on the destination".  The host
+    stack ends a connection request that is answered with
+    VIRTIO_VSOCK_OP_RST with ECONNRESET; without a reply connect() times
+    out instead.
     """
     with _vsock() as sock:
-        # The host stack reports the RST as ECONNRESET, a missing reply
-        # as a timeout.
-        with pytest.raises((ConnectionRefusedError, ConnectionResetError)):
+        with pytest.raises(ConnectionResetError):
             sock.connect((_guest_cid(), 20005))
 
 
-@pytest.mark.xfail(strict=True, reason=REFUSED_BUG)
 @pytest.mark.cmd_check("nettl_main")
 def test_vsock_guest_connect_refused() -> None:
     """Connect from the node to a host port nobody listens on.
