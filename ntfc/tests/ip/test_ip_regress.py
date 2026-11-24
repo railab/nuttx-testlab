@@ -19,7 +19,7 @@
 """Regression tests reproducing real NuttX net stack bug classes.
 
 Each test below exists because a real NuttX bug or revert triggered it;
-see each test's docstring for the commit it guards.
+see each test's docstring for the behaviour it guards.
 """
 
 import re
@@ -35,8 +35,10 @@ from _net_common import (
     NODE_IPS,
     host_tcp_echo_check,
     host_udp_echo_check,
+    nettl_cleanup,
     nettl_server,
     pattern,
+    track_server,
 )
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP", "CONFIG_NET_UDP")]
@@ -53,21 +55,24 @@ PID_RE = r"nettl \[(\d+):\d+\]"
 #: Matches the nettl client's connect() failure line.
 CONNECT_FAILED_RE = r"nettl: connect failed (\d+)"
 
-#: Fallback used when CONFIG_NET_TCP_PREALLOC_CONNS cannot be read.
-DEFAULT_TCP_PREALLOC_CONNS = 16
+#: errno values of NuttX (include/errno.h).
+ECONNABORTED = 103
 
-#: Confirmed reproducing on sim; not observed on qemu-armv8a, rv-virt
-#: or qemu-intel64 with the same CONFIG_NET_TCP_PREALLOC_CONNS.
-SIM_TCP_LEAK_BUG = (
-    "kill -9 of a task blocked in accept() leaks its TCP connection on "
-    "sim (nuttx e26d467f, no upstream fix yet)"
+ACCEPT_ABORTED_BUG = (
+    "net/tcp/tcp_input.c:1141: tcp_input() deletes a connection that the "
+    "peer reset from the backlog of its listener (tcp_backlogdelete()) "
+    "and frees it, so accept() never fails with ECONNABORTED and keeps "
+    "waiting (net/tcp/tcp_accept.c:278: psock_tcp_accept())"
 )
 
 #: Confirmed reproducing on every target with CONFIG_SIG_DEFAULT.
 KILL_CALL_BUG = (
-    "nuttx: a task terminated by a signal default action (_exit()) while "
-    "blocked in an OS call never runs the rest of the call, so its file "
-    "reference and network state are leaked and the socket is never closed"
+    "sched/signal/sig_default.c:268: nxsig_abnormal_termination() ends a "
+    "task blocked in an OS call with _exit() from the signal handler, "
+    "which runs no cleanup handler, so the rest of the call never runs: "
+    "the file reference of the call (e.g. fs/socket/accept.c:232: "
+    "accept4()) is never dropped, fdlist_free() (fs/inode/fs_files.c:508) "
+    "does not close the file and the socket keeps its network state"
 )
 
 #: Confirmed reproducing on every target with CONFIG_SIG_DEFAULT.
@@ -103,34 +108,20 @@ def _send_udp_burst(addr: str, port: int, count: int, length: int) -> None:
             sock.sendto(dgram, (addr, port))
 
 
-@pytest.fixture
-def sim_tcp_leak_xfail(request: pytest.FixtureRequest) -> None:
-    """Expect the accept() kill -9 TCP connection leak to occur on sim.
-
-    :param request: pytest request of the test using this fixture
-    """
-    if _core(0).conf.kv_check("CONFIG_ARCH_SIM"):
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=SIM_TCP_LEAK_BUG)
-        )
-
-
 @pytest.mark.cmd_check("nettl_main")
+@pytest.mark.xfail(strict=True, reason=ACCEPT_ABORTED_BUG)
 def test_tcp_rst_after_handshake() -> None:
-    """A peer RST right after the handshake must not hang the server.
+    """A peer RST right after the handshake makes accept() fail.
 
-    NuttX aeaa13227e2: a connection reset by the peer right after the
-    handshake was accepted as connected, and a subsequent blocking
-    send() hung forever. ``-D`` delays accept() so the host's RST (a
-    connect + ``SO_LINGER(1, 0)`` + close()) lands before accept()
-    runs; ``-w`` makes the server send (not echo), so it is the one
-    that observes the dead connection. PASS: a verdict line (FAIL is
-    expected, since send() fails) appears within 15 s, i.e. no hang.
+    A connection reset by the peer right after the handshake must not
+    be accepted as connected, with a blocking send() that then hangs
+    forever. ``-D`` delays accept() so the host's RST (a connect +
+    ``SO_LINGER(1, 0)`` + close()) lands before accept() runs; ``-w``
+    makes the server send (not echo).
 
-    POSIX accept() may also drop the reset connection and keep waiting:
-    "If the listen queue is empty of connection requests ... accept()
-    shall block until a connection is present." A second connection,
-    closed at once, gives accept() a connection in that case too.
+    POSIX accept(): "The accept() function shall fail if: ...
+    [ECONNABORTED] A connection has been aborted."  PASS: ``nettl:
+    accept failed 103`` and ``nettl: FAIL rx=0 err=1`` within 15 s.
     """
     port = 5400
     core = _core(0)
@@ -142,6 +133,7 @@ def test_tcp_rst_after_handshake() -> None:
         f"nettl -s -w -D 2 -p {port} &", "listening", timeout=10
     )
     assert ret == 0
+    track_server(NODE_IPS[0], port, False)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -151,22 +143,26 @@ def test_tcp_rst_after_handshake() -> None:
         )
     finally:
         sock.close()  # SO_LINGER(1, 0): close() sends RST, not FIN
-    time.sleep(0.5)
-    with socket.create_connection((NODE_IPS[0], port), timeout=10):
-        pass
 
     result = core.readUntilPattern(SERVER_VERDICT_RE, timeout=15)
     found = re.search(SERVER_VERDICT_RE, result.output)
+    if not found:
+        # accept() still waits: end the server before the test fails
+
+        nettl_cleanup()
+        core.readUntilPattern(SERVER_VERDICT_RE, timeout=10)
     assert found, result.output
+    assert f"nettl: accept failed {ECONNABORTED}" in result.output
+    assert found.group(0).rstrip("\r\n") == "nettl: FAIL rx=0 err=1"
 
 
 @pytest.mark.cmd_check("nettl_main")
 def test_udp_reuseaddr_broadcast() -> None:
     """A 2nd+ SO_REUSEADDR UDP listener must get a correct d_len.
 
-    NuttX 8422531f931a: with 2+ SO_REUSEADDR UDP listeners on the same
-    port, broadcast fan-out gave the 2nd+ socket a ``d_len`` too large
-    by the IP+UDP header size, corrupting its read-ahead. PASS: both
+    With 2+ SO_REUSEADDR UDP listeners on the same port, broadcast
+    fan-out must not give the 2nd+ socket a ``d_len`` too large by the
+    IP+UDP header size, which corrupts its read-ahead. PASS: both
     listeners receive all 20 datagrams, each exactly ``4 + 64`` bytes
     and pattern-intact: ``nettl: PASS rx=40 err=0``.
     """
@@ -195,23 +191,24 @@ def test_udp_reuseaddr_broadcast() -> None:
 def test_arp_expiry_traffic() -> None:
     """Paced UDP echo traffic must survive an ARP entry's expiry.
 
-    Guards ARP flow regressions (reverts of 6b30226c0e2 and
-    d6bd89ff144a in 2025). 300 datagrams at a 0.1 s interval take
+    300 datagrams at a 0.1 s interval take
     around 30 s, more than twice the default
     ``CONFIG_NET_ARP_MAXAGE`` (120 deciseconds), so the node's ARP
-    entry for the host expires and must be re-resolved mid-test. Up
-    to 3 retries per datagram tolerate the one legitimate drop while
-    an ARP request is outstanding. PASS: zero datagrams lost after
-    retries, all intact.
+    entry for the host expires and must be re-resolved mid-test.
+    RFC 1122, 2.3.2.2: "The link layer SHOULD save (rather than
+    discard) at least one (the latest) packet of each set of packets
+    destined to the same unresolved IP address, and transmit the saved
+    packet when the address has been resolved."  PASS: every datagram,
+    sent once, is echoed intact.
     """
     port = 5402
     nettl_server(0, True, port, NODE_IPS[0])
-    assert host_udp_echo_check(NODE_IPS[0], port, 300, interval=0.1, retries=3)
+    assert host_udp_echo_check(NODE_IPS[0], port, 300, interval=0.1)
 
 
 @pytest.mark.cmd_check("nettl_main")
 def test_tcp_long_transfer() -> None:
-    """A sustained TCP transfer must not stall (revert of d5d6b652134).
+    """A sustained TCP transfer must not stall.
 
     4 MiB host-to-node TCP echo, with a 10 s per-operation timeout
     acting as a stall watchdog (the socket timeout set by
@@ -289,6 +286,24 @@ def _start_killable(core: Any, cmd: str, pattern: str) -> str:
     return found.group(1)
 
 
+def _wait_blocked(core: Any, pid: str) -> None:
+    """Wait up to 5 s until a node task waits in a blocking call.
+
+    :param core: NTFC core handler of the node
+    :param pid: PID of the task
+    """
+    deadline = time.monotonic() + 5
+    while True:
+        ret = core.sendCommandReadUntilPattern(
+            "ps", pattern=r"nsh> ", timeout=10
+        )
+        out = str(ret.output)
+        if re.search(rf"^\s*{pid}\s.*\sWaiting\s", out, re.MULTILINE):
+            return
+        assert time.monotonic() < deadline, f"task {pid} not blocked: {out}"
+        time.sleep(0.2)
+
+
 @pytest.mark.cmd_check("nettl_main")
 @pytest.mark.dep_config("CONFIG_SIG_DEFAULT")
 @pytest.mark.xfail(strict=True, reason=KILL_POLL_BUG)
@@ -296,10 +311,9 @@ def _start_killable(core: Any, cmd: str, pattern: str) -> str:
 def test_udp_kill_poll_close(signo: int) -> None:
     """A task killed by a signal while blocked in poll() closes its socket.
 
-    NuttX bug found by this project (nuttx e794a88e1e, no upstream fix
-    yet): a task terminated by the default action of a signal while
-    blocked in poll() never drops the file references poll() holds, so
-    its sockets are never closed. ``nettl -s -u -L 1`` blocks in poll()
+    A task terminated by the default action of a signal while blocked
+    in poll() must drop the file references poll() holds, so that its
+    sockets are closed. ``nettl -s -u -L 1`` blocks in poll()
     on one UDP socket; it is killed with ``kill -<signo>`` (SIGKILL,
     and SIGTERM, which nettl does not catch). PASS: the port leaves
     ``/proc/net/udp`` within 5 s, and a restarted server on the same
@@ -343,11 +357,10 @@ def test_udp_kill_poll_close(signo: int) -> None:
 def test_kill_blocked_call_close(call: str) -> None:
     """A task killed while blocked in an OS call releases its socket.
 
-    NuttX bug found by this project (nuttx e794a88e1e, no upstream fix
-    yet): a task terminated by the default action of a signal while
-    blocked in an OS call never runs the rest of the call, so the call's
-    file reference and network state are leaked and its socket is never
-    closed. A ``nettl`` server is killed (``kill -9``) while blocked in:
+    A task terminated by the default action of a signal while blocked
+    in an OS call must release the call's file reference and network
+    state, so that its socket is closed. A ``nettl`` server is killed
+    (``kill -9``) while blocked in:
 
     - ``recvfrom``: ``nettl -s -u``, UDP. PASS: the port leaves
       ``/proc/net/udp`` within 5 s, the node survives 3 host datagrams
@@ -407,41 +420,32 @@ def test_kill_blocked_call_close(call: str) -> None:
 
 
 @pytest.mark.cmd_check("nettl_main")
-@pytest.mark.run(order=-1)
-@pytest.mark.usefixtures("sim_tcp_leak_xfail")
+@pytest.mark.dep_config("CONFIG_SIG_DEFAULT")
+@pytest.mark.usefixtures("reboot_after_failure")
+@pytest.mark.xfail(strict=True, reason=KILL_CALL_BUG)
 def test_tcp_kill_listener_leak() -> None:
     """A kill -9 of a task blocked in accept() must not leak its conn.
 
-    NuttX bug found by this project (nuttx e26d467f, no upstream fix
-    yet): killing a task blocked in accept() on a listening TCP
-    socket never frees its TCP connection. Repeats
+    Killing a task blocked in accept() on a listening TCP socket must
+    free its TCP connection. Repeats
     ``CONFIG_NET_TCP_PREALLOC_CONNS + 1`` times: start a listener,
-    kill -9 it while it is still blocked in accept(). PASS: a final
+    kill -9 it once ``ps`` shows it waiting in accept(). PASS: a final
     probe connect still allocates a socket and is refused by the host
     (``connect failed 111``); FAIL if the leak exhausted the
     preallocated pool (``socket failed 12`` / ``connect failed 12``).
-
-    Runs last in the session (``order=-1``): it poisons the node.
+    Without ``CONFIG_SIG_DEFAULT`` ``kill -9`` does not end a task.
     """
     core = _core(0)
     prealloc = core.conf.kv_check("CONFIG_NET_TCP_PREALLOC_CONNS")
-    try:
-        prealloc_n = int(prealloc)
-    except (TypeError, ValueError):
-        prealloc_n = 0
-    if prealloc_n <= 0:
-        prealloc_n = DEFAULT_TCP_PREALLOC_CONNS
+    assert prealloc, "CONFIG_NET_TCP_PREALLOC_CONNS not set"
 
     base_port = 5500
-    for i in range(prealloc_n + 1):
-        result = core.sendCommandReadUntilPattern(
-            f"nettl -s -p {base_port + i} -t 30 &",
-            pattern=PID_RE,
-            timeout=10,
+    for i in range(int(prealloc) + 1):
+        pid = _start_killable(
+            core, f"nettl -s -p {base_port + i} -t 30", r"listening tcp"
         )
-        found = re.search(PID_RE, result.output)
-        assert found, result.output
-        ret = core.sendCommand(f"kill -9 {found.group(1)}", timeout=10)
+        _wait_blocked(core, pid)
+        ret = core.sendCommand(f"kill -9 {pid}", timeout=10)
         assert ret == 0
 
     probe = core.sendCommandReadUntilPattern(

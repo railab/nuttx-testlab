@@ -39,21 +39,21 @@ from typing import Any, Iterator, List, Optional, Tuple, Type
 
 import pytest
 from _host_services import MosquittoBroker
-from _net_common import HOST_IP, wait_tcp_room
+from _net_common import HOST_IP
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP")]
 
 
 EXIT_SIGTERM_BUG = (
-    "sched/group: with GROUP_KILL_CHILDREN_TIMEOUT_MS < 0 (default with "
-    "SIG_DEFAULT) exit() sends SIGTERM to the other threads and waits "
-    "forever for them; mqtt_pub handles SIGTERM, so they never exit"
+    "sched/group/group_killchildren.c:232: group_kill_children(): with "
+    "GROUP_KILL_CHILDREN_TIMEOUT_MS < 0 exit() sends SIGTERM to the other "
+    "threads and waits forever for them; mqtt_pub handles SIGTERM, so "
+    "they never exit"
 )
 
 HOST_SUB = "tl-hsub"
 HOST_PUB = "tl-hpub"
 TIMEOUT = 20
-TCP_ROOM = 4
 
 
 def _core(node: int) -> Any:
@@ -99,15 +99,6 @@ def broker() -> Iterator[MosquittoBroker]:
     """Run mosquitto on the host bridge for this module."""
     with MosquittoBroker(HOST_IP) as mosquitto:
         yield mosquitto
-
-
-@pytest.fixture(autouse=True)
-def tcp_room() -> None:
-    """Wait until both nodes have free TCP connections.
-
-    Every MQTT session is a short TCP connection.
-    """
-    wait_tcp_room(TCP_ROOM)
 
 
 class HostSub:
@@ -460,13 +451,13 @@ def test_mqttc_sub_reconnect(broker: MosquittoBroker) -> None:
 
 
 @pytest.mark.cmd_check("mqtt_pub_main")
+@pytest.mark.usefixtures("reboot_after_failure")
 def test_mqtt_no_broker(
     broker: MosquittoBroker, request: pytest.FixtureRequest
 ) -> None:
     """``mqtt_pub`` reports a refused connect and exits on SIGINT.
 
-    It does not retry the connect and waits for a signal. Runs last: a
-    task stuck in ``exit()`` cannot be removed.
+    It does not retry the connect and waits for a signal.
 
     :param broker: broker fixture
     :param request: pytest request, to mark the expected failure

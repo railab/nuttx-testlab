@@ -209,6 +209,8 @@ def node_server() -> Iterator[int]:
         if _responses(_host_client("-v", "6", f"coap://{NODE_IPS[1]}/time")):
             break
         time.sleep(1)
+    else:
+        pytest.fail("coap_server does not answer")
     yield pid
     _core(1).sendCommand(f"kill -2 {pid}", timeout=10)
     assert _wait_exit(1, pid), "coap_server did not exit on SIGINT"

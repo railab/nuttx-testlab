@@ -101,7 +101,8 @@ def test_router_duplex(router_ifs: List[str]) -> None:
 def test_router_ifdown_ifup(router_ifs: List[str], side: int) -> None:
     """Forwarding stops while a node interface is down and comes back."""
     assert ping_ok(0, HOSTS[1])
-    nsh(f"ifdown {router_ifs[side]}")
+    name = router_ifs[side]
+    assert f"ifdown {name}...OK" in nsh(f"ifdown {name}")
     assert host_ping(side, NODES[side]).returncode != 0
     assert host_ping(0, HOSTS[1]).returncode != 0
     configure()

@@ -21,9 +21,9 @@ The node runs the daemon through ``ptptl`` (apps/ptptl); the host runs
 ``ptp4l`` on the bridge with software timestamps and ``free_running``
 (the host clock is never adjusted), and a sniffer decodes every PTP
 message on the bridge. Expectations come from IEEE 1588-2008 (clause
-numbers in the docstrings) and from the linuxptp reference behaviour
-(``ptp4l(8)``); the clock offset of a node is measured from the
-originTimestamp of the messages it sends against the host receive time.
+numbers in the docstrings); the clock offset of a node is measured from
+the originTimestamp of the messages it sends against the host receive
+time.
 
 On these targets the node has no architecture ``adjtime()``: the client
 synchronizes by stepping the clock, so the offset after synchronization
@@ -57,7 +57,7 @@ from _ptp_common import (
     ptptl_start,
     ptptl_wait,
 )
-from _tls_common import HeapCheck, pin_shell
+from _tls_common import HeapCheck
 
 pytestmark = [pytest.mark.dep_config("CONFIG_NETUTILS_PTPD")]
 
@@ -69,10 +69,10 @@ SYNC_BOUND_MS = 50.0
 # ptp4l configuration in _ptp_common.Ptp4l: logAnnounceInterval 1.
 PTP4L_ANNOUNCE_S = 2.0
 
-# ptp4l(8): "announceReceiptTimeout: The number of missed Announce
-# messages before the last Announce messages expires. The default is 3."
-# IEEE 1588-2008 9.2.6.11: the announce receipt timeout is
-# announceReceiptTimeout times the announce interval of the master.
+# IEEE 1588-2008 9.2.6.11: the announce receipt timeout interval is
+# portDS.announceReceiptTimeout times the announce interval; J.3.2
+# (Delay Request-Response Default profile): the default initialization
+# value of portDS.announceReceiptTimeout is 3.
 RECEIPT_TIMEOUT = 3
 LOSS_MARGIN_S = 2.0
 
@@ -91,7 +91,8 @@ NODE_CLASS = 248
 SLAVE_STATES = {"UNCALIBRATED", "SLAVE"}
 
 PTPD_TIMEOUT_BUG = (
-    "netutils/ptpd: a lost master is noticed after the fixed "
+    "apps netutils/ptpd/ptpd.c:450: is_selected_source_valid(): a lost "
+    "master is noticed after the fixed "
     "CONFIG_NETUTILS_PTPD_TIMEOUT_MS (60 s), not after "
     "announceReceiptTimeout announce intervals of the master "
     "(IEEE 1588-2008 9.2.6.11, 3 x 2 s here)"
@@ -461,18 +462,6 @@ def test_ptp_node_to_node(sniffer: PtpSniffer) -> None:
     assert abs(diff) <= SYNC_BOUND_MS, (off1, off0)
 
 
-@pytest.fixture
-def shell_on_cpu0() -> Iterator[None]:
-    """Run the node shell and its programs on CPU 0 during the test.
-
-    See :func:`pin_shell`: then ``free`` counts their freed memory.
-    """
-    pin_shell()
-    yield
-    pin_shell(0)
-
-
-@pytest.mark.usefixtures("shell_on_cpu0")
 def test_ptp_stop_restart(net_leak: LeakCheck) -> None:
     """Starting and stopping the daemon three times leaks nothing.
 
@@ -487,5 +476,5 @@ def test_ptp_stop_restart(net_leak: LeakCheck) -> None:
         verdict, _status = ptptl_run(0, "", runtime=5)
         assert verdict["verdict"] == "PASS", verdict
         assert verdict["stop"] == 0 and verdict["exit"] == 0, verdict
-    heap.check()
     net_leak.check([0])
+    heap.check()

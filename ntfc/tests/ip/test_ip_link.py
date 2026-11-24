@@ -78,13 +78,12 @@ def _host_ping(addr: str, count: int = 5) -> bool:
 
 
 def _node_ping(addr: str) -> bool:
-    """Ping ``addr`` from node1, the first echo only resolves ARP.
+    """Ping ``addr`` from node1.
 
     :param addr: destination IPv4 address
     :return: True when 3 of 3 echo requests were answered
     """
     core = _core()
-    core.sendCommand(f"ping -c 1 {addr}", "packet loss", timeout=15)
     return (
         core.sendCommand(f"ping -c 3 {addr}", " 0% packet loss", timeout=30)
         == 0

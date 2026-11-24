@@ -34,15 +34,17 @@ pytestmark = [pytest.mark.dep_config("CONFIG_NET_TCP", "CONFIG_NET_UDP")]
 def _ping(node: int, addr: str) -> int:
     """Ping ``addr`` from a node and require 0% loss.
 
-    The first ping only resolves ARP: NuttX drops the packet that
-    triggers the ARP request, so it may get no reply.
+    RFC 1122, 2.3.2.2: "The link layer SHOULD save (rather than discard)
+    at least one (the latest) packet of each set of packets destined to
+    the same unresolved IP address, and transmit the saved packet when
+    the address has been resolved."  The first echo request, which may
+    trigger ARP, counts.
 
     :param node: product index
     :param addr: destination IPv4 address
     :return: ``0`` if 3 of 3 echo requests were answered
     """
     core = pytest.products[node].core(0)
-    core.sendCommand(f"ping -c 1 {addr}", "packet loss", timeout=15)
     return core.sendCommand(f"ping -c 3 {addr}", " 0% packet loss", timeout=30)
 
 

@@ -26,6 +26,7 @@ below are indexed by side.
 import os
 import re
 import subprocess
+import time
 from contextlib import contextmanager
 from typing import Any, Iterator, List, Optional, Tuple
 
@@ -46,6 +47,8 @@ IFCONFIG_RE = re.compile(
     r"^(\w+)\s+Link encap:Ethernet HWaddr ([0-9a-fA-F:]{17}) at (\w+)",
     re.MULTILINE,
 )
+
+PING_RE = re.compile(r"(\d+) packets transmitted, (\d+) received")
 
 
 def core() -> Any:
@@ -85,17 +88,41 @@ def ports() -> List[Tuple[str, str]]:
 def configure() -> List[str]:
     """Address both node interfaces and bring them up.
 
+    Fails unless ``ifup`` succeeds, ``ifconfig`` shows the addresses,
+    both interfaces have carrier within 10 s and the node then reaches
+    each host.  That ping resolves the host addresses: ``ifdown`` empties
+    the ARP table, and a reply or a forwarded packet may be dropped while
+    the node resolves its next hop (RFC 1122, 2.3.2.2: "The link layer
+    SHOULD save (rather than discard) at least one (the latest) packet of
+    each set of packets destined to the same unresolved IP address").
+
     :return: interface name per side
     """
     names = [name for name, _status in ports()]
     assert all(names), f"router NIC missing: {names}"
     for side, name in enumerate(names):
-        nsh(f"ifup {name}")
+        assert f"ifup {name}...OK" in nsh(f"ifup {name}")
         nsh(
             f"ifconfig {name} {NODES[side]} dr {HOSTS[side]} "
             "netmask 255.255.255.0"
         )
         nsh(f"ifconfig {name} inet6 {NODES6[side]} prefixlen 112")
+        out = nsh(f"ifconfig {name}")
+        assert (
+            f"inet addr:{NODES[side]} DRaddr:{HOSTS[side]} "
+            "Mask:255.255.255.0"
+        ) in out, out
+        assert f"inet6 addr: {NODES6[side]}/112" in out, out
+    deadline = time.monotonic() + 10
+    status = [state for _name, state in ports()]
+    while status != ["RUNNING"] * 2 and time.monotonic() < deadline:
+        time.sleep(0.5)
+        status = [state for _name, state in ports()]
+    assert status == ["RUNNING"] * 2, f"no carrier: {status}"
+    for host in HOSTS:
+        out = nsh(f"ping -c 1 {host}")
+        found = PING_RE.search(out)
+        assert found is not None and found.groups() == ("1", "1"), out
     return names
 
 
@@ -188,15 +215,31 @@ def host_ping(
 
 
 def ping_ok(side: int, addr: str) -> bool:
-    """Ping until replies come back, the first ones only resolve ARP.
+    """Ping and require an answer to every echo request.
 
     :param side: 0 for host A, 1 for host B
     :param addr: destination address
-    :return: True when 3 of 3 echo requests of the last try were answered
+    :return: True when 3 of 3 echo requests were answered
     """
-    for _attempt in range(3):
-        if host_ping(side, addr).returncode == 0:
-            return True
+    ping = host_ping(side, addr)
+    print(ping.stdout)
+    found = PING_RE.search(ping.stdout)
+    return found is not None and found.groups() == ("3", "3")
+
+
+def host_link_up(dev: str, timeout: float = 10) -> bool:
+    """Wait for a host interface to have carrier.
+
+    :param dev: host interface name
+    :param timeout: seconds to wait
+    :return: True when its operstate became ``up``
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with open(f"/sys/class/net/{dev}/operstate", encoding="ascii") as f:
+            if f.read().strip() == "up":
+                return True
+        time.sleep(0.1)
     return False
 
 
@@ -238,20 +281,29 @@ def iperf_client(
 
 
 def iperf_mbps(proc: "subprocess.Popen[str]", timeout: float) -> float:
-    """Wait for an iperf2 client and return its throughput.
+    """Wait for an iperf2 client that must have moved data.
+
+    Fails when the client does not exit by itself, exits with an error
+    or does not report transferred bytes for each of its streams.
 
     :param proc: client from :func:`iperf_client`
     :param timeout: seconds to wait
-    :return: Mbit/s of the whole-run report, 0 when there is none
+    :return: Mbit/s of the whole-run report
     """
     try:
         out, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         out = stop(proc)
-    rows = [ln.split(",") for ln in (out or "").splitlines()]
-    rates = [int(row[8]) for row in rows if len(row) >= 9]
+        pytest.fail(f"iperf client still runs after {timeout} s: {out}")
     print(f"iperf: {out}")
-    return max(rates, default=0) / 1e6
+    assert proc.returncode == 0, out
+    args = [str(arg) for arg in proc.args]
+    streams = int(args[args.index("-P") + 1])
+    rows = [ln.split(",") for ln in out.splitlines()]
+    rows = [row for row in rows if len(row) >= 9]
+    moved = [int(row[7]) for row in rows if int(row[5]) > 0]
+    assert len(moved) == streams and all(moved), f"iperf report: {out}"
+    return max(int(row[8]) for row in rows) / 1e6
 
 
 def iptables(args: str, ipv6: bool = False) -> str:

@@ -333,14 +333,20 @@ def _send_paced(addr: str, port: int, count: int, length: int) -> None:
             sock.sendto(struct.pack(">I", UDP_END), (addr, port))
 
 
-def _park_pool(thr: int) -> None:
-    """Give the node TCP writer up to 30 s to fill its IOB pool.
+def _park_writer(idle: int) -> None:
+    """Wait up to 30 s until the node TCP writer stops taking IOBs.
 
-    :param thr: ``CONFIG_IOB_THROTTLE``
+    The writer stalls when the send buffer of its connection is full.
+
+    :param idle: free IOBs before the writer started
     """
     deadline = time.monotonic() + 30
-    while iob_free(0) > thr and time.monotonic() < deadline:
+    prev = idle
+    free = iob_free(0)
+    while (free < prev or free >= idle) and time.monotonic() < deadline:
         time.sleep(1)
+        prev, free = free, iob_free(0)
+    assert prev <= free < idle, f"{free} IOBs free, {idle} before the write"
 
 
 def _drain(sock: socket.socket, nbytes: int) -> None:
@@ -367,21 +373,20 @@ def test_drv_tcp_write_under_udp_rx(net_leak: LeakCheck, mode: str) -> None:
 
     RFC 9293, 3.1: "TCP provides a reliable, in-order, byte-stream
     service".  The node writes ``2 x`` its IOB pool to a host reader
-    that does not read until the node has filled its pool, while a UDP
-    socket on the node receives datagrams (waiting in ``poll()`` or in
-    ``recv()``).  PASS: the host then reads the whole stream intact.
+    that does not read until the node has filled the send buffer of the
+    connection, while a UDP socket on the node receives datagrams
+    (waiting in ``poll()`` or in ``recv()``).  PASS: the UDP receiver
+    reports PASS and the host then reads the whole stream intact.
 
     :param net_leak: IOB leak check
     :param mode: ``poll`` (``nettl -L 1``) or ``blocking`` (``nettl -S``)
     """
-    thr = _iob_conf("CONFIG_IOB_THROTTLE")
-    if thr == 0:
-        pytest.skip("CONFIG_IOB_THROTTLE is 0")
     nbytes = (
         2 * _iob_conf("CONFIG_IOB_NBUFFERS") * _iob_conf("CONFIG_IOB_BUFSIZE")
     )
     wport = 6600 if mode == "poll" else 6602
     uport = wport + 1
+    idle = iob_free(0)
     ret = _core(0).sendCommand(
         f"nettl -s -w -p {wport} -n {nbytes} -t 60 &",
         "listening",
@@ -392,7 +397,7 @@ def test_drv_tcp_write_under_udp_rx(net_leak: LeakCheck, mode: str) -> None:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
         sock.settimeout(10)
         sock.connect((NODE_IPS[0], wport))
-        _park_pool(thr)
+        _park_writer(idle)
         opts = (
             f"-L 1 -n {PARK_COUNT} -l {PARK_LEN}" if mode == "poll" else "-S"
         )
@@ -404,6 +409,8 @@ def test_drv_tcp_write_under_udp_rx(net_leak: LeakCheck, mode: str) -> None:
         assert ret == 0
         track_server(NODE_IPS[0], uport, True)
         _send_paced(NODE_IPS[0], uport, PARK_COUNT, PARK_LEN)
-        _core(0).readUntilPattern(RX_VERDICT_RE, timeout=30)
+        found = _rx_verdict(30)
+        assert found.group(1) == "PASS", found.group(0)
+        assert int(found.group(2)) > 0, found.group(0)
         _drain(sock, nbytes)
     net_leak.check([0])

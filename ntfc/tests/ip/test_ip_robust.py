@@ -271,14 +271,13 @@ def _host_ping6(addr: str) -> bool:
 
 
 def _node_ping6(node: int, addr: str) -> bool:
-    """Ping ``addr`` from a node (the first ping resolves the neighbor).
+    """Ping ``addr`` from a node.
 
     :param node: product index
     :param addr: IPv6 destination
     :return: True when 3 of 3 echo requests were answered
     """
     core = _core(node)
-    core.sendCommand(f"ping6 -c 1 {addr}", "packet loss", timeout=15)
     return (
         core.sendCommand(f"ping6 -c 3 {addr}", " 0% packet loss", timeout=30)
         == 0
@@ -325,9 +324,9 @@ def test_ipv6_exthdr_bounds() -> None:
     and the node must still ping and be pinged afterwards.
     """
     mac = _node_mac()
-    # Resolve the host as a neighbor first: NuttX answers the first
-    # packet to an unknown neighbor with a Neighbor Solicitation instead
-    # of the reply, which would hide a missing reply below.
+    # The node resolves the host first: the frames below are sent raw,
+    # without Neighbor Discovery from the host.
+    assert _node_ping6(NODE, HOST_IP6), "node cannot reach the host"
     assert _host_ping6(NODE_IP6S[NODE]), "node does not answer ping6"
     cap = EchoCapture()
     try:
@@ -541,7 +540,6 @@ def test_dhcpd_option_bounds() -> None:
     finally:
         sock.close()
         core.sendCommand("dhcpd_stop", timeout=10)
-    core.sendCommand(f"ping -c 1 {HOST_IP}", "packet loss", timeout=15)
     assert (
         core.sendCommand(f"ping -c 3 {HOST_IP}", " 0% packet loss", timeout=30)
         == 0
@@ -581,11 +579,6 @@ TCP_PEER_IP = "10.42.0.77"  # no host or node address
 TCP_PEER_MAC = bytes.fromhex("02005e00004d")
 TCP_PEER_ISS = 1000
 TCP_PORT = 5330
-EMPTY_SEG_BUG = (
-    "net/tcp/tcp_input.c: tcp_input() answers an empty segment with "
-    "RCV.NXT < SEG.SEQ < RCV.NXT+RCV.WND with an ACK, as if it were out "
-    "of order"
-)
 
 
 class Segment(NamedTuple):
@@ -784,7 +777,6 @@ def _empty_segment_replies(offset: Callable[[int], int]) -> List[Segment]:
 
 
 @pytest.mark.dep_config("CONFIG_NET_TCP")
-@pytest.mark.xfail(strict=True, reason=EMPTY_SEG_BUG)
 def test_tcp_empty_segment_in_window() -> None:
     """An empty segment inside the receive window gets no ACK.
 
@@ -819,7 +811,6 @@ def test_tcp_empty_segment_beyond_window() -> None:
 
 
 @pytest.mark.dep_config("CONFIG_NET_TCP")
-@pytest.mark.xfail(strict=True, reason=EMPTY_SEG_BUG)
 def test_tcp_empty_segment_acks_data() -> None:
     """An empty in-window segment that acknowledges data is not answered.
 

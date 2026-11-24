@@ -38,15 +38,17 @@ pytestmark = [
 def _ping6(node: int, addr: str) -> int:
     """Ping6 ``addr`` from a node and require 0% loss.
 
-    The first ping only resolves the neighbor: the packet that triggers
-    neighbor solicitation may get no reply.
+    RFC 4861, 7.2.2: "While waiting for address resolution to complete,
+    the sender MUST, for each neighbor, retain a small queue of packets
+    waiting for address resolution to complete.  The queue MUST hold at
+    least one packet".  The first echo request, which may trigger
+    neighbor solicitation, counts.
 
     :param node: product index
     :param addr: destination IPv6 address
     :return: ``0`` if 3 of 3 echo requests were answered
     """
     core = pytest.products[node].core(0)
-    core.sendCommand(f"ping6 -c 1 {addr}", "packet loss", timeout=15)
     return core.sendCommand(
         f"ping6 -c 3 {addr}", " 0% packet loss", timeout=30
     )
@@ -88,4 +90,4 @@ def test_host_tcp6_to_node(node: int) -> None:
 def test_host_udp6_to_node(node: int) -> None:
     """Host UDP client to nettl on each node over IPv6, data intact."""
     nettl_server(node, True, 5213, NODE_IP6S[node], ipv6=True)
-    assert host_udp_echo_check(NODE_IP6S[node], 5213, 100, retries=2)
+    assert host_udp_echo_check(NODE_IP6S[node], 5213, 100)

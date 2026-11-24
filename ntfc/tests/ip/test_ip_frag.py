@@ -66,7 +66,6 @@ def test_ping_fragmented_host(ipv6: bool) -> None:
     cmd = _ping_cmd(ipv6)
     addr = HOST_IP6 if ipv6 else HOST_IP
     core = pytest.products[0].core(0)
-    core.sendCommand(f"{cmd} -c 1 {addr}", "packet loss", timeout=15)
     ret = core.sendCommand(
         f"{cmd} -s 4000 -c 3 {addr}", " 0% packet loss", timeout=30
     )
@@ -97,7 +96,7 @@ def test_host_udp_fragmented_to_node(ipv6: bool) -> None:
         pytest.skip("no IPv6")
     addr = NODE_IP6S[0] if ipv6 else NODE_IPS[0]
     nettl_server(0, True, 5221, addr, ipv6=ipv6)
-    assert host_udp_echo_check(addr, 5221, 50, length=BIG, retries=2)
+    assert host_udp_echo_check(addr, 5221, 50, length=BIG)
 
 
 def _csum(data: bytes) -> int:

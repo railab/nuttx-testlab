@@ -100,36 +100,6 @@ def _core(node: int) -> Any:
     return pytest.products[node].core(0)
 
 
-def tcp_free(node: int) -> int:
-    """Return the number of free TCP connections of a node.
-
-    :param node: product index
-    :return: ``CONFIG_NET_TCP_PREALLOC_CONNS`` minus ``/proc/net/tcp`` rows
-    """
-    total = int(_core(node).conf.kv_check("CONFIG_NET_TCP_PREALLOC_CONNS"))
-    ret = _core(node).sendCommandReadUntilPattern(
-        "cat /proc/net/tcp", pattern=r"nsh> ", timeout=10
-    )
-    rows = re.findall(r"^ *\d+: ", str(ret.output), re.MULTILINE)
-    return total - len(rows)
-
-
-def wait_tcp_room(room: int, timeout: float = 130) -> None:
-    """Wait until both nodes have free TCP connections.
-
-    Closed connections stay in TIME_WAIT for 2 minutes and are not
-    recycled while ``CONFIG_NET_SOLINGER`` is set, so tests that open many
-    short connections can use up the preallocated pool.
-
-    :param room: number of free connections needed on each node
-    :param timeout: seconds to wait per node
-    """
-    for node in range(len(NODE_IPS)):
-        deadline = time.monotonic() + timeout
-        while tcp_free(node) < room and time.monotonic() < deadline:
-            time.sleep(5)
-
-
 def nettl_server(
     node: int,
     udp: bool,
@@ -253,10 +223,12 @@ def host_udp_echo_check(
     length: int = 512,
     timeout: float = 2.0,
     interval: float = 0.0,
-    retries: int = 0,
     mcast_dev: Optional[str] = None,
 ) -> bool:
     """Act as nettl UDP client from the host.
+
+    Every datagram and the end marker are sent once; a datagram whose
+    echo does not arrive within ``timeout`` is lost and fails the check.
 
     :param addr: node address running ``nettl -s -u``
     :param port: node port
@@ -265,9 +237,6 @@ def host_udp_echo_check(
     :param timeout: per-datagram timeout in seconds
     :param interval: delay in seconds after each matched echo, before
      sending the next datagram (0 paces nothing, the default)
-    :param retries: extra send attempts for a datagram that times out,
-     on top of the first attempt (0 keeps the original behaviour: stop
-     on the first lost datagram)
     :param mcast_dev: host interface for a multicast ``addr``
     :return: True when all datagrams are echoed intact
     """
@@ -277,27 +246,21 @@ def host_udp_echo_check(
         ok = True
         for seq in range(count):
             dgram = struct.pack(">I", seq) + pattern(seq * length, length)
-            echo: Optional[bytes] = None
-            for _attempt in range(retries + 1):
-                sock.sendto(dgram, dest)
-                try:
-                    echo = sock.recv(len(dgram) + 16)
-                    break
-                except socket.timeout:
-                    echo = None
-            if echo is None:
+            sock.sendto(dgram, dest)
+            try:
+                echo = sock.recv(len(dgram) + 16)
+            except socket.timeout:
                 ok = False
                 break
             ok = ok and echo == dgram
             if interval:
                 time.sleep(interval)
-        for _ in range(3):
-            sock.sendto(struct.pack(">I", UDP_END), dest)
+        sock.sendto(struct.pack(">I", UDP_END), dest)
     return ok
 
 
 def host_udp_flood(addr: str, port: int, seconds: float, length: int) -> int:
-    """Send nettl datagrams as fast as possible, then the end marker.
+    """Send nettl datagrams as fast as possible, then the end marker once.
 
     :param addr: node address running ``nettl -s -u``
     :param port: node port
@@ -310,14 +273,9 @@ def host_udp_flood(addr: str, port: int, seconds: float, length: int) -> int:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             dgram = struct.pack(">I", sent) + pat(sent * length, length)
-            try:
-                sock.sendto(dgram, (addr, port))
-                sent += 1
-            except BlockingIOError:
-                pass
-        time.sleep(0.5)
-        for _ in range(3):
-            sock.sendto(struct.pack(">I", UDP_END), (addr, port))
+            sock.sendto(dgram, (addr, port))
+            sent += 1
+        sock.sendto(struct.pack(">I", UDP_END), (addr, port))
     return sent
 
 

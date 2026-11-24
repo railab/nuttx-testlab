@@ -32,6 +32,7 @@ from _router_common import (
     NODES6,
     TAPS,
     configure,
+    host_link_up,
     host_ping,
     iperf_client,
     iperf_mbps,
@@ -98,7 +99,7 @@ def _udp_echo(src: int, ipv6: bool, port: int) -> bool:
         srv = UdpEchoServer(dst, port)
     with srv, netns(src):
         return host_udp_echo_check(
-            dst, port, UDP_COUNT, length=1024, timeout=1, retries=3
+            dst, port, UDP_COUNT, length=1024, timeout=1
         )
 
 
@@ -195,6 +196,7 @@ def test_router_port_flap(b_port_down: List[str]) -> None:
         b_port_down.append(TAPS[1])
         time.sleep(3)
         subprocess.run(["ip", "link", "set", TAPS[1], "up"], check=True)
+        assert host_link_up(TAPS[1])
         iperf_mbps(client, 3 * IPERF_TIME + 30)
     assert ping_ok(0, HOSTS[1])
     assert ping_ok(1, HOSTS[0])

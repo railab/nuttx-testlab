@@ -61,14 +61,13 @@ def _has_addr(node: int, addr: str) -> bool:
 
 
 def _ping(node: int, addr: str) -> bool:
-    """Ping ``addr`` from a node, the first echo only resolves ARP.
+    """Ping ``addr`` from a node.
 
     :param node: product index
     :param addr: destination IPv4 address
     :return: True when 3 of 3 echo requests were answered
     """
     core = _core(node)
-    core.sendCommand(f"ping -c 1 {addr}", "packet loss", timeout=15)
     return (
         core.sendCommand(f"ping -c 3 {addr}", " 0% packet loss", timeout=30)
         == 0
@@ -99,11 +98,20 @@ def test_dhcpc_from_host() -> None:
 @pytest.mark.cmd_check("dhcpd_start_main")
 @pytest.mark.cmd_check("dhcpd_stop_main")
 def test_dhcpd_node_to_node() -> None:
-    """node1 leases an address from the NuttX DHCP server on node0."""
+    """node1 leases an address from the NuttX DHCP server on node0.
+
+    The server reaches the leased address, then the client reaches the
+    server.  The server pings first because it has no ARP entry for the
+    leased address and the client, which knows the server, sends no ARP
+    request (RFC 1122, 2.3.2.2: "The link layer SHOULD save (rather than
+    discard) at least one (the latest) packet of each set of packets
+    destined to the same unresolved IP address").
+    """
     assert _core(0).sendCommand("dhcpd_start eth0", timeout=10) == 0
     try:
         assert _core(CLIENT).sendCommand("renew eth0", timeout=30) == 0
         assert _has_addr(CLIENT, NUTTX_LEASE)
+        assert _ping(0, NUTTX_LEASE)
         assert _ping(CLIENT, NODE_IPS[0])
     finally:
         _core(0).sendCommand("dhcpd_stop", timeout=10)

@@ -33,11 +33,6 @@ pytestmark = [
 ]
 
 SERVER_VERDICT_RE = r"nettl: (PASS|FAIL) rx=\d+ err=\d+[\r\n]"
-OWN_ADDR_STALL_BUG = (
-    "net/tcp/tcp_callback.c: tcp_datahandler() drops the data of a peer on "
-    "this host while fewer than IOB_THROTTLE IOBs are free; the IOBs are in "
-    "the write buffers of that peer, so the transfer stops"
-)
 
 
 def _core() -> Any:
@@ -48,7 +43,6 @@ def _core() -> Any:
     return pytest.products[0].core(0)
 
 
-@pytest.mark.xfail(strict=True, reason=OWN_ADDR_STALL_BUG)
 def test_tcp_own_address_stream() -> None:
     """Stream 128 KiB both ways between two tasks over the node's address.
 

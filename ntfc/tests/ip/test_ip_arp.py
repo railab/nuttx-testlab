@@ -53,7 +53,14 @@ from typing import Any, Iterator, List, Optional, Tuple
 
 import pytest
 from _host_services import TcpEchoServer
-from _net_common import HOST_IP, NODE_IPS
+from _net_common import (
+    HOST_IP,
+    HOST_IP6,
+    NODE_IP6S,
+    NODE_IPS,
+    pattern,
+    track_server,
+)
 
 pytestmark = [
     pytest.mark.dep_config("CONFIG_NET_ARP_SEND"),
@@ -86,6 +93,19 @@ NONBLOCK_CONNECT_BUG = (
     "nonblocking socket, and fails with ENETUNREACH instead of "
     "EINPROGRESS"
 )
+
+LINKLOCAL_ONLINK_BUG = (
+    "net/neighbor/neighbor_ethernet_out.c:119: neighbor_ethernet_out() "
+    "takes a link-local destination as off-link (NETDEV_V6ADDR_ONLINK "
+    "only) and looks up the router, while icmpv6_neighbor() "
+    "(net/icmpv6/icmpv6_neighbor.c:236) resolved the destination itself; "
+    "without a router entry icmpv6_solicit() "
+    "(neighbor_ethernet_out.c:173) overwrites the datagram with a "
+    "Neighbor Solicitation and sendto() still returns success"
+)
+
+#: No host on ``tl-br0`` has this address.
+NO_ROUTER6 = "fc00::254"
 
 
 def _core() -> Any:
@@ -318,19 +338,23 @@ def _echo_flood(mac: str, src: str, seconds: float) -> int:
 def test_arp_no_flood(capture: Capture, host_neigh: str) -> None:
     """ARP requests are not sent at the rate of the outgoing packets.
 
-    RFC 1122, 2.3.2.1: a mechanism to prevent "repeatedly sending an ARP
-    Request for the same IP address, at a high rate" MUST be included.
+    RFC 1122, 2.3.2.1: "A mechanism to prevent ARP flooding (repeatedly
+    sending an ARP Request for the same IP address, at a high rate) MUST
+    be included.  The recommended maximum rate is 1 per second per
+    destination."
     The host sends node1 100 echo requests per second for 6 s from
     10.42.0.250, which nobody answers; each echo reply needs ARP.
-    PASS: node1 sent fewer requests for 10.42.0.250 than one per 10
-    echo requests (one request per packet is flooding).
+    PASS: node1 sent at most one request for 10.42.0.250 per second of
+    the test.
     """
     target = "10.42.0.250"
+    start = time.monotonic()
     sent = _echo_flood(host_neigh, target, 6.0)
     time.sleep(1.0)
     times = capture.times(target)
+    elapsed = time.monotonic() - start
     assert times, "node1 sent no ARP request"
-    assert len(times) < sent / 10, (len(times), sent)
+    assert len(times) <= elapsed + 1, (len(times), elapsed, sent)
 
 
 def test_arp_unreachable(capture: Capture) -> None:
@@ -411,7 +435,8 @@ def test_arp_connect_nonblock(cached: bool) -> None:
     :param cached: keep node1's ARP entry for the host
     """
     port = 5601 if cached else 5602
-    _sh(f"ping -c 1 -W 3000 {HOST_IP}")
+    out = _sh(f"ping -c 1 -W 3000 {HOST_IP}")
+    assert " 0% packet loss" in out, out
     if not cached:
         _sh(f"arp -d {HOST_IP}")
     with TcpEchoServer(HOST_IP, port):
@@ -458,3 +483,67 @@ def test_nd_solicit_rate(capture: Capture) -> None:
     assert times, "node1 sent no Neighbor Solicitation"
     gaps = _gaps(times)
     assert all(gap >= RETRANS_TIMER - JITTER for gap in gaps), gaps
+
+
+def _host_linklocal() -> Tuple[str, int]:
+    """Return the link-local address and index of the host bridge.
+
+    :return: (address, interface index)
+    """
+    out = _run(
+        "ip", "-6", "-o", "addr", "show", "dev", BRIDGE, "scope", "link"
+    )
+    found = re.search(r"inet6 (fe80:[0-9a-f:]+)/", out)
+    assert found, out
+    return found.group(1), socket.if_nametoindex(BRIDGE)
+
+
+@pytest.fixture
+def no_router() -> Iterator[None]:
+    """Give node1 an IPv6 router that does not exist for the test."""
+    _sh(f"ifconfig eth0 inet6 {NODE_IP6S[NODE]} gw {NO_ROUTER6} prefixlen 112")
+    assert f"DRaddr: {NO_ROUTER6}" in _sh("ifconfig eth0")
+    yield
+    _sh(f"ifconfig eth0 inet6 {NODE_IP6S[NODE]} gw {HOST_IP6} prefixlen 112")
+    assert f"DRaddr: {HOST_IP6}" in _sh("ifconfig eth0")
+
+
+@pytest.mark.xfail(strict=True, reason=LINKLOCAL_ONLINK_BUG)
+@pytest.mark.dep_config("CONFIG_NET_ICMPv6_NEIGHBOR", "CONFIG_NET_UDP")
+@pytest.mark.cmd_check("nettl_main")
+def test_nd_linklocal_on_link(no_router: None) -> None:
+    """A datagram to a link-local address goes to that address directly.
+
+    RFC 4861, 5.1: "The link-local prefix is considered to be on the
+    prefix list with an infinite invalidation timer regardless of
+    whether routers are advertising a prefix for it."  5.2: "If the
+    destination is on-link, the next-hop address is the same as the
+    packet's destination address."  node1's only router is fc00::254,
+    which does not exist.  The host sends 3 datagrams from its
+    link-local address to ff02::1; ``nettl -s -6 -u -g ff02::1`` on
+    node1 echoes each to that address.
+    PASS: all 3 echoes arrive.
+
+    :param no_router: node1 without a reachable router
+    """
+    port = 5603
+    ret = _core().sendCommand(
+        f"nettl -s -6 -u -g ff02::1 -p {port} -t 30 &",
+        "listening",
+        timeout=10,
+    )
+    assert ret == 0
+    track_server(NODE_IP6S[NODE], port, True)
+    addr, index = _host_linklocal()
+    echoes = []
+    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
+        sock.bind((addr, 0, 0, index))
+        sock.settimeout(5.0)
+        for seq in range(3):
+            dgram = struct.pack(">I", seq) + pattern(seq * 64, 64)
+            sock.sendto(dgram, ("ff02::1", port, 0, index))
+            try:
+                echoes.append(sock.recv(len(dgram) + 16) == dgram)
+            except socket.timeout:
+                echoes.append(False)
+    assert echoes == [True] * 3, echoes

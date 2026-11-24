@@ -184,7 +184,7 @@ def test_host_telnet_to_node() -> None:
     if _core().conf.kv_check("CONFIG_BUILD_KERNEL"):
         # The accept fault panics the node, so this cannot be an xfail.
         pytest.skip(ACCEPT_ADDR_BUG)
-    _core().sendCommand("telnetd &", timeout=10)
+    assert _core().sendCommand("telnetd &", timeout=10) == 0
     with socket.create_connection((NODE_IPS[NODE], 23), timeout=10) as s:
         _telnet_read_until(s, b"nsh>")
         s.sendall(b"echo tl-telnet   ok\r\n")

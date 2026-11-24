@@ -35,6 +35,7 @@ from typing import Iterator
 import pytest
 from _net_common import (
     HOST_IP,
+    HOST_IP6,
     NODE_IP6S,
     NODE_IPS,
     host_udp_echo_check,
@@ -61,8 +62,9 @@ MLD_REPORT_BUG = (
 )
 
 IGMP_QUERY_BUG = (
-    "net/igmp/igmp_input.c: igmp_grpallocfind() creates a group for every "
-    "Group-Specific Query, so the node reports groups it is not a member of"
+    "net/igmp/igmp_input.c:250: igmp_input() creates a group "
+    "(igmp_grpallocfind()) for every Group-Specific Query sent to "
+    "224.0.0.1, so the node reports groups it is not a member of"
 )
 NOT_MEMBER_GROUP = "239.42.0.9"
 ALL_SYSTEMS = "224.0.0.1"
@@ -152,8 +154,7 @@ def _end_server(addr: str, port: int) -> None:
     """
     fam = socket.AF_INET6 if ":" in addr else socket.AF_INET
     with socket.socket(fam, socket.SOCK_DGRAM) as sock:
-        for _ in range(3):
-            sock.sendto(struct.pack(">I", 0xFFFFFFFF), (addr, port))
+        sock.sendto(struct.pack(">I", 0xFFFFFFFF), (addr, port))
 
 
 @pytest.mark.parametrize("ipv6", FAMILIES)
@@ -164,7 +165,7 @@ def test_mcast_host_to_node(ipv6: bool) -> None:
     addr = NODE_IP6S[0] if ipv6 else NODE_IPS[0]
     nettl_server(0, True, 5230, addr, ipv6=ipv6, group=group)
     assert _wait_member(group, True, 10), "no membership report"
-    assert host_udp_echo_check(group, 5230, 50, retries=2, mcast_dev=BRIDGE)
+    assert host_udp_echo_check(group, 5230, 50, mcast_dev=BRIDGE)
 
 
 @pytest.mark.parametrize("ipv6", FAMILIES)
@@ -180,27 +181,32 @@ def test_mcast_node_to_node(ipv6: bool) -> None:
 
 
 @pytest.mark.parametrize("ipv6", FAMILIES)
-def test_mcast_membership_lifetime(ipv6: bool) -> None:
+def test_mcast_membership_lifetime(
+    request: pytest.FixtureRequest, ipv6: bool
+) -> None:
     """A membership survives General Queries and ends when the node leaves.
 
     The node must answer the bridge queries for longer than the
     membership interval, and leave the group when the socket closes.
-    The querier is off for the leave, so only the leave report of the
-    node removes the group.
+    The bridge asks for the group after the leave: RFC 2236, 3: "When a
+    Querier receives a Leave Group message for a group that has group
+    members on the reception interface, it sends [Last Member Query
+    Count] Group-Specific Queries every [Last Member Query Interval] to
+    the group being left."  A node that left must not answer them.
     """
     _skip_unless(ipv6)
+    if not ipv6:
+        request.applymarker(
+            pytest.mark.xfail(strict=True, reason=IGMP_QUERY_BUG)
+        )
     group = LIFETIME_GROUPS[ipv6]
     addr = NODE_IP6S[0] if ipv6 else NODE_IPS[0]
     nettl_server(0, True, 5232, addr, ipv6=ipv6, group=group)
     assert _wait_member(group, True, 10), "no membership report"
     time.sleep(MEMBERSHIP_S + 5)
     assert _member(group), "membership expired: queries not answered"
-    _querier(False)
-    try:
-        _end_server(addr, 5232)
-        assert _wait_member(group, False, 10), "group not left on close"
-    finally:
-        _querier(True)
+    _end_server(addr, 5232)
+    assert _wait_member(group, False, 10), "group not left on close"
 
 
 def _igmp_group_query(group: str) -> None:
@@ -255,13 +261,19 @@ def test_mcast_all_nodes_join_leave() -> None:
     IPV6_JOIN_GROUP "Join a multicast group on a specified local
     interface") and leave it again when it closes.  Two such cycles must
     both echo host datagrams sent to ff02::1, so the first leave did not
-    drop the group.
+    drop the group.  The echoes go to the host's link-local address by
+    way of the node's router, which the node pings first.
     """
     _skip_unless(True)
+    core = pytest.products[0].core(0)
+    resolved = core.sendCommand(
+        f"ping6 -c 1 {HOST_IP6}", " 0% packet loss", timeout=15
+    )
+    assert resolved == 0, "node 0 does not reach its router"
     for port in (5233, 5234):
         nettl_server(0, True, port, NODE_IP6S[0], ipv6=True, group=ALL_NODES)
         assert host_udp_echo_check(
-            ALL_NODES, port, 20, retries=2, mcast_dev=BRIDGE
+            ALL_NODES, port, 20, mcast_dev=BRIDGE
         ), f"port {port}: no echo from ff02::1"
         _end_server(NODE_IP6S[0], port)
         out = (

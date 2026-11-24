@@ -18,6 +18,7 @@
 
 """TCP connection handling between the host and NuttX nodes."""
 
+import concurrent.futures
 import re
 import socket
 import struct
@@ -45,6 +46,7 @@ pytestmark = [
 SERVER_VERDICT_RE = r"nettl: (PASS|FAIL) rx=\d+ err=\d+[\r\n]"
 CHUNK = 1024
 POLLERR = 0x08
+ECONNRESET = 104
 
 
 def _core() -> Any:
@@ -97,9 +99,11 @@ def _recv_exact(sock: socket.socket, size: int) -> bytes:
 def test_tcp_concurrent_host_to_node() -> None:
     """8 host connections are echoed at once by one node server.
 
-    Each connection is opened only after the previous one echoed its
-    first chunk (so it was accepted); the remaining data then flows on
-    all connections interleaved.
+    The host opens the 8 connections at the same time; the server
+    listens with a backlog of 8.  POSIX listen(): "The backlog argument
+    provides a hint to the implementation which the implementation shall
+    use to limit the number of outstanding connections in the socket's
+    listen queue."  The data then flows on all connections interleaved.
     """
     conns, size, port = 8, 32 * CHUNK, 5250
     ret = _core().sendCommand(
@@ -109,12 +113,14 @@ def test_tcp_concurrent_host_to_node() -> None:
     socks: List[socket.socket] = []
     try:
         ok = True
-        for _ in range(conns):
-            sock = socket.create_connection((NODE_IPS[0], port), timeout=10)
-            socks.append(sock)
-            sock.sendall(pattern(0, CHUNK))
-            ok = ok and _recv_exact(sock, CHUNK) == pattern(0, CHUNK)
-        for off in range(CHUNK, size, CHUNK):
+        with concurrent.futures.ThreadPoolExecutor(conns) as pool:
+            jobs = [
+                pool.submit(socket.create_connection, (NODE_IPS[0], port), 10)
+                for _ in range(conns)
+            ]
+        socks = [job.result() for job in jobs if not job.exception()]
+        assert len(socks) == conns, [job.exception() for job in jobs]
+        for off in range(0, size, CHUNK):
             for sock in socks:
                 sock.sendall(pattern(off, CHUNK))
             for sock in socks:
@@ -144,15 +150,13 @@ def test_tcp_half_close() -> None:
     assert _server_verdict() == f"nettl: PASS rx={size} err=0"
 
 
-@pytest.mark.run(order=-2)
 def test_tcp_churn_node_client() -> None:
     """Node 0 opens more connections than it preallocates, one by one.
 
     The host closes first, so the node does not keep the connections in
     TIME-WAIT: RFC 9293, 3.6: "When a connection is closed actively, it
     MUST linger in the TIME-WAIT state for a time 2xMSL", which would
-    hold every preallocated connection.  Runs second to last in the
-    session (``order=-2``).
+    hold every preallocated connection.
     """
     count, port = 3 * _prealloc(), 5252
     with TcpEchoServer(HOST_IP, port, close_after=CHUNK) as srv:
@@ -196,9 +200,13 @@ def test_tcp_churn_node_server() -> None:
 def test_tcp_backlog_overflow() -> None:
     """Connections beyond the listen backlog do not break the node.
 
-    The server accepts only after 5 s; the host meanwhile tries more
-    connections than the backlog holds. Afterwards the node must still
-    accept and echo new connections.
+    The server (backlog 1) accepts only after 5 s; the host meanwhile
+    tries more connections than the backlog holds, sends nothing and
+    closes them all.  The first connection is within the backlog, so
+    accept() returns it (POSIX accept(): "shall extract the first
+    connection on the queue of pending connections") and the server
+    reads the end of the stream: ``nettl: PASS rx=0 err=0``.  Afterwards
+    the node must still accept and echo new connections.
     """
     port = 5254
     ret = _core().sendCommand(
@@ -206,27 +214,34 @@ def test_tcp_backlog_overflow() -> None:
     )
     assert ret == 0
     socks: List[socket.socket] = []
+    connected: List[bool] = []
     try:
         for _ in range(8):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
             try:
                 sock.connect((NODE_IPS[0], port))
+                connected.append(True)
             except OSError:
-                pass
+                connected.append(False)
             socks.append(sock)
     finally:
         for sock in socks:
             sock.close()
-    _server_verdict(timeout=30)
+    assert connected[0], "connection within the backlog failed"
+    assert _server_verdict(timeout=30) == "nettl: PASS rx=0 err=0"
     _churn_node_server(port)
 
 
 def test_tcp_rst_mid_transfer() -> None:
     """A host RST in the middle of a transfer ends the node server.
 
-    The node server must report the reset instead of hanging, and a new
-    server must work afterwards.
+    RFC 9293, 3.10.7.4, RST in the ESTABLISHED state: "any outstanding
+    RECEIVEs and SEND should receive "reset" responses".  POSIX recv()
+    and send(): "[ECONNRESET] A connection was forcibly closed by a
+    peer."  The stream never ends cleanly, so the server reports one
+    error: ``nettl: FAIL rx=<n> err=1``, and a failed recv() reports
+    ECONNRESET (104).  A new server must work afterwards.
     """
     port = 5255
     nettl_server(0, False, port, NODE_IPS[0])
@@ -237,7 +252,10 @@ def test_tcp_rst_mid_transfer() -> None:
         socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
     )
     sock.close()
-    assert _server_verdict().startswith("nettl: "), "server hung"
+    out = _core().readUntilPattern(SERVER_VERDICT_RE, timeout=20).output
+    assert re.search(r"nettl: FAIL rx=\d+ err=1[\r\n]", out), out
+    failed = re.search(r"nettl: recv failed (\d+)", out)
+    assert failed is None or failed.group(1) == str(ECONNRESET), out
     nettl_server(0, False, port, NODE_IPS[0])
     assert host_tcp_echo_check(NODE_IPS[0], port, 16 * CHUNK)
 

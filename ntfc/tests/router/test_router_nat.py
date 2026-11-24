@@ -70,9 +70,7 @@ def test_nat_udp() -> None:
     with netns(1):
         srv = UdpEchoServer(HOSTS[1], port)
     with srv, netns(0):
-        assert host_udp_echo_check(
-            HOSTS[1], port, 50, length=512, timeout=1, retries=3
-        )
+        assert host_udp_echo_check(HOSTS[1], port, 50, length=512, timeout=1)
     assert [addr for addr, _ in srv.peers] == [NODES[1]]
 
 
