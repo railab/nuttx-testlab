@@ -141,8 +141,9 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tar "https://github.com/r
        libexec/gcc/*/*/lto1 libexec/gcc/*/*/collect2 \
        libexec/gcc/*/*/lto-wrapper
 
-# scripts/config from the Linux kernel, used as kconfig-tweak by NTFC's
-# builder to apply each config.yaml's kv overrides. raw.githubusercontent.com
+# scripts/config from the Linux kernel, installed as kconfig-tweak. NTFC's
+# builder calls it only for config.yaml kv overrides, which this repo does
+# not use; the CMake builds here do not call it. raw.githubusercontent.com
 # is occasionally rate-limited, so fall back to the GitHub contents API.
 RUN (curl -fsSL --retry 3 "https://raw.githubusercontent.com/torvalds/linux/${LINUX_TAG}/scripts/config" \
       -o /usr/local/bin/kconfig-tweak \

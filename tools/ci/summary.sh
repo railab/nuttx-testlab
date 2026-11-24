@@ -36,8 +36,13 @@ done
 if [ "$found" -eq 0 ]; then
   for f in "$dir"/result/*/report/result_summary.txt; do
     [ -f "$f" ] || continue
+    found=1
     echo '```'
     cat "$f"
     echo '```'
   done
+fi
+
+if [ "$found" -eq 0 ]; then
+  echo "No test report found in \`$dir\`: the run ended before NTFC wrote one."
 fi
