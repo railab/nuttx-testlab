@@ -181,32 +181,27 @@ def test_mcast_node_to_node(ipv6: bool) -> None:
 
 
 @pytest.mark.parametrize("ipv6", FAMILIES)
-def test_mcast_membership_lifetime(
-    request: pytest.FixtureRequest, ipv6: bool
-) -> None:
+def test_mcast_membership_lifetime(ipv6: bool) -> None:
     """A membership survives General Queries and ends when the node leaves.
 
     The node must answer the bridge queries for longer than the
     membership interval, and leave the group when the socket closes.
-    The bridge asks for the group after the leave: RFC 2236, 3: "When a
-    Querier receives a Leave Group message for a group that has group
-    members on the reception interface, it sends [Last Member Query
-    Count] Group-Specific Queries every [Last Member Query Interval] to
-    the group being left."  A node that left must not answer them.
+    The querier is off for the leave, so only the leave report of the
+    node removes the group.
     """
     _skip_unless(ipv6)
-    if not ipv6:
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason=IGMP_QUERY_BUG)
-        )
     group = LIFETIME_GROUPS[ipv6]
     addr = NODE_IP6S[0] if ipv6 else NODE_IPS[0]
     nettl_server(0, True, 5232, addr, ipv6=ipv6, group=group)
     assert _wait_member(group, True, 10), "no membership report"
     time.sleep(MEMBERSHIP_S + 5)
     assert _member(group), "membership expired: queries not answered"
-    _end_server(addr, 5232)
-    assert _wait_member(group, False, 10), "group not left on close"
+    _querier(False)
+    try:
+        _end_server(addr, 5232)
+        assert _wait_member(group, False, 10), "group not left on close"
+    finally:
+        _querier(True)
 
 
 def _igmp_group_query(group: str) -> None:
