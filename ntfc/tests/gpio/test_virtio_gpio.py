@@ -195,7 +195,7 @@ def test_virtio_gpio_irq_rising(ctl: VhostCtl) -> None:
     a signal whenever there is an interrupt". Two rising edges, two
     signals.
     """
-    verdict = _irq(ctl, 2, "rising", [1, 0, 1, 0], 2)
+    verdict = _irq(ctl, 2, "rising", [1, 0, 1], 2)
     assert verdict == "gpiotl: PASS irq n=2"
     assert _irq_requests(ctl, 2)[0] == IRQ_TYPE_EDGE_RISING
 
